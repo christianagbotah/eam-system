@@ -154,6 +154,7 @@ function makeWoReadinessData(overrides: Record<string, unknown> = {}) {
     repairToolRequests: [],
     repairMaterialRequests: [],
     repairCompletion: null,
+    shiftHandovers: [],
     assignee: {
       id: 'tech-1',
       plantAccess: [{ id: 'pa-1', plantId: 'plant-1' }],

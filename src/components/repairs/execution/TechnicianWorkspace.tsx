@@ -33,11 +33,16 @@ import {
   Send, Loader2, Info, Eye, Pencil, X, Upload, Mic, Gauge,
   MapPin, Building2, Cpu, Layers, AlertCircle, CircleDot, BadgeCheck,
   ArrowRight, UserPlus, Factory, StopCircle, Hourglass, HardHat,
-  Search, ChevronRight, Tag,
+  Search, ChevronRight, Tag, Trash2, PlayCircle, Square, FileImage, FileAudio, FileVideo, Type as IconType,
 } from 'lucide-react';
 
 import { useWorkOrderExecution, type WODetail, type WOTask, type ReadinessItem } from './hooks/useWorkOrderExecution';
 import { useElapsedTime } from './hooks/useElapsedTime';
+import { useCapabilities } from './hooks/useCapabilities';
+import { useOfflineSync } from './hooks/useOfflineSync';
+import { useWOAttachments } from './hooks/useWOAttachments';
+import { useWOMeasurements } from './hooks/useWOMeasurements';
+import { OfflineSyncService } from '@/services/offlineSync.service';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -89,6 +94,17 @@ function fmtDurationHrs(h: number | null | undefined): string {
   const hrs = Math.floor(h);
   const mins = Math.round((h - hrs) * 60);
   return `${hrs}h ${mins}m`;
+}
+
+function fmtMs(ms: number): string {
+  if (ms <= 0) return '0h 0m';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 function truncate(str: string | null | undefined, len = 80): string {
@@ -161,10 +177,46 @@ export default function TechnicianWorkspace({
     fetchReadiness,
   } = useWorkOrderExecution(workOrderId);
 
+  // Server-authoritative capabilities
+  const { capabilities: caps } = useCapabilities(workOrderId);
+
+  // Offline sync
+  const offlineSync = useOfflineSync();
+
+  // Evidence: attachments & measurements
+  const { attachments, uploading, upload: uploadAttachment, refetch: refetchAttachments } = useWOAttachments(workOrderId);
+  const { measurements, addMeasurement } = useWOMeasurements(workOrderId);
+
+  // Evidence: measurement form state
+  const [measForm, setMeasForm] = useState({
+    parameterKey: 'Temperature', value: '', unit: '°C', beforeAfter: 'before' as 'before' | 'after',
+    acceptableMin: '', acceptableMax: '',
+  });
+
+  // Evidence: voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const chunksRef = React.useRef<Blob[]>([]);
+  const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
+
+  // Cleanup audio URLs on unmount
+  React.useEffect(() => {
+    return () => {
+      Object.values(audioUrls).forEach(url => URL.revokeObjectURL(url));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Elapsed time
   const isRunning = wo?.status === 'in_progress';
-  const pausedMs = 0; // Would need to calculate from pause logs in production
-  const elapsed = useElapsedTime(wo?.actualStart ?? null, isRunning, pausedMs);
+  const timerState = useElapsedTime(
+    wo?.actualStart ?? null,
+    isRunning,
+    wo?.status === 'in_progress' || wo?.status === 'on_hold' ? timeLogSummary?.timeLogs : undefined,
+  );
+  const elapsed = timerState.elapsed;
 
   // Local state
   const [activeTab, setActiveTab] = useState('overview');
@@ -183,12 +235,16 @@ export default function TechnicianWorkspace({
     reason: '', tradeSkill: '',
   });
 
-  // Derived
-  const canStart = wo && ['assigned', 'planned'].includes(wo.status) && isExecutionRole(userRoles);
-  const canPause = wo && wo.status === 'in_progress' && isExecutionRole(userRoles);
-  const canResume = wo && wo.status === 'on_hold' && isExecutionRole(userRoles);
-  const canComplete = wo && wo.status === 'in_progress' && isExecutionRole(userRoles);
-  const isTeamLeader = isLeadRole(userRoles);
+  // File input refs
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Derived — server-authoritative capabilities
+  const canStart = caps?.canStart ?? false;
+  const canPause = caps?.canPause ?? false;
+  const canResume = caps?.canResume ?? false;
+  const canComplete = caps?.canSubmitCompletion ?? false;
+  const isTeamLeader = caps?.isTeamLeader ?? false;
 
   const completedTaskCount = tasks.filter(t => t.status === 'completed').length;
   const taskProgress = tasks.length > 0 ? (completedTaskCount / tasks.length) * 100 : 0;
@@ -273,6 +329,84 @@ export default function TechnicianWorkspace({
     }
   }, [assistanceForm, workOrderId, refetch]);
 
+  // ─── Evidence Handlers ──────────────────────────────────────────────────
+
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      await uploadAttachment(file);
+    }
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+  }, [uploadAttachment]);
+
+  const handleStartRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      chunksRef.current = [];
+      setRecordingDuration(0);
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        if (timerRef.current) clearInterval(timerRef.current);
+        if (chunksRef.current.length > 0) {
+          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+          const ext = recorder.mimeType.includes('ogg') ? 'ogg' : recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const file = new File([blob], `voice-note-${Date.now()}.${ext}`, { type: blob.type });
+          await uploadAttachment(file, { category: 'voice_note' });
+        }
+        setIsRecording(false);
+        setRecordingDuration(0);
+      };
+
+      recorder.start(1000);
+      setIsRecording(true);
+      timerRef.current = setInterval(() => setRecordingDuration(d => d + 1), 1000);
+    } catch {
+      toast.error('Microphone access denied or not available');
+    }
+  }, [uploadAttachment]);
+
+  const handleStopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+  }, []);
+
+  const handleAddMeasurement = useCallback(async () => {
+    if (!measForm.value || isNaN(Number(measForm.value))) {
+      toast.error('Enter a valid numeric value');
+      return;
+    }
+    const ok = await addMeasurement({
+      parameterKey: measForm.parameterKey,
+      value: Number(measForm.value),
+      unit: measForm.unit,
+      beforeAfter: measForm.beforeAfter,
+      acceptableMin: measForm.acceptableMin ? Number(measForm.acceptableMin) : undefined,
+      acceptableMax: measForm.acceptableMax ? Number(measForm.acceptableMax) : undefined,
+    });
+    if (ok) {
+      setMeasForm({ parameterKey: measForm.parameterKey, value: '', unit: measForm.unit, beforeAfter: measForm.beforeAfter, acceptableMin: measForm.acceptableMin, acceptableMax: measForm.acceptableMax });
+    }
+  }, [measForm, addMeasurement]);
+
+  const getAudioUrl = useCallback((att: { id: string; filePath: string; fileType: string }) => {
+    if (audioUrls[att.id]) return audioUrls[att.id];
+    // Try to get from the file API
+    const url = `/api/files/${att.filePath}`;
+    setAudioUrls(prev => ({ ...prev, [att.id]: url }));
+    return url;
+  }, [audioUrls]);
+
   // ─── Loading State ─────────────────────────────────────────────────────────
 
   if (isLoading && !wo) {
@@ -349,6 +483,26 @@ export default function TechnicianWorkspace({
                       {SLA_BADGE[slaStatus].label}
                     </Badge>
                   )}
+                  {/* Offline sync status indicator */}
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium min-h-[28px] cursor-default"
+                    aria-label={offlineSync.status === 'online' ? 'Online' : offlineSync.status === 'offline' ? `Offline, ${offlineSync.pendingCount} pending` : offlineSync.status === 'pending_sync' ? 'Syncing...' : 'Sync failed'}
+                    onClick={offlineSync.pendingCount > 0 && offlineSync.isOnline ? () => { offlineSync.syncNow(); } : undefined}
+                  >
+                    {offlineSync.status === 'online' && (
+                      <><span className="h-2 w-2 rounded-full bg-emerald-500" /><span className="text-emerald-700">Online</span></>
+                    )}
+                    {offlineSync.status === 'offline' && (
+                      <><span className="h-2 w-2 rounded-full bg-amber-500" /><span className="text-amber-700">Offline{offlineSync.pendingCount > 0 ? ` (${offlineSync.pendingCount} pending)` : ''}</span></>
+                    )}
+                    {offlineSync.status === 'pending_sync' && (
+                      <><span className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" /><span className="text-sky-700">Syncing...</span></>
+                    )}
+                    {offlineSync.status === 'sync_failed' && (
+                      <><span className="h-2 w-2 rounded-full bg-red-500" /><span className="text-red-700">Sync failed</span></>
+                    )}
+                  </button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">
                   {wo.title || truncate(wo.description)}
@@ -444,7 +598,7 @@ export default function TechnicianWorkspace({
               <TabTrigger value="downtime" icon={AlertTriangle} label="Downtime" />
               <TabTrigger value="evidence" icon={Camera} label="Evidence" />
               <TabTrigger value="handover" icon={Handshake} label="Handover" />
-              {isTeamLeader && (
+              {caps?.canSubmitCompletion && (
                 <TabTrigger value="completion" icon={BadgeCheck} label="Complete" />
               )}
             </TabsList>
@@ -622,6 +776,24 @@ export default function TechnicianWorkspace({
                 </div>
 
                 <Separator />
+
+                {/* Time breakdown metrics */}
+                {(wo?.actualStart && (wo.status === 'in_progress' || wo.status === 'on_hold')) && (
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5 text-center">
+                      <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wide">Active Labor</p>
+                      <p className="font-mono font-semibold text-emerald-700 mt-0.5">{fmtMs(timerState.activeMs)}</p>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-center">
+                      <p className="text-[10px] text-amber-600 font-medium uppercase tracking-wide">Waiting/Hold</p>
+                      <p className="font-mono font-semibold text-amber-700 mt-0.5">{fmtMs(timerState.waitingMs)}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-center">
+                      <p className="text-[10px] text-slate-600 font-medium uppercase tracking-wide">Calendar Time</p>
+                      <p className="font-mono font-semibold text-slate-700 mt-0.5">{fmtMs(timerState.calendarMs)}</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="text-sm">
                   <span className="text-muted-foreground">Total Logged:</span>{' '}
@@ -967,41 +1139,322 @@ export default function TechnicianWorkspace({
 
           {/* ─── EVIDENCE TAB ─── */}
           <TabsContent value="evidence" className="mt-0 space-y-4">
+            {/* ── Photo / Attachment Upload ── */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Photo Evidence</CardTitle>
-                <CardDescription className="text-xs">Upload photos, attachments, and readings</CardDescription>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Upload className="h-4 w-4" /> Attachments
+                </CardTitle>
+                <CardDescription className="text-xs">Photos, documents, videos, and audio files</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer min-h-[120px] flex flex-col items-center justify-center">
-                  <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">Tap to upload photos</p>
-                  <p className="text-xs text-muted-foreground mt-1">Camera or file picker</p>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <div
+                    className="flex-1 border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer min-h-[100px] flex flex-col items-center justify-center"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-6 w-6 text-primary animate-spin mb-1" />
+                    ) : (
+                      <Upload className="h-6 w-6 text-muted-foreground mb-1" />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {uploading ? 'Uploading…' : 'Tap to browse files'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Images, PDF, Video, Audio</p>
+                  </div>
+                  <div
+                    className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer min-h-[100px] flex flex-col items-center justify-center w-24"
+                    onClick={() => cameraInputRef.current?.click()}
+                  >
+                    <Camera className="h-6 w-6 text-muted-foreground mb-1" />
+                    <p className="text-[10px] text-muted-foreground">Camera</p>
+                  </div>
                 </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*,audio/*,.pdf,application/pdf"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+
+                {/* Attachment list */}
+                {attachments.length > 0 && (
+                  <ScrollArea className="max-h-64">
+                    <div className="space-y-2">
+                      {attachments.map(att => {
+                        const isImage = att.fileType.startsWith('image/');
+                        const isAudio = att.fileType.startsWith('audio/');
+                        const isVideo = att.fileType.startsWith('video/');
+                        const isVoiceNote = att.description?.startsWith('[voice_note]');
+                        const sizeStr = att.fileSize < 1024 ? `${att.fileSize}B`
+                          : att.fileSize < 1048576 ? `${(att.fileSize / 1024).toFixed(1)}KB`
+                          : `${(att.fileSize / 1048576).toFixed(1)}MB`;
+                        const FileIcon = isImage ? FileImage : isAudio ? FileAudio : isVideo ? FileVideo : FileText;
+                        return (
+                          <div key={att.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border">
+                            <div className="h-9 w-9 rounded-md bg-background flex items-center justify-center flex-shrink-0">
+                              <FileIcon className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium truncate">{att.fileName}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] text-muted-foreground">{sizeStr}</span>
+                                {isVoiceNote && <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4">Voice</Badge>}
+                                <span className="text-[10px] text-muted-foreground">
+                                  {att.uploadedBy?.fullName || '—'} • {formatDistanceToNow(new Date(att.uploadedAt), { addSuffix: true })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
 
-            {/* Voice Note Metadata placeholder */}
+            {/* ── Voice Notes ── */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Mic className="h-4 w-4" /> Voice Notes
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">Voice note recording will be available in a future update.</p>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-3">
+                  {!isRecording ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        className="h-11 w-11 rounded-full p-0 border-red-200 hover:bg-red-50"
+                        onClick={handleStartRecording}
+                      >
+                        <Mic className="h-5 w-5 text-red-500" />
+                      </Button>
+                      <div>
+                        <p className="text-sm font-medium">Record Voice Note</p>
+                        <p className="text-[10px] text-muted-foreground">Tap to start recording</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        className="h-11 w-11 rounded-full p-0 bg-red-500 hover:bg-red-600"
+                        onClick={handleStopRecording}
+                      >
+                        <Square className="h-4 w-4 fill-white" />
+                      </Button>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                          </span>
+                          <p className="text-sm font-medium text-red-600">Recording…</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                          {Math.floor(recordingDuration / 60).toString().padStart(2, '0')}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Fallback for no MediaRecorder */}
+                {typeof window !== 'undefined' && !window.MediaRecorder && (
+                  <div>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      className="hidden"
+                      id="voice-fallback-input"
+                      onChange={handleFileUpload}
+                    />
+                    <Button variant="outline" className="w-full min-h-[44px]" onClick={() => document.getElementById('voice-fallback-input')?.click()}>
+                      <Upload className="h-4 w-4 mr-2" /> Upload Audio File
+                    </Button>
+                  </div>
+                )}
+
+                {/* Voice note playback list */}
+                {attachments.filter(a => a.fileType.startsWith('audio/') || a.description?.startsWith('[voice_note]')).length > 0 && (
+                  <div className="space-y-2">
+                    {attachments.filter(a => a.fileType.startsWith('audio/') || a.description?.startsWith('[voice_note]')).map(att => (
+                      <div key={att.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 flex-shrink-0 rounded-full"
+                          onClick={() => {
+                            const audioEl = document.getElementById(`audio-${att.id}`) as HTMLAudioElement | null;
+                            if (audioEl) audioEl.paused ? audioEl.play() : audioEl.pause();
+                          }}
+                        >
+                          <PlayCircle className="h-4 w-4" />
+                        </Button>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium truncate">{att.fileName}</p>
+                          <p className="text-[10px] text-muted-foreground">{att.uploadedBy?.fullName} • {formatDistanceToNow(new Date(att.uploadedAt), { addSuffix: true })}</p>
+                        </div>
+                        <audio id={`audio-${att.id}`} src={getAudioUrl(att)} preload="none" className="hidden" />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Readings placeholder */}
+            {/* ── Readings / Measurements ── */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Gauge className="h-4 w-4" /> Readings / Measurements
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">Equipment readings and measurements can be recorded here.</p>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <Label className="text-xs">Parameter</Label>
+                    <Select value={measForm.parameterKey} onValueChange={v => {
+                      const defaults: Record<string, string> = { Temperature: '°C', Pressure: 'bar', Vibration: 'mm/s', Current: 'A', Voltage: 'V', 'Flow Rate': 'm³/h', 'Noise Level': 'dB' };
+                      setMeasForm(f => ({ ...f, parameterKey: v, unit: f.parameterKey === v ? f.unit : (defaults[v] || '') }));
+                    }}>
+                      <SelectTrigger className="mt-1 h-11"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Temperature">Temperature</SelectItem>
+                        <SelectItem value="Pressure">Pressure</SelectItem>
+                        <SelectItem value="Vibration">Vibration</SelectItem>
+                        <SelectItem value="Current">Current</SelectItem>
+                        <SelectItem value="Voltage">Voltage</SelectItem>
+                        <SelectItem value="Flow Rate">Flow Rate</SelectItem>
+                        <SelectItem value="Noise Level">Noise Level</SelectItem>
+                        <SelectItem value="Custom">Custom…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {measForm.parameterKey === 'Custom' && (
+                    <div className="col-span-2">
+                      <Input
+                        placeholder="Enter parameter name"
+                        className="h-11"
+                        value={measForm.parameterKey === 'Custom' ? '' : measForm.parameterKey}
+                        onChange={e => setMeasForm(f => ({ ...f, parameterKey: e.target.value || 'Custom' }))}
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-xs">Value</Label>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      className="mt-1 h-11"
+                      placeholder="0"
+                      value={measForm.value}
+                      onChange={e => setMeasForm(f => ({ ...f, value: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Unit</Label>
+                    <Input
+                      className="mt-1 h-11"
+                      placeholder="°C"
+                      value={measForm.unit}
+                      onChange={e => setMeasForm(f => ({ ...f, unit: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Before / After</Label>
+                    <div className="flex mt-1 h-11 border rounded-md overflow-hidden">
+                      <button
+                        type="button"
+                        className={`flex-1 text-xs font-medium min-h-[44px] transition-colors ${measForm.beforeAfter === 'before' ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground'}`}
+                        onClick={() => setMeasForm(f => ({ ...f, beforeAfter: 'before' }))}
+                      >BEFORE</button>
+                      <button
+                        type="button"
+                        className={`flex-1 text-xs font-medium min-h-[44px] transition-colors ${measForm.beforeAfter === 'after' ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground'}`}
+                        onClick={() => setMeasForm(f => ({ ...f, beforeAfter: 'after' }))}
+                      >AFTER</button>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Range (Min)</Label>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      className="mt-1 h-11"
+                      placeholder="—"
+                      value={measForm.acceptableMin}
+                      onChange={e => setMeasForm(f => ({ ...f, acceptableMin: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Range (Max)</Label>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      className="mt-1 h-11"
+                      placeholder="—"
+                      value={measForm.acceptableMax}
+                      onChange={e => setMeasForm(f => ({ ...f, acceptableMax: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <Button onClick={handleAddMeasurement} className="w-full min-h-[44px]" disabled={!measForm.value || isNaN(Number(measForm.value))}>
+                  <Gauge className="h-4 w-4 mr-2" /> Record Reading
+                </Button>
+
+                {/* Measurements list */}
+                {measurements.length > 0 && (
+                  <ScrollArea className="max-h-64">
+                    <div className="space-y-2">
+                      {measurements.map(m => {
+                        const hasRange = m.minThreshold !== null || m.maxThreshold !== null;
+                        const isOk = !m.isAlarm;
+                        return (
+                          <div key={m.id} className={`flex items-start gap-2 p-2 rounded-lg border ${hasRange ? (isOk ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200') : 'bg-muted/30'}`}>
+                            <div className={`mt-0.5 h-2 w-2 rounded-full flex-shrink-0 ${hasRange ? (isOk ? 'bg-emerald-500' : 'bg-red-500') : 'bg-slate-300'}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-medium">{m.parameterKey}</span>
+                                <span className="text-xs font-mono font-semibold">{m.value} {m.unit}</span>
+                                {hasRange && (
+                                  <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 ${isOk ? 'border-emerald-300 text-emerald-700' : 'border-red-300 text-red-700'}`}>
+                                    {isOk ? 'PASS' : 'ALARM'}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                                <span>{m.component?.name || '—'}</span>
+                                <span>•</span>
+                                <span>{m.recordedBy?.fullName || '—'}</span>
+                                <span>•</span>
+                                <span>{formatDistanceToNow(new Date(m.recordedAt), { addSuffix: true })}</span>
+                              </div>
+                              {hasRange && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  Range: {m.minThreshold ?? '—'} → {m.maxThreshold ?? '—'} {m.unit}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
 
@@ -1109,8 +1562,8 @@ export default function TechnicianWorkspace({
             </InfoCard>
           </TabsContent>
 
-          {/* ─── COMPLETION TAB (Team Leader Only) ─── */}
-          {isTeamLeader && (
+          {/* ─── COMPLETION TAB ─── */}
+          {caps?.canSubmitCompletion && (
             <TabsContent value="completion" className="mt-0 space-y-4">
               {/* Readiness blockers */}
               {readiness && !readiness.ready && readiness.blockers.length > 0 && (
@@ -1232,7 +1685,7 @@ export default function TechnicianWorkspace({
               Resume Work
             </Button>
           )}
-          {canComplete && isTeamLeader && (
+          {canComplete && (
             <Button
               variant="default"
               onClick={() => { fetchReadiness(); setActiveTab('completion'); }}
@@ -1241,16 +1694,6 @@ export default function TechnicianWorkspace({
               className="flex-1 min-h-[48px] bg-emerald-600 hover:bg-emerald-700 text-base"
             >
               <BadgeCheck className="h-5 w-5 mr-2" /> Complete
-            </Button>
-          )}
-          {canComplete && !isTeamLeader && (
-            <Button
-              variant="outline"
-              size="lg"
-              className="flex-1 min-h-[48px]"
-              disabled
-            >
-              <Info className="h-4 w-4 mr-2" /> Only team leader can complete
             </Button>
           )}
           {(wo.status === 'completed' || wo.status === 'verified' || wo.status === 'closed') && (

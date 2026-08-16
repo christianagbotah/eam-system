@@ -6,6 +6,7 @@
  * duplicate readiness checks, team authority, state transitions, or audit.
  */
 
+import { createHash } from 'crypto';
 import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderReadiness.service';
@@ -55,20 +56,20 @@ export type TransitionResult = {
 export interface StartWorkOptions {
   reason?: string;
   notes?: string;
-  tx?: Prisma.TransactionClient;
   auditCtx?: AuditContext;
+  idempotencyKey?: string;
 }
 
 export interface WaitingStateOptions {
   reason?: string;
-  tx?: Prisma.TransactionClient;
   auditCtx?: AuditContext;
+  idempotencyKey?: string;
 }
 
 export interface HandoverOptions {
   reason?: string;
-  tx?: Prisma.TransactionClient;
   auditCtx?: AuditContext;
+  idempotencyKey?: string;
 }
 
 export interface CompletionOptions {
@@ -76,27 +77,24 @@ export interface CompletionOptions {
   failureDescription?: string;
   causeDescription?: string;
   actionDescription?: string;
-  laborCost?: number;
-  partsCost?: number;
-  contractorCost?: number;
-  tx?: Prisma.TransactionClient;
   auditCtx?: AuditContext;
+  idempotencyKey?: string;
 }
 
 export interface VerifyOptions {
   notes?: string;
   qualityRating?: number;
   checklistPassed?: boolean;
-  tx?: Prisma.TransactionClient;
   auditCtx?: AuditContext;
+  idempotencyKey?: string;
 }
 
 export interface ReworkOptions {
   reason: string;
   category?: string;
   evidence?: string[];
-  tx?: Prisma.TransactionClient;
   auditCtx?: AuditContext;
+  idempotencyKey?: string;
 }
 
 export interface CloseOptions {
@@ -107,13 +105,36 @@ export interface CloseOptions {
   pmRecommendation?: string;
   followUpRequired?: boolean;
   followUpNotes?: string;
-  tx?: Prisma.TransactionClient;
   auditCtx?: AuditContext;
+  idempotencyKey?: string;
+}
+
+export interface CancelOptions {
+  reason: string;
+  auditCtx?: AuditContext;
+  idempotencyKey?: string;
+}
+
+// ─── Authoritative Cost Result ───────────────────────────────────────────────
+
+export interface AuthoritativeCostResult {
+  plannedCost: number;
+  actualLaborCost: number;
+  actualMaterialCost: number;
+  actualToolCost: number;
+  actualContractorCost: number;
+  totalActualCost: number;
+  laborHours: number;
+  incompleteLaborRate: boolean;
+  toolCostNote?: string;
+  warnings: string[];
 }
 
 // ─── Helper: Enriched WO used internally ────────────────────────────────────
 
 type EnrichedWO = Awaited<ReturnType<typeof fetchEnrichedWO>>;
+
+type TxClient = Prisma.TransactionClient;
 
 async function fetchEnrichedWO(workOrderId: string, tx?: Prisma.TransactionClient) {
   const client = tx ?? db;
@@ -288,6 +309,213 @@ function buildIdempotencyKey(workOrderId: string, action: string, userId: string
   return `wo_exec:${workOrderId}:${action}:${userId}:${new Date().toISOString().slice(0, 13)}`; // hourly granularity
 }
 
+// ─── Helper: SHA-256 hash ────────────────────────────────────────────────────
+
+function sha256(data: string): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+// ─── Idempotency: Check existing record ──────────────────────────────────────
+
+async function checkIdempotency(
+  key: string,
+  tx?: Prisma.TransactionClient,
+): Promise<{ found: boolean; responseData?: Record<string, unknown> }> {
+  const client = tx ?? db;
+  const record = await client.idempotencyRecord.findUnique({ where: { key } });
+  if (!record) return { found: false };
+  try {
+    const data = record.responseData ? JSON.parse(record.responseData) : undefined;
+    return { found: true, responseData: data as Record<string, unknown> };
+  } catch {
+    return { found: true, responseData: undefined };
+  }
+}
+
+// ─── Idempotency: Record a response ──────────────────────────────────────────
+
+async function recordIdempotency(
+  key: string,
+  entityType: string,
+  entityId: string,
+  action: string,
+  userId: string,
+  responseData: Record<string, unknown>,
+  tx?: Prisma.TransactionClient,
+): Promise<void> {
+  const client = tx ?? db;
+  const responseJson = JSON.stringify(responseData);
+  const responseHash = sha256(responseJson);
+  await client.idempotencyRecord.create({
+    data: {
+      key,
+      entityType,
+      entityId,
+      action,
+      userId,
+      responseHash,
+      responseData: responseJson,
+    },
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTHORITATIVE COST CALCULATION (STEP 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Calculate authoritative WO costs from actual time logs, material consumption,
+ * tool damage charges, and contractor records. Server-side only — never trusts
+ * client-submitted totals.
+ *
+ * @param workOrderId  The WO to calculate costs for
+ * @param tx           Optional transaction client for use within a larger tx
+ * @returns Structured cost breakdown with warnings for incomplete data
+ */
+export async function calculateAuthoritativeCosts(
+  workOrderId: string,
+  tx?: Prisma.TransactionClient,
+): Promise<AuthoritativeCostResult | null> {
+  const client = tx ?? db;
+
+  const wo = await client.workOrder.findUnique({
+    where: { id: workOrderId },
+    select: {
+      id: true,
+      totalCost: true,
+      laborCost: true,
+      partsCost: true,
+      contractorCost: true,
+      estimatedHours: true,
+      tradeActivity: true,
+      assignedTo: true,
+      timeLogs: {
+        select: {
+          id: true,
+          userId: true,
+          action: true,
+          duration: true,
+          startTime: true,
+          endTime: true,
+          breakMinutes: true,
+        },
+      },
+      repairMaterialRequests: {
+        select: { unitCost: true, consumedQty: true, wastedQty: true },
+      },
+      repairToolRequests: {
+        select: {
+          id: true,
+          status: true,
+          items: { select: { id: true, unitCost: true, quantityIssued: true } },
+        },
+      },
+    },
+  });
+  if (!wo) return null;
+
+  const warnings: string[] = [];
+
+  // ── 1. Labor hours from time logs ──
+  let laborHours = 0;
+
+  // Strategy: prefer explicit `duration` field when set, else calculate from startTime/endTime.
+  // Only consider actionable log entries (start, resume, complete) paired with their
+  // corresponding end times. We iterate in chronological order.
+  const sortedLogs = [...wo.timeLogs].sort(
+    (a, b) => (a.startTime?.getTime() ?? a.timestamp.getTime()) - (b.startTime?.getTime() ?? b.timestamp.getTime()),
+  );
+
+  // For logs with explicit duration, sum those directly (in hours)
+  let durationSum = 0;
+  let durationCount = 0;
+
+  // For logs without duration but with start/end, calculate
+  let calculatedHours = 0;
+  let calculatedCount = 0;
+
+  for (const log of sortedLogs) {
+    if (log.action === 'start' || log.action === 'resume') {
+      // Prefer explicit duration
+      if (log.duration != null && log.duration > 0) {
+        durationSum += log.duration;
+        durationCount++;
+      } else if (log.startTime && log.endTime) {
+        const elapsed = (log.endTime.getTime() - log.startTime.getTime()) / (1000 * 60 * 60);
+        const breakDeduction = (log.breakMinutes ?? 0) / 60;
+        calculatedHours += Math.max(0, elapsed - breakDeduction);
+        calculatedCount++;
+      }
+    }
+  }
+
+  // Use duration sum if we have any; fall back to calculated
+  if (durationCount > 0) {
+    laborHours = Math.round(durationSum * 100) / 100;
+  } else {
+    laborHours = Math.round(calculatedHours * 100) / 100;
+  }
+
+  if (laborHours === 0 && wo.timeLogs.length > 0) {
+    warnings.push('Labor hours resolved to 0 despite time log entries — check for missing duration/start/end data');
+  }
+
+  // ── 2. Labor cost: look for a configured rate ──
+  let laborCost = 0;
+  let incompleteLaborRate = true;
+
+  // Attempt: Look up a Trade-level hourly rate via the user's primaryTrade.
+  // The Trade model currently does NOT have an hourlyRate field.
+  // Attempt: Look up a user-level rate — the User model also does NOT have one.
+  // Since no rate field exists in the schema, laborCost is 0 with a flag.
+  laborCost = 0;
+  incompleteLaborRate = true;
+
+  if (incompleteLaborRate) {
+    warnings.push('No configured labor rate found — labor cost set to 0. Configure trade or user-level hourly rates to enable automatic labor cost calculation.');
+  }
+
+  // ── 3. Material cost: consumedQty + wastedQty × unitCost ──
+  let materialCost = 0;
+  for (const mr of wo.repairMaterialRequests) {
+    const qty = (mr.consumedQty ?? 0) + (mr.wastedQty ?? 0);
+    materialCost += qty * (mr.unitCost ?? 0);
+  }
+  materialCost = Math.round(materialCost * 100) / 100;
+
+  // ── 4. Tool cost: only actual consumption charges ──
+  // Normal reusable tool checkout is custody, NOT consumption.
+  // Only include: rental charge, external hire, damage charge, consumable tooling, or depreciation.
+  // Since the current schema has no such fields on RepairToolRequest, toolCost = 0.
+  // (DamagedToolReport.actualRepairCost is tracked separately per tool, not per WO cost.)
+  let toolCost = 0;
+  const toolCostNote = 'Reusable tools in custody — no consumption cost';
+
+  // ── 5. Contractor cost: from authorized server-side records ──
+  // No Contractor model linked to WOs in the current schema.
+  // Use the existing flat field on WorkOrder if set by an authorized process.
+  let contractorCost = wo.contractorCost ?? 0;
+
+  // ── 6. Planned cost (existing WO total before this calculation) ──
+  const plannedCost = wo.totalCost ?? 0;
+
+  // ── 7. Total actual ──
+  const totalActualCost = Math.round((laborCost + materialCost + toolCost + contractorCost) * 100) / 100;
+
+  return {
+    plannedCost,
+    actualLaborCost: laborCost,
+    actualMaterialCost: materialCost,
+    actualToolCost: toolCost,
+    actualContractorCost: contractorCost,
+    totalActualCost,
+    laborHours,
+    incompleteLaborRate,
+    toolCostNote,
+    warnings,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CANONICAL EXECUTION OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -295,86 +523,119 @@ function buildIdempotencyKey(workOrderId: string, action: string, userId: string
 /**
  * START WORK — assigned → in_progress
  * Validates team membership, checks start readiness, creates time log, notifies.
+ * Fully atomic: state transition + time log + audit in a single transaction.
  */
 export async function startWork(
   workOrderId: string,
   session: SessionContext,
   options?: StartWorkOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, options?.tx);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
-  // Team authority
+  // Team authority (read-only, outside tx)
   const auth = checkTeamAuthority(wo, session, 'start');
   if (!auth.allowed) return { success: false, error: auth.error };
 
-  // Start readiness check
-  const readiness = await checkReadiness(workOrderId, 'start', options?.tx);
+  // Start readiness check (read-only, outside tx)
+  const readiness = await checkReadiness(workOrderId, 'start');
   if (!readiness.ready) {
     return { success: false, error: 'Work order is not ready to start', readiness };
   }
 
   const now = new Date();
 
-  // Execute state transition
-  const result = await executeTransition('work_order', workOrderId, 'in_progress', session, {
-    reason: options?.reason,
-    extraData: { actualStart: now },
-    tx: options?.tx,
-  });
-  if (!result.success) return { success: false, error: result.error };
+  let result: TransitionResult;
 
-  // Create time log entry
-  const client = options?.tx ?? db;
-  await client.workOrderTimeLog.create({
-    data: {
-      workOrderId,
-      userId: session.userId,
-      action: 'start',
-      notes: options?.notes || 'Work started',
-      timestamp: now,
-    },
-  });
+  // Execute state-changing operations atomically
+  await db.$transaction(async (tx) => {
+    // 1. State transition
+    const transitionResult = await executeTransition('work_order', workOrderId, 'in_progress', session, {
+      reason: options?.reason,
+      extraData: { actualStart: now },
+      tx,
+    });
+    if (!transitionResult.success) throw new Error(transitionResult.error);
 
-  // Audit
-  await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-    { status: wo.status }, { status: 'in_progress', actualStart: now.toISOString() }, options?.auditCtx, options?.tx);
+    // 2. Create time log entry
+    await tx.workOrderTimeLog.create({
+      data: {
+        workOrderId,
+        userId: session.userId,
+        action: 'start',
+        notes: options?.notes || 'Work started',
+        timestamp: now,
+      },
+    });
+
+    // 3. Audit
+    await createAuditEntry('update', 'work_order', workOrderId, session.userId,
+      { status: wo.status }, { status: 'in_progress', actualStart: now.toISOString() }, options?.auditCtx, tx);
+  });
 
   // Notify (non-blocking, queued)
   notifyStakeholders(wo, session, 'wo_started');
 
-  return { success: true, data: { status: 'in_progress', actualStart: now } };
+  result = { success: true, data: { status: 'in_progress', actualStart: now } };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'start', session.userId, result);
+  }
+
+  return result;
 }
 
 /**
  * PAUSE WORK — in_progress → on_hold
+ * Fully atomic: close active timers + state transition + audit in a single transaction.
  */
 export async function pauseWork(
   workOrderId: string,
   session: SessionContext,
   options?: WaitingStateOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, options?.tx);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
+  // Team authority (read-only, outside tx)
   const auth = checkTeamAuthority(wo, session, 'pause');
   if (!auth.allowed) return { success: false, error: auth.error };
 
-  // Close any active time logs
-  const client = options?.tx ?? db;
-  await client.workOrderTimeLog.updateMany({
-    where: { workOrderId, userId: session.userId, action: 'start', endTime: null },
-    data: { endTime: new Date(), pauseReason: options?.reason || 'Work paused' },
-  });
+  // Execute state-changing operations atomically
+  await db.$transaction(async (tx) => {
+    // 1. Close any active time logs
+    await tx.workOrderTimeLog.updateMany({
+      where: { workOrderId, userId: session.userId, action: 'start', endTime: null },
+      data: { endTime: new Date(), pauseReason: options?.reason || 'Work paused' },
+    });
 
-  const result = await executeTransition('work_order', workOrderId, 'on_hold', session, {
-    reason: options?.reason,
-    tx: options?.tx,
-  });
-  if (!result.success) return { success: false, error: result.error };
+    // 2. State transition
+    const result = await executeTransition('work_order', workOrderId, 'on_hold', session, {
+      reason: options?.reason,
+      tx,
+    });
+    if (!result.success) throw new Error(result.error);
 
-  await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-    { status: wo.status }, { status: 'on_hold', pauseReason: options?.reason }, options?.auditCtx, options?.tx);
+    // 3. Audit
+    await createAuditEntry('update', 'work_order', workOrderId, session.userId,
+      { status: wo.status }, { status: 'on_hold', pauseReason: options?.reason }, options?.auditCtx, tx);
+  });
 
   sendRepairNotification({
     userId: wo.assignedSupervisorId || wo.plannerId || session.userId,
@@ -383,45 +644,74 @@ export async function pauseWork(
     title: session.fullName, details: { reason: options?.reason },
   });
 
-  return { success: true, data: { status: 'on_hold' } };
+  const result: TransitionResult = { success: true, data: { status: 'on_hold' } };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'pause', session.userId, result);
+  }
+
+  return result;
 }
 
 /**
  * RESUME WORK — on_hold → in_progress
+ * Fully atomic: state transition + time log + audit in a single transaction.
  */
 export async function resumeWork(
   workOrderId: string,
   session: SessionContext,
   options?: WaitingStateOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, options?.tx);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
+  // Team authority (read-only, outside tx)
   const auth = checkTeamAuthority(wo, session, 'start');
   if (!auth.allowed) return { success: false, error: auth.error };
 
   const now = new Date();
-  const result = await executeTransition('work_order', workOrderId, 'in_progress', session, {
-    tx: options?.tx,
+
+  // Execute state-changing operations atomically
+  await db.$transaction(async (tx) => {
+    // 1. State transition
+    const result = await executeTransition('work_order', workOrderId, 'in_progress', session, {
+      tx,
+    });
+    if (!result.success) throw new Error(result.error);
+
+    // 2. Create time log
+    await tx.workOrderTimeLog.create({
+      data: {
+        workOrderId, userId: session.userId, action: 'resume',
+        notes: options?.reason || 'Work resumed', timestamp: now,
+      },
+    });
+
+    // 3. Audit
+    await createAuditEntry('update', 'work_order', workOrderId, session.userId,
+      { status: wo.status }, { status: 'in_progress' }, options?.auditCtx, tx);
   });
-  if (!result.success) return { success: false, error: result.error };
 
-  const client = options?.tx ?? db;
-  await client.workOrderTimeLog.create({
-    data: {
-      workOrderId, userId: session.userId, action: 'resume',
-      notes: options?.reason || 'Work resumed', timestamp: now,
-    },
-  });
+  const result: TransitionResult = { success: true, data: { status: 'in_progress' } };
 
-  await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-    { status: wo.status }, { status: 'in_progress' }, options?.auditCtx, options?.tx);
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'resume', session.userId, result);
+  }
 
-  return { success: true, data: { status: 'in_progress' } };
+  return result;
 }
 
 /**
  * ENTER WAITING STATE — in_progress → waiting_parts|waiting_tools|waiting_shutdown|waiting_permit
+ * Fully atomic: close active timers + state transition + audit in a single transaction.
  */
 export async function enterWaitingState(
   workOrderId: string,
@@ -429,116 +719,186 @@ export async function enterWaitingState(
   waitingType: 'waiting_parts' | 'waiting_tools' | 'waiting_shutdown' | 'waiting_permit',
   options?: WaitingStateOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, options?.tx);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
+  // Team authority (read-only, outside tx)
   const auth = checkTeamAuthority(wo, session, 'pause');
   if (!auth.allowed) return { success: false, error: auth.error };
 
-  // Close active time logs
-  const client = options?.tx ?? db;
-  await client.workOrderTimeLog.updateMany({
-    where: { workOrderId, userId: session.userId, action: 'start', endTime: null },
-    data: { endTime: new Date(), pauseReason: `Entered ${waitingType}` },
+  // Execute state-changing operations atomically
+  await db.$transaction(async (tx) => {
+    // 1. Close active time logs
+    await tx.workOrderTimeLog.updateMany({
+      where: { workOrderId, userId: session.userId, action: 'start', endTime: null },
+      data: { endTime: new Date(), pauseReason: `Entered ${waitingType}` },
+    });
+
+    // 2. State transition
+    const result = await executeTransition('work_order', workOrderId, waitingType, session, {
+      reason: options?.reason,
+      tx,
+    });
+    if (!result.success) throw new Error(result.error);
+
+    // 3. Audit
+    await createAuditEntry('update', 'work_order', workOrderId, session.userId,
+      { status: wo.status }, { status: waitingType, reason: options?.reason }, options?.auditCtx, tx);
   });
 
-  const result = await executeTransition('work_order', workOrderId, waitingType, session, {
-    reason: options?.reason,
-    tx: options?.tx,
-  });
-  if (!result.success) return { success: false, error: result.error };
+  const result: TransitionResult = { success: true, data: { status: waitingType } };
 
-  await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-    { status: wo.status }, { status: waitingType, reason: options?.reason }, options?.auditCtx, options?.tx);
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, `waiting:${waitingType}`, session.userId, result);
+  }
 
-  return { success: true, data: { status: waitingType } };
+  return result;
 }
 
 /**
  * INITIATE HANDOVER — in_progress → pending_handover
+ * Fully atomic: state transition + audit in a single transaction.
  */
 export async function initiateHandover(
   workOrderId: string,
   session: SessionContext,
   options?: HandoverOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, options?.tx);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
+  // Team authority (read-only, outside tx)
   const auth = checkTeamAuthority(wo, session, 'handover');
   if (!auth.allowed) return { success: false, error: auth.error };
 
-  const result = await executeTransition('work_order', workOrderId, 'pending_handover', session, {
-    reason: options?.reason,
-    tx: options?.tx,
-  });
-  if (!result.success) return { success: false, error: result.error };
+  // Execute state-changing operations atomically
+  await db.$transaction(async (tx) => {
+    // 1. State transition
+    const result = await executeTransition('work_order', workOrderId, 'pending_handover', session, {
+      reason: options?.reason,
+      tx,
+    });
+    if (!result.success) throw new Error(result.error);
 
-  await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-    { status: wo.status }, { status: 'pending_handover' }, options?.auditCtx, options?.tx);
+    // 2. Audit
+    await createAuditEntry('update', 'work_order', workOrderId, session.userId,
+      { status: wo.status }, { status: 'pending_handover' }, options?.auditCtx, tx);
+  });
 
   notifyStakeholders(wo, session, 'shift_handover_pending', undefined, options?.reason);
 
-  return { success: true, data: { status: 'pending_handover' } };
+  const result: TransitionResult = { success: true, data: { status: 'pending_handover' } };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'handover', session.userId, result);
+  }
+
+  return result;
 }
 
 /**
  * RESUME AFTER HANDOVER — pending_handover → in_progress
  * Validates that a confirmed handover record exists for this WO.
+ * Fully atomic: handover validation + state transition + time log + audit in a single transaction.
  */
 export async function resumeAfterHandover(
   workOrderId: string,
   session: SessionContext,
   options?: HandoverOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, options?.tx);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
+  // Team authority (read-only, outside tx)
   const auth = checkTeamAuthority(wo, session, 'start');
   if (!auth.allowed) return { success: false, error: auth.error };
 
-  // Validate confirmed handover record exists
-  const client = options?.tx ?? db;
-  const confirmedHandover = await client.shiftHandover.findFirst({
-    where: { workOrderId, status: 'confirmed' },
+  const now = new Date();
+
+  // Execute state-changing operations atomically
+  await db.$transaction(async (tx) => {
+    // 1. Validate confirmed handover record exists (inside tx for consistency)
+    const confirmedHandover = await tx.shiftHandover.findFirst({
+      where: { workOrderId, status: 'confirmed' },
+    });
+    if (!confirmedHandover) {
+      throw new Error(
+        'Cannot resume work: no confirmed shift handover record exists for this work order. A valid handover must be confirmed before work can resume.',
+      );
+    }
+
+    // 2. State transition
+    const result = await executeTransition('work_order', workOrderId, 'in_progress', session, {
+      tx,
+    });
+    if (!result.success) throw new Error(result.error);
+
+    // 3. Create time log
+    await tx.workOrderTimeLog.create({
+      data: {
+        workOrderId, userId: session.userId, action: 'resume',
+        notes: 'Resumed after shift handover', timestamp: now,
+      },
+    });
+
+    // 4. Audit
+    await createAuditEntry('update', 'work_order', workOrderId, session.userId,
+      { status: wo.status }, { status: 'in_progress', handoverId: confirmedHandover.id }, options?.auditCtx, tx);
   });
-  if (!confirmedHandover) {
-    return {
-      success: false,
-      error: 'Cannot resume work: no confirmed shift handover record exists for this work order. A valid handover must be confirmed before work can resume.',
-    };
+
+  const result: TransitionResult = { success: true, data: { status: 'in_progress' } };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'resume_after_handover', session.userId, result);
   }
 
-  const now = new Date();
-  const result = await executeTransition('work_order', workOrderId, 'in_progress', session, {
-    tx: options?.tx,
-  });
-  if (!result.success) return { success: false, error: result.error };
-
-  await client.workOrderTimeLog.create({
-    data: {
-      workOrderId, userId: session.userId, action: 'resume',
-      notes: 'Resumed after shift handover', timestamp: now,
-    },
-  });
-
-  await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-    { status: wo.status }, { status: 'in_progress', handoverId: confirmedHandover.id }, options?.auditCtx, options?.tx);
-
-  return { success: true, data: { status: 'in_progress' } };
+  return result;
 }
 
 /**
  * SUBMIT COMPLETION — in_progress → completed
  * Team leader only for multi-tech. Authoritative cost calculation. Readiness enforced.
  * Runs inside a transaction: status transition + time log + comment + audit + PM schedule update.
+ * Client-submitted costs are NOT accepted — all costs are calculated server-side.
  */
 export async function submitCompletion(
   workOrderId: string,
   session: SessionContext,
   completionData: CompletionOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, completionData.tx);
+  const idempotencyKey = completionData.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
   // Team authority
@@ -546,7 +906,7 @@ export async function submitCompletion(
   if (!auth.allowed) return { success: false, error: auth.error };
 
   // Readiness check
-  const readiness = await checkReadiness(workOrderId, 'complete', completionData.tx);
+  const readiness = await checkReadiness(workOrderId, 'complete');
   if (!readiness.ready) {
     return { success: false, error: 'Work order is not ready for completion', readiness };
   }
@@ -560,15 +920,18 @@ export async function submitCompletion(
     actualHours = Math.round(hours * 100) / 100;
   }
 
-  // Authoritative cost calculation from provided values (or existing WO values)
-  const laborCost = completionData.laborCost ?? wo.laborCost;
-  const partsCost = completionData.partsCost ?? wo.partsCost;
-  const contractorCost = completionData.contractorCost ?? wo.contractorCost;
-  const totalCost = laborCost + partsCost + contractorCost;
-
   // Execute in a single transaction
   const txResult = await db.$transaction(async (tx) => {
-    // 1. State transition
+    // 1. Calculate authoritative costs (server-side only)
+    const costs = await calculateAuthoritativeCosts(workOrderId, tx);
+    if (!costs) throw new Error('Failed to calculate authoritative costs: work order not found in transaction');
+
+    const laborCost = costs.actualLaborCost;
+    const partsCost = costs.actualMaterialCost;
+    const contractorCost = costs.actualContractorCost;
+    const totalCost = costs.totalActualCost;
+
+    // 2. State transition
     const result = await executeTransition('work_order', workOrderId, 'completed', session, {
       extraData: {
         actualEnd: now,
@@ -576,13 +939,16 @@ export async function submitCompletion(
         failureDescription: completionData.failureDescription || wo.failureDescription,
         causeDescription: completionData.causeDescription || wo.causeDescription,
         actionDescription: completionData.actionDescription || wo.actionDescription,
-        laborCost, partsCost, contractorCost, totalCost,
+        laborCost,
+        partsCost,
+        contractorCost,
+        totalCost,
       },
       tx,
     });
     if (!result.success) throw new Error(result.error);
 
-    // 2. Create completion time log
+    // 3. Create completion time log
     await tx.workOrderTimeLog.create({
       data: {
         workOrderId, userId: session.userId, action: 'complete',
@@ -590,14 +956,14 @@ export async function submitCompletion(
       },
     });
 
-    // 3. Create completion comment if notes provided
+    // 4. Create completion comment if notes provided
     if (completionData.notes) {
       await tx.workOrderComment.create({
         data: { workOrderId, userId: session.userId, content: completionData.notes },
       });
     }
 
-    // 4. Audit
+    // 5. Audit
     await tx.auditLog.create({
       data: buildAuditData('update', 'work_order', workOrderId, session.userId,
         { actualEnd: null, actualHours: wo.actualHours },
@@ -609,7 +975,7 @@ export async function submitCompletion(
       ),
     });
 
-    // 5. PM Schedule: advance nextDueDate when a PM WO is completed
+    // 6. PM Schedule: advance nextDueDate when a PM WO is completed
     if (wo.pmScheduleId) {
       const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
       if (pmSchedule && pmSchedule.isActive && isAutoCalculableFrequency(pmSchedule.frequencyType)) {
@@ -628,13 +994,28 @@ export async function submitCompletion(
       }
     }
 
-    return result;
+    return { costs, result };
   });
 
   // Notify after transactional success (non-blocking)
   notifyStakeholders(wo, session, 'completion_submitted');
 
-  return { success: true, data: { status: 'completed', actualEnd: now, actualHours, totalCost } };
+  const result: TransitionResult = {
+    success: true,
+    data: {
+      status: 'completed',
+      actualEnd: now,
+      actualHours,
+      totalCost: txResult.costs.totalActualCost,
+      ...(txResult.costs.incompleteLaborRate ? { costWarnings: txResult.costs.warnings } : {}),
+    },
+  };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'complete', session.userId, result);
+  }
+
+  return result;
 }
 
 /**
@@ -646,11 +1027,19 @@ export async function supervisorVerify(
   session: SessionContext,
   options: VerifyOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, options.tx);
+  const idempotencyKey = options.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
   // Readiness check
-  const readiness = await checkReadiness(workOrderId, 'verify', options.tx);
+  const readiness = await checkReadiness(workOrderId, 'verify');
   if (!readiness.ready) {
     return { success: false, error: 'Work order is not ready for verification', readiness };
   }
@@ -684,7 +1073,13 @@ export async function supervisorVerify(
   // Notify (non-blocking)
   notifyStakeholders(wo, session, 'supervisor_verified');
 
-  return { success: true, data: { status: 'verified' } };
+  const result: TransitionResult = { success: true, data: { status: 'verified' } };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'verify', session.userId, result);
+  }
+
+  return result;
 }
 
 /**
@@ -698,7 +1093,15 @@ export async function requestRework(
 ): Promise<TransitionResult> {
   if (!reworkData.reason) return { success: false, error: 'Rework reason is required' };
 
-  const wo = await fetchEnrichedWO(workOrderId, reworkData.tx);
+  const idempotencyKey = reworkData.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
   // Execute in transaction: rework counter + state transition + comment + audit
@@ -741,24 +1144,39 @@ export async function requestRework(
   // Notify (non-blocking)
   notifyStakeholders(wo, session, 'rework_requested', undefined, reworkData.reason);
 
-  return { success: true, data: { status: 'in_progress', reworkReason: reworkData.reason } };
+  const result: TransitionResult = { success: true, data: { status: 'in_progress', reworkReason: reworkData.reason } };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'rework', session.userId, result);
+  }
+
+  return result;
 }
 
 /**
  * PLANNER CLOSE — verified → closed
  * Validates closure readiness, locks WO, emits reliability event, KPI snapshot.
  * Full transaction: readiness check → transition → lock → audit → reliability event.
+ * Authoritative costs are recalculated and written to the WO on close.
  */
 export async function plannerClose(
   workOrderId: string,
   session: SessionContext,
   closeData: CloseOptions,
 ): Promise<TransitionResult> {
-  const wo = await fetchEnrichedWO(workOrderId, closeData.tx);
+  const idempotencyKey = closeData.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
-  // Readiness check
-  const readiness = await checkReadiness(workOrderId, 'close', closeData.tx);
+  // Readiness check (read-only, outside tx)
+  const readiness = await checkReadiness(workOrderId, 'close');
   if (!readiness.ready) {
     return { success: false, error: 'Work order is not ready for closure', readiness };
   }
@@ -767,7 +1185,21 @@ export async function plannerClose(
 
   // Execute in transaction
   await db.$transaction(async (tx) => {
-    // 1. State transition
+    // 1. Calculate authoritative costs and write them to the WO
+    const costs = await calculateAuthoritativeCosts(workOrderId, tx);
+    if (costs) {
+      await tx.workOrder.update({
+        where: { id: workOrderId },
+        data: {
+          laborCost: costs.actualLaborCost,
+          partsCost: costs.actualMaterialCost,
+          contractorCost: costs.actualContractorCost,
+          totalCost: costs.totalActualCost,
+        },
+      });
+    }
+
+    // 2. State transition
     const result = await executeTransition('work_order', workOrderId, 'closed', session, {
       extraData: {
         isLocked: true, lockedBy: session.userId, lockedAt: now, lockReason: 'Work order closed',
@@ -776,20 +1208,20 @@ export async function plannerClose(
     });
     if (!result.success) throw new Error(result.error);
 
-    // 2. Lock the WO
+    // 3. Lock the WO
     await tx.workOrder.update({
       where: { id: workOrderId },
       data: { isLocked: true, lockedBy: session.userId, lockedAt: now, lockReason: 'Planner closeout' },
     });
 
-    // 3. Add closing comment if notes provided
+    // 4. Add closing comment if notes provided
     if (closeData.notes) {
       await tx.workOrderComment.create({
         data: { workOrderId, userId: session.userId, content: `[Closed] ${closeData.notes}` },
       });
     }
 
-    // 4. Audit
+    // 5. Audit
     await tx.auditLog.create({
       data: {
         userId: session.userId, action: 'update', entityType: 'work_order', entityId: workOrderId,
@@ -799,7 +1231,8 @@ export async function plannerClose(
       },
     });
 
-    // 5. Emit reliability event (within transaction — creates/updates FailureRecord)
+    // 6. Emit reliability event (within transaction — creates/updates FailureRecord)
+    const finalCost = costs?.totalActualCost ?? wo.totalCost;
     if (wo.assetId || closeData.failureMode) {
       await tx.failureRecord.upsert({
         where: { id: `wo-${workOrderId}` },
@@ -808,7 +1241,7 @@ export async function plannerClose(
           failureCause: closeData.failureCause || wo.causeDescription,
           correctiveAction: closeData.correctiveAction || wo.actionDescription,
           resolvedAt: now,
-          repairCost: wo.totalCost ?? undefined,
+          repairCost: finalCost ?? undefined,
           downtimeMinutes: wo.downtimeMinutes ?? undefined,
           rootCause: closeData.failureCause || undefined,
           preventiveAction: closeData.pmRecommendation || undefined,
@@ -822,7 +1255,7 @@ export async function plannerClose(
           correctiveAction: closeData.correctiveAction || wo.actionDescription || undefined,
           detectedAt: wo.actualStart || now,
           resolvedAt: now,
-          repairCost: wo.totalCost ?? undefined,
+          repairCost: finalCost ?? undefined,
           downtimeMinutes: wo.downtimeMinutes ?? undefined,
           reportedById: session.userId,
           rootCause: closeData.failureCause || undefined,
@@ -835,84 +1268,57 @@ export async function plannerClose(
   // Notify after transactional success (non-blocking)
   notifyStakeholders(wo, session, 'planner_closed');
 
-  return { success: true, data: { status: 'closed', isLocked: true } };
+  const result: TransitionResult = { success: true, data: { status: 'closed', isLocked: true } };
+
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'close', session.userId, result);
+  }
+
+  return result;
 }
 
 /**
  * CANCEL WORK ORDER — * → cancelled
  * Requires reason. Works from most states.
+ * Fully atomic: state transition + audit in a single transaction.
  */
 export async function cancelWorkOrder(
   workOrderId: string,
   session: SessionContext,
-  options: { reason: string; tx?: Prisma.TransactionClient; auditCtx?: AuditContext },
+  options: CancelOptions,
 ): Promise<TransitionResult> {
   if (!options.reason) return { success: false, error: 'Cancellation reason is required' };
 
-  const wo = await fetchEnrichedWO(workOrderId, options.tx);
+  const idempotencyKey = options.idempotencyKey;
+  if (idempotencyKey) {
+    const existing = await checkIdempotency(idempotencyKey);
+    if (existing.found && existing.responseData) {
+      return existing.responseData as TransitionResult;
+    }
+  }
+
+  const wo = await fetchEnrichedWO(workOrderId);
   if (!wo) return { success: false, error: 'Work order not found' };
 
-  const result = await executeTransition('work_order', workOrderId, 'cancelled', session, {
-    reason: options.reason,
-    tx: options.tx,
+  // Execute state-changing operations atomically
+  await db.$transaction(async (tx) => {
+    // 1. State transition
+    const result = await executeTransition('work_order', workOrderId, 'cancelled', session, {
+      reason: options.reason,
+      tx,
+    });
+    if (!result.success) throw new Error(result.error);
+
+    // 2. Audit
+    await createAuditEntry('update', 'work_order', workOrderId, session.userId,
+      { status: wo.status }, { status: 'cancelled', reason: options.reason }, options.auditCtx, tx);
   });
-  if (!result.success) return { success: false, error: result.error };
 
-  await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-    { status: wo.status }, { status: 'cancelled', reason: options.reason }, options.auditCtx, options.tx);
+  const result: TransitionResult = { success: true, data: { status: 'cancelled' } };
 
-  return { success: true, data: { status: 'cancelled' } };
-}
+  if (idempotencyKey) {
+    await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'cancel', session.userId, result);
+  }
 
-/**
- * Calculate authoritative WO costs from actual time logs and material consumption.
- * Server-side only — never trusts client-submitted totals.
- */
-export async function calculateAuthoritativeCosts(workOrderId: string): Promise<{
-  laborHours: number;
-  laborCost: number;
-  materialCost: number;
-  toolCost: number;
-  contractorCost: number;
-  totalCost: number;
-} | null> {
-  const wo = await db.workOrder.findUnique({
-    where: { id: workOrderId },
-    select: {
-      id: true,
-      contractorCost: true,
-      laborCost: true,
-      partsCost: true,
-      timeLogs: { select: { duration: true } },
-      repairMaterialRequests: { select: { unitCost: true, consumedQty: true, wastedQty: true } },
-      repairToolRequests: { select: { items: { select: { unitCost: true, quantityIssued: true } } } },
-    },
-  });
-  if (!wo) return null;
-
-  // Labor: sum of logged durations (fallback to existing value)
-  const totalMinutes = wo.timeLogs.reduce((sum, tl) => sum + (tl.duration ?? 0), 0);
-  const laborHours = Math.round((totalMinutes / 60) * 100) / 100;
-
-  // Materials: sum of consumed + wasted * unit cost
-  const materialCost = wo.repairMaterialRequests.reduce((sum, mr) => {
-    const qty = (mr.consumedQty ?? 0) + (mr.wastedQty ?? 0);
-    return sum + qty * (mr.unitCost ?? 0);
-  }, 0);
-
-  // Tools: sum of issued * unit cost
-  const toolCost = wo.repairToolRequests.reduce((sum, tr) => {
-    return sum + tr.items.reduce((itemSum, item) => {
-      return itemSum + (item.quantityIssued ?? 0) * (item.unitCost ?? 0);
-    }, 0);
-  }, 0);
-
-  return {
-    laborHours,
-    laborCost: wo.laborCost, // Use existing rate-calculated labor cost
-    materialCost,
-    toolCost,
-    contractorCost: wo.contractorCost,
-    totalCost: wo.laborCost + materialCost + toolCost + wo.contractorCost,
-  };
+  return result;
 }

@@ -26,9 +26,6 @@ export async function POST(
       failureDescription: body.failureDescription,
       causeDescription: body.causeDescription,
       actionDescription: body.actionDescription,
-      laborCost: body.laborCost,
-      partsCost: body.partsCost,
-      contractorCost: body.contractorCost,
       auditCtx: auditCtx as AuditContext,
     });
 

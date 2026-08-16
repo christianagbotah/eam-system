@@ -52,6 +52,7 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/json',
   'text/csv', 'text/plain',
   'video/mp4',
+  'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-wav',
   'application/zip', 'application/gzip',
 ]);
 

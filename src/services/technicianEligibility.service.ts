@@ -21,6 +21,8 @@ export interface EligibilityResult {
  * - BLOCKER: User has no plant access for WO's plant → NO_PLANT_ACCESS
  * - WARNING: User's primaryTrade doesn't match WO's tradeActivity → TRADE_MISMATCH
  * - WARNING: User has conflicting active WO → CONFLICTING_WORK
+ * - WARNING: User has no UserSkill records at all → NO_SKILL_RECORD
+ * - WARNING: User not certified for the WO's required trade → NO_CERTIFICATION
  */
 export async function checkTechnicianEligibility(
   userId: string,
@@ -37,7 +39,15 @@ export async function checkTechnicianEligibility(
       status: true,
       primaryTrade: true,
       plantAccess: { select: { plantId: true } },
-      userSkills: { select: { tradeId: true } },
+      userSkills: {
+        select: {
+          tradeId: true,
+          proficiencyLevel: true,
+          certified: true,
+          yearsExperience: true,
+          trade: { select: { id: true, name: true, code: true, category: true } },
+        },
+      },
     },
   })
 
@@ -119,9 +129,96 @@ export async function checkTechnicianEligibility(
     })
   }
 
+  // WARNING: No skill records at all
+  checkNoSkillRecord(user.userSkills, warnings)
+
+  // WARNING: Not certified for the WO's required trade
+  checkNoCertification(user, wo.tradeActivity, warnings)
+
   return {
     eligible: blockers.length === 0,
     blockers,
     warnings,
+  }
+}
+
+/**
+ * NO_SKILL_RECORD — WARNING
+ *
+ * If the user has no UserSkill records at all, warn that no trade/skill
+ * certifications are on file. Uses the existing UserSkill model.
+ */
+function checkNoSkillRecord(
+  userSkills: Array<{ tradeId: string }>,
+  warnings: EligibilityResult['warnings'],
+): void {
+  if (userSkills.length === 0) {
+    warnings.push({
+      code: 'NO_SKILL_RECORD',
+      message: 'No trade or skill certifications are on file for this technician',
+      category: 'skill',
+    })
+  }
+}
+
+/**
+ * NO_CERTIFICATION — WARNING
+ *
+ * If the WO requires a specific trade (tradeActivity) and the user's UserSkill
+ * for that trade has `certified: false`, warn that the technician is not
+ * certified for this trade. Matches by looking up the Trade record associated
+ * with each UserSkill and comparing against the WO's tradeActivity.
+ */
+function checkNoCertification(
+  user: {
+    primaryTrade: string | null
+    userSkills: Array<{
+      tradeId: string
+      proficiencyLevel: string
+      certified: boolean
+      yearsExperience: number | null
+      trade: { id: string; name: string; code: string; category: string | null }
+    }>
+  },
+  tradeActivity: string | null,
+  warnings: EligibilityResult['warnings'],
+): void {
+  if (!tradeActivity) return
+
+  const tradeLower = tradeActivity.toLowerCase()
+
+  // Find UserSkill records matching the WO's tradeActivity.
+  // Match against the Trade's name, code, or category (all case-insensitive).
+  const matchingSkills = user.userSkills.filter((us) => {
+    const trade = us.trade
+    return (
+      trade.name.toLowerCase() === tradeLower ||
+      trade.code.toLowerCase() === tradeLower ||
+      (trade.category && trade.category.toLowerCase() === tradeLower)
+    )
+  })
+
+  // Also check primaryTrade string match (in case no UserSkill link exists but
+  // primaryTrade field matches)
+  const primaryTradeMatches = user.primaryTrade
+    ?.toLowerCase() === tradeLower
+
+  // If there's no matching skill at all and primaryTrade doesn't match either,
+  // skip — the TRADE_MISMATCH warning already covers this scenario.
+  if (matchingSkills.length === 0 && !primaryTradeMatches) return
+
+  // If there are matching skills, check if any is certified
+  if (matchingSkills.length > 0) {
+    const anyCertified = matchingSkills.some((us) => us.certified)
+    if (!anyCertified) {
+      const tradeNames = matchingSkills
+        .map((us) => us.trade.name)
+        .join(', ')
+      warnings.push({
+        code: 'NO_CERTIFICATION',
+        message: `Technician has skill(s) for "${tradeNames}" but is not certified for this trade — certification verification recommended`,
+        category: 'skill',
+      })
+    }
   }
 }

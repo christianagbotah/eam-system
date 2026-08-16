@@ -5008,3 +5008,19 @@ model ToolCalibrationRequirement {
 
   @@map("tool_calibration_requirements")
 }
+
+model IdempotencyRecord {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  entityType    String
+  entityId      String
+  action        String
+  userId        String
+  executedAt    DateTime @default(now())
+  responseHash  String   // SHA-256 of the response to detect conflicts
+  responseData  String?  @db.Text // JSON response for replay
+
+  @@index([key])
+  @@index([entityType, entityId])
+  @@map("idempotency_records")
+}

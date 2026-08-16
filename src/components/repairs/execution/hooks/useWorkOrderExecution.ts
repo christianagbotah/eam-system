@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { api, useAbortRef } from '@/lib/api';
 import { toast } from 'sonner';
+import { OfflineSyncService } from '@/services/offlineSync.service';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -545,8 +546,20 @@ export function useWorkOrderExecution(
       }
       toast.error(res.error || 'Failed to add comment');
       return false;
-    } catch {
-      toast.error('Failed to add comment');
+    } catch (err: any) {
+      // Offline fallback: if network error, queue for later sync
+      const isNetworkError = !err?.message || err?.message === 'Network error' || err?.message === 'Failed to fetch';
+      if (isNetworkError && typeof navigator !== 'undefined' && !navigator.onLine) {
+        OfflineSyncService.queueOperation(
+          'create',
+          'work_order_comment',
+          workOrderId,
+          { content, idempotencyKey: `comment-${workOrderId}-${Date.now()}` },
+        );
+        toast.success('Saved offline — will sync when connected');
+        return true;
+      }
+      toast.error(err?.message || 'Failed to add comment');
       return false;
     }
   }, [workOrderId, refetch]);
