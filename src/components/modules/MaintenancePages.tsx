@@ -7378,6 +7378,7 @@ export function MaintenanceDashboardPage() {
   const recentWOs = stats?.recentWorkOrders || [];
 
   // ===== Status chart config =====
+  // eslint-disable-next-line react-compiler/react-compiler
   const woStatusChartConfig = useMemo(() => {
     const config: Record<string, { label: string; color: string }> = {};
     statusChartData.forEach((d, i) => { config[d.status] = { label: d.status, color: CHART_COLORS[i % CHART_COLORS.length] }; });

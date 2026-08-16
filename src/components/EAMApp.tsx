@@ -26,6 +26,149 @@ import {
 import type { PageName } from '@/types';
 
 // ============================================================================
+// PAGE TITLE MAP — module-level (no hook dependency)
+// ============================================================================
+const PAGE_TITLES: Record<string, string> = {
+  // Core
+  'dashboard': 'Dashboard',
+  'chat': 'Chat',
+  'notifications': 'Notifications',
+  // Assets
+  'asset-categories': 'Asset Categories',
+  'assets-machines': 'Machines',
+  'assets-hierarchy': 'Asset Hierarchy',
+  'assets-bom': 'Bill of Materials',
+  'assets-condition-monitoring': 'Condition Monitoring',
+  'assets-digital-twin': 'Digital Twin',
+  'digital-twin-viewer': 'Digital Twin Viewer',
+  'system-diagrams': 'System Diagrams',
+  'assets-health': 'Asset Health',
+  // AI Intelligence
+  'ai-hub': 'AI Intelligence Hub',
+  'ai-config': 'AI Configuration',
+  'ai-history': 'AI Generation History',
+  // Maintenance
+  'maintenance-work-orders': 'Work Orders',
+  'wo-detail': 'Work Order Details',
+  'maintenance-requests': 'Requests',
+  'mr-detail': 'Request Details',
+  'create-mr': 'New Request',
+  'maintenance-dashboard': 'Maintenance Dashboard',
+  'maintenance-analytics': 'Maintenance Analytics',
+  'maintenance-calibration': 'Calibration',
+  'maintenance-risk-assessment': 'Risk Assessment',
+  'maintenance-tools': 'Tools',
+  'pm-schedules': 'PM Schedules',
+  'pm-templates': 'PM Templates',
+  'pm-triggers': 'PM Triggers',
+  'pm-calendar': 'PM Calendar',
+  // Planner Workbench
+  'planner-workbench': 'Planner Workbench',
+  'enterprise-reports': 'Enterprise Reports',
+  // Repairs Module
+  'repairs-material-requests': 'Material Requests',
+  'repairs-tool-requests': 'Tool Requests',
+  'repairs-tool-transfers': 'Tool Transfers',
+  'repairs-downtime': 'Downtime Tracking',
+  'repairs-completion': 'Completion & Closure',
+  'repairs-analytics': 'Repairs Analytics',
+  'repairs-spare-part-returns': 'Spare Part Returns',
+  'repairs-damaged-tools': 'Damaged Tool Reports',
+  'repairs-reports': 'Repair Lifecycle',
+  'repairs-detail-report': 'Repair Detail Report',
+  'wo-reports': 'Work Order Reports',
+  // IoT
+  'iot-devices': 'IoT Devices',
+  'iot-monitoring': 'IoT Monitoring',
+  'iot-rules': 'IoT Rules',
+  // Industrial Connectivity
+  'connectivity': 'Connectivity',
+  // Analytics
+  'analytics-kpi': 'KPI Dashboard',
+  'analytics-oee': 'OEE',
+  'analytics-downtime': 'Downtime Analysis',
+  'analytics-energy': 'Energy Analytics',
+  // Operations
+  'operations-meter-readings': 'Meter Readings',
+  'operations-training': 'Training',
+  'operations-surveys': 'Surveys',
+  'operations-time-logs': 'Time Logs',
+  'operations-shift-handover': 'Shift Handover',
+  'operations-checklists': 'Checklists',
+  // Production
+  'production-work-centers': 'Work Centers',
+  'production-resource-planning': 'Resource Planning',
+  'production-scheduling': 'Production Scheduling',
+  'production-capacity': 'Capacity Management',
+  'production-efficiency': 'Production Efficiency',
+  'production-bottlenecks': 'Bottleneck Analysis',
+  'production-orders': 'Production Orders',
+  'production-batches': 'Batch Management',
+  // Quality
+  'quality-inspections': 'Inspections',
+  'quality-ncr': 'Non-Conformance Reports',
+  'quality-audits': 'Quality Audits',
+  'quality-control-plans': 'Control Plans',
+  'quality-spc': 'Statistical Process Control',
+  'quality-capa': 'CAPA',
+  // Safety
+  'safety-incidents': 'Incidents',
+  'safety-inspections': 'Safety Inspections',
+  'safety-training': 'Safety Training',
+  'safety-equipment': 'Safety Equipment',
+  'safety-permits': 'Permits',
+  // Reliability Engineering
+  'reliability-engineering': 'Reliability Engineering',
+  // Inventory
+  'inventory-items': 'Inventory Items',
+  'inventory-categories': 'Categories',
+  'inventory-locations': 'Locations',
+  'inventory-transactions': 'Transactions',
+  'inventory-adjustments': 'Adjustments',
+  'inventory-requests': 'Requests',
+  'inventory-transfers': 'Transfers',
+  'inventory-suppliers': 'Suppliers',
+  'inventory-purchase-orders': 'Purchase Orders',
+  'inventory-receiving': 'Receiving',
+  // Reports
+  'reports-asset': 'Asset Reports',
+  'equipment-history': 'Equipment History',
+  'failure-analysis': 'Failure Analysis',
+  'reports-maintenance': 'Maintenance Reports',
+  'reports-inventory': 'Inventory Reports',
+  'reports-production': 'Production Reports',
+  'reports-quality': 'Quality Reports',
+  'reports-safety': 'Safety Reports',
+  'reports-financial': 'Financial Reports',
+  'reports-custom': 'Custom Reports',
+  // Settings
+  'settings-general': 'General Settings',
+  'settings-users': 'Users',
+  'settings-roles': 'Roles & Permissions',
+  'settings-modules': 'Module Management',
+  'settings-company': 'Company Profile',
+  'settings-plants': 'Plants',
+  'settings-departments': 'Departments',
+  'settings-notifications': 'Notifications',
+  'settings-integrations': 'Integrations',
+  'settings-backup': 'Backup & Restore',
+  'settings-audit': 'Audit Logs',
+  'settings-security': 'Security',
+  'settings-health': 'System Health',
+  'settings-queues': 'Queue Manager',
+  'settings-preferences': 'My Preferences',
+  // Observability
+  'observability-dashboard': 'Observability',
+  // Historian
+  'historian-dashboard': 'Historian Dashboard',
+  // Legacy
+  'assets': 'Asset Register',
+  'asset-detail': 'Asset Details',
+  'inventory': 'Inventory',
+  'analytics': 'Analytics',
+};
+
+// ============================================================================
 // PAGE LOADER — manual dynamic imports WITHOUT React.lazy/Suspense
 // ============================================================================
 // React.lazy + Suspense causes Error #306 when combined with Zustand's
@@ -447,9 +590,9 @@ function AppShell() {
     fetchModules();
   }, [fetchModules]);
 
-  // Update document title immediately on navigation (not deferred)
+  // Update document title on navigation
   React.useEffect(() => {
-    const title = pageTitle[currentPage] || 'Dashboard';
+    const title = PAGE_TITLES[currentPage] || 'Dashboard';
     document.title = `${title} — iAssetsPro`;
   }, [currentPage]);
 
@@ -460,146 +603,6 @@ function AppShell() {
   if (!isAuthenticated) {
     return null;
   }
-
-  const pageTitle: Record<string, string> = {
-    // Core
-    'dashboard': 'Dashboard',
-    'chat': 'Chat',
-    'notifications': 'Notifications',
-    // Assets
-    'asset-categories': 'Asset Categories',
-    'assets-machines': 'Machines',
-    'assets-hierarchy': 'Asset Hierarchy',
-    'assets-bom': 'Bill of Materials',
-    'assets-condition-monitoring': 'Condition Monitoring',
-    'assets-digital-twin': 'Digital Twin',
-    'digital-twin-viewer': 'Digital Twin Viewer',
-    'system-diagrams': 'System Diagrams',
-    'assets-health': 'Asset Health',
-    // AI Intelligence
-    'ai-hub': 'AI Intelligence Hub',
-    'ai-config': 'AI Configuration',
-    'ai-history': 'AI Generation History',
-    // Maintenance
-    'maintenance-work-orders': 'Work Orders',
-    'wo-detail': 'Work Order Details',
-    'maintenance-requests': 'Requests',
-    'mr-detail': 'Request Details',
-    'create-mr': 'New Request',
-    'maintenance-dashboard': 'Maintenance Dashboard',
-    'maintenance-analytics': 'Maintenance Analytics',
-    'maintenance-calibration': 'Calibration',
-    'maintenance-risk-assessment': 'Risk Assessment',
-    'maintenance-tools': 'Tools',
-    'pm-schedules': 'PM Schedules',
-    'pm-templates': 'PM Templates',
-    'pm-triggers': 'PM Triggers',
-    'pm-calendar': 'PM Calendar',
-    // Planner Workbench
-    'planner-workbench': 'Planner Workbench',
-    'enterprise-reports': 'Enterprise Reports',
-    // Repairs Module
-    'repairs-material-requests': 'Material Requests',
-    'repairs-tool-requests': 'Tool Requests',
-    'repairs-tool-transfers': 'Tool Transfers',
-    'repairs-downtime': 'Downtime Tracking',
-    'repairs-completion': 'Completion & Closure',
-    'repairs-analytics': 'Repairs Analytics',
-    'repairs-spare-part-returns': 'Spare Part Returns',
-    'repairs-damaged-tools': 'Damaged Tool Reports',
-    'repairs-reports': 'Repair Lifecycle',
-    'repairs-detail-report': 'Repair Detail Report',
-    'wo-reports': 'Work Order Reports',
-    // IoT
-    'iot-devices': 'IoT Devices',
-    'iot-monitoring': 'IoT Monitoring',
-    'iot-rules': 'IoT Rules',
-    // Industrial Connectivity
-    'connectivity': 'Connectivity',
-    // Analytics
-    'analytics-kpi': 'KPI Dashboard',
-    'analytics-oee': 'OEE',
-    'analytics-downtime': 'Downtime Analysis',
-    'analytics-energy': 'Energy Analytics',
-    // Operations
-    'operations-meter-readings': 'Meter Readings',
-    'operations-training': 'Training',
-    'operations-surveys': 'Surveys',
-    'operations-time-logs': 'Time Logs',
-    'operations-shift-handover': 'Shift Handover',
-    'operations-checklists': 'Checklists',
-    // Production
-    'production-work-centers': 'Work Centers',
-    'production-resource-planning': 'Resource Planning',
-    'production-scheduling': 'Production Scheduling',
-    'production-capacity': 'Capacity Management',
-    'production-efficiency': 'Production Efficiency',
-    'production-bottlenecks': 'Bottleneck Analysis',
-    'production-orders': 'Production Orders',
-    'production-batches': 'Batch Management',
-    // Quality
-    'quality-inspections': 'Inspections',
-    'quality-ncr': 'Non-Conformance Reports',
-    'quality-audits': 'Quality Audits',
-    'quality-control-plans': 'Control Plans',
-    'quality-spc': 'Statistical Process Control',
-    'quality-capa': 'CAPA',
-    // Safety
-    'safety-incidents': 'Incidents',
-    'safety-inspections': 'Safety Inspections',
-    'safety-training': 'Safety Training',
-    'safety-equipment': 'Safety Equipment',
-    'safety-permits': 'Permits',
-    // Reliability Engineering
-    'reliability-engineering': 'Reliability Engineering',
-    // Inventory
-    'inventory-items': 'Inventory Items',
-    'inventory-categories': 'Categories',
-    'inventory-locations': 'Locations',
-    'inventory-transactions': 'Transactions',
-    'inventory-adjustments': 'Adjustments',
-    'inventory-requests': 'Requests',
-    'inventory-transfers': 'Transfers',
-    'inventory-suppliers': 'Suppliers',
-    'inventory-purchase-orders': 'Purchase Orders',
-    'inventory-receiving': 'Receiving',
-    // Reports
-    'reports-asset': 'Asset Reports',
-    'equipment-history': 'Equipment History',
-    'failure-analysis': 'Failure Analysis',
-    'reports-maintenance': 'Maintenance Reports',
-    'reports-inventory': 'Inventory Reports',
-    'reports-production': 'Production Reports',
-    'reports-quality': 'Quality Reports',
-    'reports-safety': 'Safety Reports',
-    'reports-financial': 'Financial Reports',
-    'reports-custom': 'Custom Reports',
-    // Settings
-    'settings-general': 'General Settings',
-    'settings-users': 'Users',
-    'settings-roles': 'Roles & Permissions',
-    'settings-modules': 'Module Management',
-    'settings-company': 'Company Profile',
-    'settings-plants': 'Plants',
-    'settings-departments': 'Departments',
-    'settings-notifications': 'Notifications',
-    'settings-integrations': 'Integrations',
-    'settings-backup': 'Backup & Restore',
-    'settings-audit': 'Audit Logs',
-    'settings-security': 'Security',
-    'settings-health': 'System Health',
-    'settings-queues': 'Queue Manager',
-    'settings-preferences': 'My Preferences',
-    // Observability
-    'observability-dashboard': 'Observability',
-    // Historian
-    'historian-dashboard': 'Historian Dashboard',
-    // Legacy
-    'assets': 'Asset Register',
-    'asset-detail': 'Asset Details',
-    'inventory': 'Inventory',
-    'analytics': 'Analytics',
-  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -631,7 +634,7 @@ function AppShell() {
             {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
           <div className="hidden sm:flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-foreground">{pageTitle[currentPage] || 'Dashboard'}</h2>
+            <h2 className="text-sm font-semibold text-foreground">{PAGE_TITLES[currentPage] || 'Dashboard'}</h2>
             <Separator orientation="vertical" className="h-4 bg-border/60" />
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>
