@@ -87,7 +87,7 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
         intervalRef.current = null;
       }
     };
-  }, [fetchCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchCapabilities]);
 
   return { capabilities, isLoading, error };
 }

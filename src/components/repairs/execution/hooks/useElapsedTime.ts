@@ -94,8 +94,7 @@ export function useElapsedTime(
   const waitingMs = useMemo(() => {
     if (!stableLogs || !startedAt) return 0;
     const now = Date.now();
-    return calculateWaitingMs(stableLogs, now);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return calculateWaitingMs(stableLogs, Date.now());
   }, [stableLogs, startedAt]);
 
   const [state, setState] = useState<ElapsedResult>(emptyResult);

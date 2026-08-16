@@ -206,8 +206,7 @@ export default function TechnicianWorkspace({
     return () => {
       Object.values(audioUrls).forEach(url => URL.revokeObjectURL(url));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [workOrderId]);
 
   // Elapsed time
   const isRunning = wo?.status === 'in_progress';
@@ -1299,7 +1298,9 @@ export default function TechnicianWorkspace({
                           className="h-9 w-9 flex-shrink-0 rounded-full"
                           onClick={() => {
                             const audioEl = document.getElementById(`audio-${att.id}`) as HTMLAudioElement | null;
-                            if (audioEl) audioEl.paused ? audioEl.play() : audioEl.pause();
+                            if (audioEl) {
+                              if (audioEl.paused) { void audioEl.play(); } else { audioEl.pause(); }
+                            }
                           }}
                         >
                           <PlayCircle className="h-4 w-4" />
