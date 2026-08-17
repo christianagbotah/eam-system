@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { ObjectStorageService } from '@/services/objectStorage.service';
 
 export async function POST(
@@ -30,11 +30,9 @@ export async function POST(
     }
 
     // Plant scope check (IDOR protection)
-    if (wo.plantId) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope.isScoped && plantScope.plantId && wo.plantId !== plantScope.plantId) {
-        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-      }
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Closed/locked WO immutability guard

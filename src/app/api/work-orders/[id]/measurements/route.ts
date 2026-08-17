@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function POST(
   request: NextRequest,
@@ -47,11 +47,9 @@ export async function POST(
     }
 
     // Plant scope check (IDOR protection)
-    if (wo.plantId) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope.isScoped && plantScope.plantId && wo.plantId !== plantScope.plantId) {
-        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-      }
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Closed/locked WO immutability guard
@@ -140,11 +138,9 @@ export async function GET(
       where: { id },
       select: { id: true, plantId: true },
     });
-    if (woForGet?.plantId) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope.isScoped && plantScope.plantId && woForGet.plantId !== plantScope.plantId) {
-        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-      }
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, woForGet?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Get all component IDs for this WO

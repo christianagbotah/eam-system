@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,6 +18,9 @@ export async function GET(request: NextRequest) {
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
     // PmSchedule has no direct plantId — scope through the related Asset's plantId
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     const where: Record<string, unknown> = {};
 

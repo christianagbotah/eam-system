@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -31,11 +31,9 @@ export async function GET(
     }
 
     // IDOR protection: ensure user has access to this incident's plant
-    if (incident.plantId) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope.isScoped && plantScope.plantId && incident.plantId !== plantScope.plantId) {
-        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-      }
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, incident.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: incident });

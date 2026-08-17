@@ -5,19 +5,23 @@
  *   - 2 Plants (Plant A, Plant B)
  *   - 1 Asset in Plant A
  *   - 2 Trades (mechanical, electrical)
- *   - 9 UAT users with roles + plant access
- *   - WO status transitions for the full lifecycle
+ *   - 13 UAT users with roles + plant access (incl. plant-limited supervisors/planners)
+ *   - Status transitions from the canonical source of truth (state-machine.ts)
  *   - 2 pre-seeded Work Orders in various states
  *
- * Usage:
- *   DATABASE_URL="mysql://..." npx tsx scripts/seed-repairs-uat.ts
- *   DB_HOST=x DB_USER=y DB_PASSWORD=z DB_NAME=d npx tsx scripts/seed-repairs-uat.ts
+ * Usage (prefers bun for tsconfig path alias resolution):
+ *   DATABASE_URL="mysql://..." bun run scripts/seed-repairs-uat.ts
+ *   DB_HOST=x DB_USER=y DB_PASSWORD=z DB_NAME=d bun run scripts/seed-repairs-uat.ts
  *
  * Idempotent: safe to run multiple times — uses upsert / findFirst patterns.
  */
 
 import { PrismaClient } from '@prisma/client';
 import { hash } from 'bcryptjs';
+import {
+  DEFAULT_WO_TRANSITIONS,
+  DEFAULT_MR_TRANSITIONS,
+} from '../src/lib/state-machine';
 
 // ══════════════════════════════════════════════════════════════════════════
 // DATABASE CONNECTION
@@ -120,7 +124,7 @@ const UAT_USERS: UatUserDef[] = [
     username: 'uat_storekeeper',
     fullName: 'UAT Storekeeper',
     email: 'uat_storekeeper@test.com',
-    roleSlugs: ['storekeeper'],
+    roleSlugs: ['storekeeper', 'store_keeper'],
     plantCodes: ['PLANT-A', 'PLANT-B'],
     isPrimaryPlant: 'PLANT-A',
   },
@@ -141,6 +145,39 @@ const UAT_USERS: UatUserDef[] = [
     plantCodes: ['PLANT-B'],
     isPrimaryPlant: 'PLANT-B',
     primaryTrade: 'Mechanical',
+  },
+  // ── Plant-limited supervisors & planners (cross-plant isolation tests) ──
+  {
+    username: 'uat_supervisor_plant_a',
+    fullName: 'UAT Supervisor Plant A Only',
+    email: 'uat_supervisor_plant_a@test.com',
+    roleSlugs: ['maintenance_supervisor'],
+    plantCodes: ['PLANT-A'],
+    isPrimaryPlant: 'PLANT-A',
+  },
+  {
+    username: 'uat_planner_plant_a',
+    fullName: 'UAT Planner Plant A Only',
+    email: 'uat_planner_plant_a@test.com',
+    roleSlugs: ['planner'],
+    plantCodes: ['PLANT-A'],
+    isPrimaryPlant: 'PLANT-A',
+  },
+  {
+    username: 'uat_supervisor_plant_b',
+    fullName: 'UAT Supervisor Plant B Only',
+    email: 'uat_supervisor_plant_b@test.com',
+    roleSlugs: ['maintenance_supervisor'],
+    plantCodes: ['PLANT-B'],
+    isPrimaryPlant: 'PLANT-B',
+  },
+  {
+    username: 'uat_planner_plant_b',
+    fullName: 'UAT Planner Plant B Only',
+    email: 'uat_planner_plant_b@test.com',
+    roleSlugs: ['planner'],
+    plantCodes: ['PLANT-B'],
+    isPrimaryPlant: 'PLANT-B',
   },
 ];
 
@@ -255,67 +292,47 @@ async function main() {
     },
   });
 
-  // ── 6. WO Status Transitions ───────────────────────────────────────────
-  console.log('  🔄 Creating WO status transitions...');
-  const woTransitions = [
-    // From null (initial) to draft
-    { from: null, to: 'draft', roles: ['admin', 'planner'], entity: 'work_order' as const },
-    // Full lifecycle
-    { from: 'draft', to: 'requested', roles: ['requester', 'admin'], entity: 'work_order' as const },
-    { from: 'requested', to: 'approved', roles: ['maintenance_supervisor', 'admin'], entity: 'work_order' as const },
-    { from: 'approved', to: 'planned', roles: ['planner', 'admin'], entity: 'work_order' as const },
-    { from: 'planned', to: 'assigned', roles: ['planner', 'admin', 'maintenance_supervisor'], entity: 'work_order' as const },
-    { from: 'assigned', to: 'in_progress', roles: ['maintenance_technician', 'team_leader', 'admin'], entity: 'work_order' as const },
-    { from: 'in_progress', to: 'completed', roles: ['maintenance_technician', 'team_leader', 'admin'], entity: 'work_order' as const },
-    { from: 'completed', to: 'verified', roles: ['maintenance_supervisor', 'admin'], entity: 'work_order' as const },
-    { from: 'verified', to: 'closed', roles: ['planner', 'admin'], entity: 'work_order' as const },
-    // Holds and resumes
-    { from: 'in_progress', to: 'on_hold', roles: ['maintenance_technician', 'admin'], entity: 'work_order' as const },
-    { from: 'on_hold', to: 'in_progress', roles: ['maintenance_technician', 'admin'], entity: 'work_order' as const },
-    // Rework
-    { from: 'verified', to: 'in_progress', roles: ['maintenance_supervisor', 'admin'], entity: 'work_order' as const },
-    // Cancellation
-    { from: 'draft', to: 'cancelled', roles: ['planner', 'admin'], entity: 'work_order' as const },
-    { from: 'assigned', to: 'cancelled', roles: ['planner', 'admin'], entity: 'work_order' as const },
-  ];
+  // ── 6. Status Transitions (canonical from state-machine.ts) ────────────
+  console.log('  🔄 Seeding canonical status transitions...');
+  let transitionCount = 0;
 
-  for (const t of woTransitions) {
+  // WO transitions — upsert from the canonical source of truth
+  for (let i = 0; i < DEFAULT_WO_TRANSITIONS.length; i++) {
+    const t = DEFAULT_WO_TRANSITIONS[i];
     await db.statusTransition.upsert({
-      where: { entityType_fromStatus_toStatus: { entityType: t.entity, fromStatus: t.from, toStatus: t.to } },
-      update: {},
+      where: { entityType_fromStatus_toStatus: { entityType: 'work_order', fromStatus: t.fromStatus, toStatus: t.toStatus } },
+      update: { allowedRoleSlugs: t.allowedRoleSlugs, requiresReason: t.requiresReason, sortOrder: i },
       create: {
-        entityType: t.entity,
-        fromStatus: t.from,
-        toStatus: t.to,
-        allowedRoleSlugs: JSON.stringify(t.roles),
-        requiresApproval: false,
-        requiresReason: false,
+        entityType: 'work_order',
+        fromStatus: t.fromStatus,
+        toStatus: t.toStatus,
+        allowedRoleSlugs: t.allowedRoleSlugs,
+        requiresReason: t.requiresReason,
+        sortOrder: i,
       },
     });
+    transitionCount++;
   }
 
-  // MR status transitions
-  const mrTransitions = [
-    { from: null, to: 'pending', roles: ['requester', 'admin'], entity: 'maintenance_request' as const },
-    { from: 'pending', to: 'approved', roles: ['maintenance_supervisor', 'admin'], entity: 'maintenance_request' as const },
-    { from: 'pending', to: 'rejected', roles: ['maintenance_supervisor', 'admin'], entity: 'maintenance_request' as const },
-    { from: 'approved', to: 'converted', roles: ['planner', 'admin'], entity: 'maintenance_request' as const },
-  ];
-
-  for (const t of mrTransitions) {
+  // MR transitions — upsert from the canonical source of truth
+  for (let i = 0; i < DEFAULT_MR_TRANSITIONS.length; i++) {
+    const t = DEFAULT_MR_TRANSITIONS[i];
     await db.statusTransition.upsert({
-      where: { entityType_fromStatus_toStatus: { entityType: t.entity, fromStatus: t.from, toStatus: t.to } },
-      update: {},
+      where: { entityType_fromStatus_toStatus: { entityType: 'maintenance_request', fromStatus: t.fromStatus, toStatus: t.toStatus } },
+      update: { allowedRoleSlugs: t.allowedRoleSlugs, requiresReason: t.requiresReason, sortOrder: i },
       create: {
-        entityType: t.entity,
-        fromStatus: t.from,
-        toStatus: t.to,
-        allowedRoleSlugs: JSON.stringify(t.roles),
-        requiresApproval: false,
-        requiresReason: false,
+        entityType: 'maintenance_request',
+        fromStatus: t.fromStatus,
+        toStatus: t.toStatus,
+        allowedRoleSlugs: t.allowedRoleSlugs,
+        requiresReason: t.requiresReason,
+        sortOrder: i,
       },
     });
+    transitionCount++;
   }
+
+  console.log(`  ✅ Seeded ${transitionCount} canonical transitions (${DEFAULT_WO_TRANSITIONS.length} WO + ${DEFAULT_MR_TRANSITIONS.length} MR)`);
 
   // ── 7. Pre-seeded Work Orders ──────────────────────────────────────────
   console.log('  📋 Creating pre-seeded work orders...');
@@ -411,6 +428,132 @@ async function main() {
     },
   });
 
+  // ── 9. Labor Rate for uat_tech_single ──────────────────────────────────
+  console.log('  💰 Creating labor rate for uat_tech_single...');
+  const techSingleId = userIds['uat_tech_single'];
+  const existingRate = await db.laborRate.findFirst({
+    where: {
+      userId: techSingleId,
+      plantId: plantA.id,
+      tradeId: tradeMech.id,
+      effectiveFrom: new Date('2024-01-01'),
+    },
+  });
+  if (!existingRate) {
+    await db.laborRate.create({
+      data: {
+        userId: techSingleId,
+        plantId: plantA.id,
+        tradeId: tradeMech.id,
+        normalHourlyRate: 50.0,
+        overtimeHourlyRate: 75.0,
+        effectiveFrom: new Date('2024-01-01'),
+        currency: 'GHS',
+      },
+    });
+    console.log('    ✅ Labor rate created');
+  } else {
+    console.log('    ⏭️  Labor rate already exists');
+  }
+
+  // ── 10. Realistic Materials (Inventory Items) in Plant A ─────────────────
+  console.log('  📦 Creating inventory materials...');
+  const storekeeperId = userIds['uat_storekeeper'];
+  const materials = [
+    { itemCode: 'UAT-BRG-6205', name: 'UAT Bearing 6205', quantity: 10, unit: 'each', category: 'spare_part' },
+    { itemCode: 'UAT-SEAL-KIT', name: 'UAT Seal Kit', quantity: 5, unit: 'each', category: 'spare_part' },
+    { itemCode: 'UAT-LUB-5W30', name: 'UAT Lubricant 5W-30', quantity: 20, unit: 'litre', category: 'consumable' },
+  ];
+  for (const m of materials) {
+    await db.inventoryItem.upsert({
+      where: { itemCode: m.itemCode },
+      update: { currentStock: m.quantity, unitOfMeasure: m.unit },
+      create: {
+        itemCode: m.itemCode,
+        name: m.name,
+        category: m.category,
+        unitOfMeasure: m.unit,
+        currentStock: m.quantity,
+        minStockLevel: 0,
+        plantId: plantA.id,
+        createdById: storekeeperId,
+        specification: '{}',
+        imageUrls: '[]',
+      },
+    });
+    console.log(`    ✅ ${m.name} (${m.quantity} ${m.unit})`);
+  }
+
+  // ── 11. Tools with Calibration Data in Plant A ──────────────────────────
+  console.log('  🔧 Creating tools with calibration data...');
+  const toolsData = [
+    {
+      toolCode: 'UAT-CAL-VALID',
+      name: 'UAT-CAL-VALID',
+      category: 'Measurement',
+      condition: 'good',
+      status: 'available',
+      calStatus: 'calibrated' as const,
+      nextCalDue: new Date('2026-01-01'),
+      calIntervalDays: 365,
+    },
+    {
+      toolCode: 'UAT-CAL-EXPIRED',
+      name: 'UAT-CAL-EXPIRED',
+      category: 'Measurement',
+      condition: 'good',
+      status: 'available',
+      calStatus: 'expired' as const,
+      nextCalDue: new Date('2023-06-01'),
+      calIntervalDays: 365,
+    },
+    {
+      toolCode: 'UAT-CAL-FAILED',
+      name: 'UAT-CAL-FAILED',
+      category: 'Measurement',
+      condition: 'fair',
+      status: 'in_repair',
+      calStatus: 'failed' as const,
+      nextCalDue: null,
+      calIntervalDays: 365,
+    },
+  ];
+  for (const t of toolsData) {
+    const tool = await db.tool.upsert({
+      where: { toolCode: t.toolCode },
+      update: { name: t.name, category: t.category, condition: t.condition, status: t.status, plantId: plantA.id },
+      create: {
+        toolCode: t.toolCode,
+        name: t.name,
+        description: `UAT calibration test tool — ${t.calStatus}`,
+        category: t.category,
+        condition: t.condition,
+        status: t.status,
+        quantity: 1,
+        location: 'Calibration Lab',
+        plantId: plantA.id,
+        createdById: storekeeperId,
+      },
+    });
+    await db.toolCalibrationRequirement.upsert({
+      where: { toolId: tool.id },
+      update: {
+        calibrationRequired: true,
+        calibrationStatus: t.calStatus,
+        nextCalibrationDue: t.nextCalDue,
+        calibrationIntervalDays: t.calIntervalDays,
+      },
+      create: {
+        toolId: tool.id,
+        calibrationRequired: true,
+        calibrationStatus: t.calStatus,
+        nextCalibrationDue: t.nextCalDue,
+        calibrationIntervalDays: t.calIntervalDays,
+      },
+    });
+    console.log(`    ✅ ${t.toolCode} (cal: ${t.calStatus})`);
+  }
+
   // ── Summary ────────────────────────────────────────────────────────────
   console.log('\n✅ Repairs UAT seed completed successfully!');
   console.log(`   Plants: ${plantA.name} (${plantA.id.slice(0, 6)}), ${plantB.name} (${plantB.id.slice(0, 6)})`);
@@ -419,6 +562,9 @@ async function main() {
   console.log(`   Asset: ${asset.assetTag}`);
   console.log(`   WOs: ${woA1.woNumber} (single-tech), ${woA2.woNumber} (multi-tech)`);
   console.log(`   MR: ${mrUat.requestNumber}`);
+  console.log(`   Labor Rate: GHS 50/hr normal, 75/hr OT for uat_tech_single`);
+  console.log(`   Materials: 3 inventory items in Plant A`);
+  console.log(`   Tools: 3 calibration tools in Plant A (valid, expired, failed)`);
   console.log(`   All passwords: ${PASSWORD}`);
 }
 

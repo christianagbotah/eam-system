@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
-import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
 import {
   generateReport,
   SUPPORTED_REPORT_TYPES,

@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('sync:offline');
@@ -262,7 +262,7 @@ export async function POST(request: NextRequest) {
             where: { id: record.entityId },
             select: { id: true, plantId: true },
           });
-          if (woForScope?.plantId && plantScope.isScoped && plantScope.plantId && woForScope.plantId !== plantScope.plantId) {
+          if (!canAccessPlant(plantScope, woForScope?.plantId)) {
             results.push({ id: record.id, success: false, error: 'Access denied: work order is outside your plant scope' });
             continue;
           }

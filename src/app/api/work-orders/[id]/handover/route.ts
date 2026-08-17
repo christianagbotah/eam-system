@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { initiateHandover, resumeAfterHandover } from '@/services/workExecution.service';
 import type { SessionContext } from '@/services/workExecution.service';
 
@@ -18,18 +18,17 @@ export async function POST(
     const body = await request.json();
     const action = body.action as string | undefined;
 
-    // Plant scope check
+    // Plant scope check (denyAccess + canAccessPlant)
     const wo = await (await import('@/lib/db')).db.workOrder.findUnique({
       where: { id }, select: { id: true, plantId: true },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-    if (wo.plantId) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope.isScoped && plantScope.plantId && wo.plantId !== plantScope.plantId) {
-        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-      }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const sessionCtx: SessionContext = {

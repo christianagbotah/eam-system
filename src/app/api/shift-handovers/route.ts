@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {

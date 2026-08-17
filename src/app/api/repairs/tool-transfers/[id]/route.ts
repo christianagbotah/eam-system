@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { decrementToolRequestTransfer, checkAndCloseToolRequest } from '@/lib/tool-transfer-helpers';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
@@ -28,10 +28,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Plant scope validation
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     const recordPlantId = transfer.plantId || transfer.tool?.plantId;
-    if (plantScope.isScoped && plantScope.plantId && recordPlantId && recordPlantId !== plantScope.plantId) {
-      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, recordPlantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: transfer });

@@ -19,6 +19,10 @@ const USERS: Record<string, string> = {
   storekeeper: 'uat_storekeeper',
   plant_a_user: 'uat_plant_a_user',
   plant_b_user: 'uat_plant_b_user',
+  supervisor_plant_a: 'uat_supervisor_plant_a',
+  planner_plant_a: 'uat_planner_plant_a',
+  supervisor_plant_b: 'uat_supervisor_plant_b',
+  planner_plant_b: 'uat_planner_plant_b',
 };
 
 // ── Low-level helpers ────────────────────────────────────────────────────
@@ -110,6 +114,22 @@ export async function lookupPlantId(token: string, code: string): Promise<string
   const found = plants.find((p) => p.code === code);
   if (!found) throw new Error(`Plant ${code} not found`);
   plantCache[code] = found.id;
+  return found.id;
+}
+
+const toolCache: Record<string, string> = {};
+
+/** Look up a tool's DB ID by its name */
+export async function lookupToolId(token: string, toolName: string): Promise<string> {
+  if (toolCache[toolName]) return toolCache[toolName];
+  const { status, data } = await apiCall(token, 'GET', `/api/tools?search=${encodeURIComponent(toolName)}`);
+  if (status !== 200 || !data.success) {
+    throw new Error(`Failed to look up tool ${toolName}: ${status} ${JSON.stringify(data)}`);
+  }
+  const tools = data.data as Array<{ id: string; name: string }>;
+  const found = tools.find((t) => t.name === toolName);
+  if (!found) throw new Error(`Tool ${toolName} not found`);
+  toolCache[toolName] = found.id;
   return found.id;
 }
 
@@ -377,4 +397,48 @@ export async function requestReworkWO(token: string, woId: string, reason: strin
   const { status, data } = await apiCall(token, 'POST', `/api/work-orders/${woId}/rework`, { reason, category });
   if (status < 200 || status >= 300) throw new Error(`Rework failed: ${status} ${JSON.stringify(data)}`);
   return data.data || data;
+}
+
+// ── Plant-scoped helpers (for cross-plant security testing) ──────────────
+
+/** Make authenticated API call with explicit X-Plant-ID header */
+export async function apiCallWithPlant(
+  token: string,
+  method: string,
+  path: string,
+  plantId: string,
+  body?: unknown,
+) {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'X-Plant-ID': plantId,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json();
+  return { status: res.status, data: json };
+}
+
+/** Attempt an action with a forged X-Plant-ID header (expected to fail) */
+export async function expectFailureWithPlant(
+  token: string,
+  method: string,
+  path: string,
+  plantId: string,
+  body?: unknown,
+) {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'X-Plant-ID': plantId,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json();
+  return { status: res.status, data: json };
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 const VALID_TRIGGER_TYPES = ['time', 'meter', 'condition', 'production_count'];
 
@@ -87,6 +87,9 @@ export async function GET(request: NextRequest) {
 
     // Resolve plant scope via related schedule → asset
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     const where: Record<string, unknown> = {};
 

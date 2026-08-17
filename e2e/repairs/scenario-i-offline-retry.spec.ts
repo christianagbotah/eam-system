@@ -27,27 +27,26 @@ function generateIdempotencyKey(): string {
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-test.describe('Scenario I: Offline Replay / Idempotency', () => {
+test('UAT-10: Scenario I — Offline Replay / Idempotency', async () => {
   let woId: string;
   let assetId: string;
   let plantId: string;
   let techSingleUserId: string;
   let idempotencyKey: string;
 
-  test.beforeAll(async () => {
-    const plannerToken = await getToken('planner');
-    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
-    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
-    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
-  });
+  // Pre-resolve IDs via API
+  const plannerToken = await getToken('planner');
+  techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+  assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
   // ────────────────────────────────────────────────────────────────────
   // I1: Create and start WO for offline sync tests
   // ────────────────────────────────────────────────────────────────────
-  test('I1: Create and start WO for offline sync tests', async () => {
+  await test.step('I1: Create and start WO for offline sync tests', async () => {
     const requesterToken = await getToken('requester');
     const supervisorToken = await getToken('supervisor');
-    const plannerToken = await getToken('planner');
+    const planToken = await getToken('planner');
     const techToken = await getToken('tech_single');
 
     const mr = await createMR(requesterToken, {
@@ -59,7 +58,7 @@ test.describe('Scenario I: Offline Replay / Idempotency', () => {
     });
 
     await approveMR(supervisorToken, mr.id);
-    const wo = await convertMR(plannerToken, mr.id, {
+    const wo = await convertMR(planToken, mr.id, {
       assignedTo: techSingleUserId,
       tradeActivity: 'mechanical',
       workOrderType: 'preventive',
@@ -68,7 +67,7 @@ test.describe('Scenario I: Offline Replay / Idempotency', () => {
     woId = wo.id;
     expect(woId).toBeTruthy();
 
-    await assignWO(plannerToken, woId, { assignedTo: techSingleUserId });
+    await assignWO(planToken, woId, { assignedTo: techSingleUserId });
     await startWO(techToken, woId);
 
     const fetched = await getWO(techToken, woId);
@@ -78,7 +77,7 @@ test.describe('Scenario I: Offline Replay / Idempotency', () => {
   // ────────────────────────────────────────────────────────────────────
   // I2: First offline sync call with idempotency key succeeds
   // ────────────────────────────────────────────────────────────────────
-  test('I2: First offline sync call succeeds and creates record', async () => {
+  await test.step('I2: First offline sync call succeeds and creates record', async () => {
     const techToken = await getToken('tech_single');
     idempotencyKey = generateIdempotencyKey();
 
@@ -116,7 +115,7 @@ test.describe('Scenario I: Offline Replay / Idempotency', () => {
   // ────────────────────────────────────────────────────────────────────
   // I3: Second offline sync with SAME key is idempotent — no duplicate
   // ────────────────────────────────────────────────────────────────────
-  test('I3: Duplicate offline sync with same key does not create duplicate', async () => {
+  await test.step('I3: Duplicate offline sync with same key does not create duplicate', async () => {
     const techToken = await getToken('tech_single');
 
     const uniqueContent = `Offline sync test comment ${Date.now()}`;
@@ -155,7 +154,7 @@ test.describe('Scenario I: Offline Replay / Idempotency', () => {
   // ────────────────────────────────────────────────────────────────────
   // I4: New idempotency key creates a new record (not blocked by previous)
   // ────────────────────────────────────────────────────────────────────
-  test('I4: New idempotency key creates a separate record', async () => {
+  await test.step('I4: New idempotency key creates a separate record', async () => {
     const techToken = await getToken('tech_single');
     const newKey = generateIdempotencyKey();
     const uniqueContent = `Second offline comment ${Date.now()}`;
@@ -189,7 +188,7 @@ test.describe('Scenario I: Offline Replay / Idempotency', () => {
   // ────────────────────────────────────────────────────────────────────
   // I5: Offline time log with idempotency — no duplicate time entries
   // ────────────────────────────────────────────────────────────────────
-  test('I5: Offline time log idempotency prevents duplicate entries', async () => {
+  await test.step('I5: Offline time log idempotency prevents duplicate entries', async () => {
     const techToken = await getToken('tech_single');
     const timeIdempotencyKey = generateIdempotencyKey();
 

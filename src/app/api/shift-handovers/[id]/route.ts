@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -30,9 +30,8 @@ export async function GET(
 
     // Plant scope validation (through linked work order)
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-    if (plantScope.isScoped && plantScope.plantId && handover.workOrder?.plantId && handover.workOrder.plantId !== plantScope.plantId) {
-      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, handover.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: handover });
@@ -68,9 +67,8 @@ export async function PUT(
 
     // Phase 3G: Plant scope for update
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-    if (plantScope.isScoped && plantScope.plantId && existing.workOrder?.plantId && existing.workOrder.plantId !== plantScope.plantId) {
-      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -141,9 +139,8 @@ export async function DELETE(
 
     // Phase 3G: Plant scope for delete
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-    if (plantScope.isScoped && plantScope.plantId && existing.workOrder?.plantId && existing.workOrder.plantId !== plantScope.plantId) {
-      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     await db.shiftHandover.delete({ where: { id } });

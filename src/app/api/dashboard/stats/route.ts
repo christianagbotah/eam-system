@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
 // Prevent caching — dashboard data changes frequently
@@ -34,6 +34,9 @@ export async function GET(request: NextRequest) {
 
     // Resolve plant scope for multi-plant data isolation
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
     const plantFilter = getPlantFilterWhere(plantScope);
 
     // Build base where clauses for role-based filtering

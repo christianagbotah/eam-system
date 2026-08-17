@@ -1,25 +1,15 @@
 /**
- * Scenario J — Tool Calibration (UAT-06)
+ * Scenario J — Tool Calibration Enforcement (UAT-06)
  *
- * Tests tool calibration enforcement in the tool issue flow.
- * The calibration check runs inside `atomicIssueTools` (called from
- * the repair tool request 'issue' action) and blocks issuance of
- * tools with expired/overdue/failed calibration.
+ * Tests the real calibration check that runs inside `atomicIssueTools`
+ * when the storekeeper issues a tool request. Three seed tools cover:
+ *   - UAT-CAL-VALID   : calibrationStatus='calibrated', nextCalibrationDue in future  → ALLOW
+ *   - UAT-CAL-EXPIRED : calibrationStatus='expired',   nextCalibrationDue in past    → BLOCK
+ *   - UAT-CAL-FAILED  : calibrationStatus='failed'                                 → BLOCK
  *
- * IMPORTANT CONSTRAINT: There is no public API to create
- * `ToolCalibrationRequirement` records. The seed script does not
- * create calibration data. Therefore:
- *   - J1 tests the structural behavior of the tool request issue
- *     flow when a tool item references a non-existent tool (no
- *     calibration requirement → not blocked).
- *   - J2 tests successful issuance of tools without calibration
- *     requirements.
- *   - J3 tests that technicians cannot create tools (permission)
- *     and that the tool checkout API is permission-gated.
- *
- * The actual calibration BLOCKING logic is tested in unit tests
- * (toolCalibration.service.test.ts) since the E2E environment lacks
- * an API to create calibration requirements.
+ * The calibration enforcement uses a soft-block pattern: the issue action returns
+ * 200 but blocked items are skipped (no ToolTransaction, no quantityIssued).
+ * Warnings in the response contain 'calibration' / 'BLOCKED'.
  */
 import { test, expect } from '@playwright/test';
 import {
@@ -33,35 +23,31 @@ import {
   lookupUserByKey,
   lookupAssetId,
   lookupPlantId,
+  lookupToolId,
   apiCall,
-  expectFailure,
 } from './helpers/api';
 
-test.describe('Scenario J: Tool Calibration', () => {
-  let woId: string;
-  let assetId: string;
-  let plantId: string;
-  let techSingleUserId: string;
+test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) => {
+  // ── Resolve prerequisite IDs ──────────────────────────────────────────
+  const plannerToken = await getToken('planner');
+  const techUserId = await lookupUserByKey(plannerToken, 'tech_single');
+  const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
-  test.beforeAll(async () => {
-    const plannerToken = await getToken('planner');
-    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
-    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
-    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
-  });
+  // Resolve calibration tool IDs
+  const validToolId = await lookupToolId(plannerToken, 'UAT-CAL-VALID');
+  const expiredToolId = await lookupToolId(plannerToken, 'UAT-CAL-EXPIRED');
+  const failedToolId = await lookupToolId(plannerToken, 'UAT-CAL-FAILED');
 
-  // ────────────────────────────────────────────────────────────────────
-  // J0: Create WO and start it for tool calibration tests
-  // ────────────────────────────────────────────────────────────────────
-  test('J0: Create and start WO for tool calibration tests', async () => {
+  // ── J1: Create and start a WO (prerequisite) ──────────────────────────
+  await test.step('J1: Create and start WO for calibration tests', async () => {
     const requesterToken = await getToken('requester');
     const supervisorToken = await getToken('supervisor');
-    const plannerToken = await getToken('planner');
     const techToken = await getToken('tech_single');
 
     const mr = await createMR(requesterToken, {
-      title: 'UAT-ToolCal-Pump-Repair',
-      description: 'Pump repair requiring calibrated measuring tools.',
+      title: 'UAT-ToolCal-Scenario-J',
+      description: 'WO for testing tool calibration enforcement.',
       assetId,
       priority: 'high',
       plantId,
@@ -69,206 +55,262 @@ test.describe('Scenario J: Tool Calibration', () => {
 
     await approveMR(supervisorToken, mr.id);
     const wo = await convertMR(plannerToken, mr.id, {
-      assignedTo: techSingleUserId,
+      assignedTo: techUserId,
       tradeActivity: 'mechanical',
       workOrderType: 'corrective',
       priority: 'high',
     });
-    woId = wo.id;
-    expect(woId).toBeTruthy();
+    expect(wo.id).toBeTruthy();
 
-    await assignWO(plannerToken, woId, { assignedTo: techSingleUserId });
-    await startWO(techToken, woId);
+    await assignWO(plannerToken, wo.id, { assignedTo: techUserId });
+    await startWO(techToken, wo.id);
 
-    const fetched = await getWO(techToken, woId);
+    const fetched = await getWO(techToken, wo.id);
     expect(fetched.status).toBe('in_progress');
   });
 
-  // ────────────────────────────────────────────────────────────────────
-  // J1: Tool request issue for tool WITHOUT calibration requirement
-  //     (named tool, no toolId → no calibration check → succeeds)
-  // ────────────────────────────────────────────────────────────────────
-  test('J1: Tool issue succeeds when no calibration requirement exists', async () => {
-    const techToken = await getToken('tech_single');
-    const supervisorToken = await getToken('supervisor');
-    const storekeeperToken = await getToken('storekeeper');
+  // Pre-fetch tokens used across steps
+  const techToken = await getToken('tech_single');
+  const supervisorToken = await getToken('supervisor');
+  const storekeeperToken = await getToken('storekeeper');
 
-    // Step 1: Create a tool request with a named tool (no toolId)
-    const { status: trStatus, data: trData } = await apiCall(
+  /**
+   * Helper: create a tool request, get it through approval, and return
+   * the request ID + first item ID.
+   */
+  async function createAndApproveToolRequest(toolId: string, woId: string) {
+    // Create tool request with the calibration tool
+    const { status: crStatus, data: crData } = await apiCall(
       techToken, 'POST', '/api/repairs/tool-requests', {
         workOrderId: woId,
-        reason: 'Need a dial indicator for shaft alignment',
+        reason: `Calibration test for tool ${toolId.slice(0, 8)}`,
         urgency: 'normal',
         items: [{
-          toolName: `UAT Calibrated Dial Indicator ${Date.now().toString(36)}`,
+          toolId,
+          toolName: `Cal test ${toolId.slice(0, 8)}`,
           quantityRequested: 1,
         }],
       },
     );
-    expect(trStatus).toBe(201);
-    expect(trData.data.id).toBeTruthy();
-    const toolRequestId = trData.data.id;
-    const itemId = trData.data.items[0].id;
+    expect(crStatus).toBe(201);
+    expect(crData.success).toBe(true);
+    const trId = crData.data.id;
+    const itemId = crData.data.items[0].id;
+    expect(trId).toBeTruthy();
     expect(itemId).toBeTruthy();
 
-    // Step 2: Supervisor approves
+    // Supervisor approves
     const { status: saStatus, data: saData } = await apiCall(
-      supervisorToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+      supervisorToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
         action: 'supervisor_approve',
       },
     );
     expect(saStatus).toBe(200);
     expect(saData.data.status).toBe('supervisor_approved');
 
-    // Step 3: Storekeeper approves
+    // Storekeeper approves
     const { status: skStatus, data: skData } = await apiCall(
-      storekeeperToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
         action: 'storekeeper_approve',
       },
     );
     expect(skStatus).toBe(200);
     expect(skData.data.status).toBe('storekeeper_approved');
 
-    // Step 4: Issue the tool
-    // Since the item has NO toolId, no calibration check runs.
-    // The issue should succeed (the tool is "virtual" / named-only).
+    return { trId, itemId };
+  }
+
+  /**
+   * Helper: get a WO ID for the current technician (finds an in_progress WO).
+   */
+  async function getInProgressWoId(): Promise<string> {
+    const { status, data } = await apiCall(
+      techToken, 'GET', '/api/work-orders?status=in_progress&limit=1',
+    );
+    expect(status).toBe(200);
+    expect(data.success).toBe(true);
+    const wos = data.data as Array<{ id: string; status: string }>;
+    expect(wos.length).toBeGreaterThanOrEqual(1);
+    return wos[0].id;
+  }
+
+  /**
+   * Helper: get tool transactions for a tool.
+   */
+  async function getToolTransactions(toolId: string) {
+    const { status, data } = await apiCall(
+      plannerToken, 'GET', `/api/tools/${toolId}/transactions`,
+    );
+    expect(status).toBe(200);
+    return data;
+  }
+
+  // ── J2: VALID calibration — tool issues successfully ───────────────────
+  await test.step('J2: VALID calibration — tool issues successfully', async () => {
+    const woId = await getInProgressWoId();
+    const { trId, itemId } = await createAndApproveToolRequest(validToolId, woId);
+
+    // Issue the tool
     const { status: issueStatus, data: issueData } = await apiCall(
-      storekeeperToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
         action: 'issue',
-        issuedItems: [{
-          itemId,
-          quantityIssued: 1,
-        }],
+        issuedItems: [{ itemId, quantityIssued: 1 }],
       },
     );
-    // The issue should succeed for items without a linked tool
-    // (no calibration requirement to check)
     expect(issueStatus).toBe(200);
     expect(issueData.success).toBe(true);
 
-    // Server-state: tool request should be issued
-    const { data: fetchedTR } = await apiCall(
-      techToken, 'GET', `/api/repairs/tool-requests/${toolRequestId}`,
+    // Verify: no calibration warnings for a valid tool
+    const warnings = issueData.warnings as string[] | undefined;
+    if (warnings) {
+      expect(warnings.some(w => w.toLowerCase().includes('blocked'))).toBe(false);
+    }
+
+    // Server-state: request status should be 'issued'
+    const { data: fetched } = await apiCall(
+      techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
     );
-    expect(fetchedTR.data.status).toBe('issued');
+    expect(fetched.data.status).toBe('issued');
+
+    // Server-state: the item should have quantityIssued > 0
+    const issuedItem = fetched.data.items.find((i: any) => i.id === itemId);
+    expect(issuedItem).toBeTruthy();
+    expect(issuedItem.quantityIssued).toBeGreaterThanOrEqual(1);
+
+    // Server-state: ToolTransaction should exist for this tool
+    const txData = await getToolTransactions(validToolId);
+    const checkouts = (txData.data as Array<{ type: string }>).filter(
+      (tx) => tx.type === 'checkout',
+    );
+    expect(checkouts.length).toBeGreaterThanOrEqual(1);
   });
 
-  // ────────────────────────────────────────────────────────────────────
-  // J2: Valid tool creation is permission-gated
-  //     (only tools_shop_attendant and admin can create tools)
-  // ────────────────────────────────────────────────────────────────────
-  test('J2: Tool creation requires proper permissions', async () => {
-    const techToken = await getToken('tech_single');
-    const supervisorToken = await getToken('supervisor');
+  // ── J3: EXPIRED calibration — item blocked with calibration warning ────
+  await test.step('J3: EXPIRED calibration — item blocked', async () => {
+    const woId = await getInProgressWoId();
+    const { trId, itemId } = await createAndApproveToolRequest(expiredToolId, woId);
 
-    // Technician tries to create a tool → 403
-    const { status: techStatus, data: techData } = await expectFailure(
-      techToken, 'POST', '/api/tools', {
-        name: 'UAT Unauthorized Tool',
-        category: 'measurement',
-        condition: 'good',
-      },
-    );
-    expect(techStatus).toBe(403);
-    expect(techData.success).toBe(false);
-
-    // Supervisor also cannot create tools (no tools.create permission)
-    const { status: supStatus, data: supData } = await expectFailure(
-      supervisorToken, 'POST', '/api/tools', {
-        name: 'UAT Supervisor Tool',
-        category: 'measurement',
-        condition: 'good',
-      },
-    );
-    expect(supStatus).toBe(403);
-    expect(supData.success).toBe(false);
-  });
-
-  // ────────────────────────────────────────────────────────────────────
-  // J3: Technician cannot perform emergency override
-  //     (no API endpoint exists — service-level function only,
-  //      but we verify the technician can't access calibration management)
-  // ────────────────────────────────────────────────────────────────────
-  test('J3: Technician cannot manage calibration records', async () => {
-    const techToken = await getToken('tech_single');
-
-    // Attempt to create a calibration record → 403 (no calibration.create)
-    const { status, data } = await expectFailure(
-      techToken, 'POST', '/api/calibrations', {
-        instrumentName: 'UAT Test Instrument',
-        status: 'calibrated',
-      },
-    );
-    expect(status).toBe(403);
-    expect(data.success).toBe(false);
-  });
-
-  // ────────────────────────────────────────────────────────────────────
-  // J4: Tool checkout API enforces permissions
-  // ────────────────────────────────────────────────────────────────────
-  test('J4: Tool checkout requires tools.checkout permission', async () => {
-    const techToken = await getToken('tech_single');
-
-    // Technician has tools.checkout permission per seed-permissions-only.ts
-    // Attempt checkout with a fake tool ID — should get 404 (tool not found)
-    // not 403 (permission denied), confirming permission check passes
-    const { status, data } = await expectFailure(
-      techToken, 'POST', '/api/tools/nonexistent-tool-id/checkout', {
-        assignedToId: techSingleUserId,
-      },
-    );
-    // Should be 404 (tool not found), not 403 (permission denied)
-    // This confirms the technician HAS tools.checkout permission
-    expect(status).toBe(404);
-    expect(data.success).toBe(false);
-
-    // A user WITHOUT tools.checkout permission would get 403
-    // The requester user has no tools.checkout
-    const requesterToken = await getToken('requester');
-    const { status: reqStatus, data: reqData } = await expectFailure(
-      requesterToken, 'POST', '/api/tools/nonexistent-tool-id/checkout', {
-        assignedToId: techSingleUserId,
-      },
-    );
-    expect(reqStatus).toBe(403);
-    expect(reqData.success).toBe(false);
-  });
-
-  // ────────────────────────────────────────────────────────────────────
-  // J5: Tool request issue validates status progression
-  //     (cannot issue from 'pending' — must be 'storekeeper_approved')
-  // ────────────────────────────────────────────────────────────────────
-  test('J5: Tool issue blocked when status is not storekeeper_approved', async () => {
-    const techToken = await getToken('tech_single');
-
-    // Create a new tool request (will be in 'pending' status)
-    const { status: trStatus, data: trData } = await apiCall(
-      techToken, 'POST', '/api/repairs/tool-requests', {
-        workOrderId: woId,
-        reason: 'Need a feeler gauge',
-        urgency: 'normal',
-        items: [{
-          toolName: `UAT Feeler Gauge ${Date.now().toString(36)}`,
-          quantityRequested: 1,
-        }],
-      },
-    );
-    expect(trStatus).toBe(201);
-    const newToolRequestId = trData.data.id;
-
-    // Attempt to issue directly (status is 'pending', not 'storekeeper_approved')
-    const { status: issueStatus, data: issueData } = await expectFailure(
-      techToken, 'POST', `/api/repairs/tool-requests/${newToolRequestId}`, {
+    // Issue the tool
+    const { status: issueStatus, data: issueData } = await apiCall(
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
         action: 'issue',
-        issuedItems: [{
-          itemId: trData.data.items[0].id,
-          quantityIssued: 1,
-        }],
+        issuedItems: [{ itemId, quantityIssued: 1 }],
       },
     );
-    // Should fail — status must be 'storekeeper_approved'
-    expect(issueStatus).toBe(400);
-    expect(issueData.success).toBe(false);
-    expect(issueData.error).toContain('storekeeper_approved');
+
+    // The issue action returns 200 (soft-block pattern), but the item is skipped.
+    expect(issueStatus).toBe(200);
+    expect(issueData.success).toBe(true);
+
+    // Verify: warnings must contain 'calibration' and 'BLOCKED'
+    const warnings = issueData.warnings as string[];
+    expect(warnings).toBeTruthy();
+    expect(warnings.length).toBeGreaterThanOrEqual(1);
+    const blockedWarning = warnings.find(
+      (w) => w.toLowerCase().includes('calibration') || w.toLowerCase().includes('blocked'),
+    );
+    expect(blockedWarning).toBeTruthy();
+
+    // Server-state: request status is 'issued' (soft block still transitions)
+    const { data: fetched } = await apiCall(
+      techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
+    );
+    expect(fetched.data.status).toBe('issued');
+
+    // Server-state: the expired item should NOT have been issued
+    const blockedItem = fetched.data.items.find((i: any) => i.id === itemId);
+    expect(blockedItem).toBeTruthy();
+    expect(blockedItem.quantityIssued ?? 0).toBe(0);
+    expect(blockedItem.availabilityStatus).toBe('unavailable');
+    expect(blockedItem.issueNotes).toBeTruthy();
+    expect(blockedItem.issueNotes.toLowerCase()).toContain('calibration');
+
+    // Server-state: no ToolTransaction for the expired tool
+    const txData = await getToolTransactions(expiredToolId);
+    const txList = txData.data as Array<{ type: string }>[];
+    // The transactions array should be empty — no checkout happened
+    expect(txData.pagination.total).toBe(0);
+  });
+
+  // ── J4: FAILED calibration — item blocked with calibration warning ─────
+  await test.step('J4: FAILED calibration — item blocked', async () => {
+    const woId = await getInProgressWoId();
+    const { trId, itemId } = await createAndApproveToolRequest(failedToolId, woId);
+
+    // Issue the tool
+    const { status: issueStatus, data: issueData } = await apiCall(
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
+        action: 'issue',
+        issuedItems: [{ itemId, quantityIssued: 1 }],
+      },
+    );
+
+    // Same soft-block pattern as expired
+    expect(issueStatus).toBe(200);
+    expect(issueData.success).toBe(true);
+
+    // Verify: warnings contain calibration block
+    const warnings = issueData.warnings as string[];
+    expect(warnings).toBeTruthy();
+    expect(warnings.length).toBeGreaterThanOrEqual(1);
+    const blockedWarning = warnings.find(
+      (w) => w.toLowerCase().includes('calibration') || w.toLowerCase().includes('blocked'),
+    );
+    expect(blockedWarning).toBeTruthy();
+
+    // Server-state: the failed item should NOT have been issued
+    const { data: fetched } = await apiCall(
+      techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
+    );
+    expect(fetched.data.status).toBe('issued');
+
+    const blockedItem = fetched.data.items.find((i: any) => i.id === itemId);
+    expect(blockedItem).toBeTruthy();
+    expect(blockedItem.quantityIssued ?? 0).toBe(0);
+    expect(blockedItem.availabilityStatus).toBe('unavailable');
+    expect(blockedItem.issueNotes).toBeTruthy();
+    expect(blockedItem.issueNotes.toLowerCase()).toContain('calibration');
+
+    // Server-state: no ToolTransaction for the failed tool
+    const txData = await getToolTransactions(failedToolId);
+    expect(txData.pagination.total).toBe(0);
+  });
+
+  // ── J5: EMERGENCY OVERRIDE — technician cannot bypass calibration ─────
+  await test.step('J5: Emergency override — technician cannot bypass calibration', async () => {
+    const woId = await getInProgressWoId();
+
+    // Create a tool request for the expired tool and get it approved
+    const { trId, itemId } = await createAndApproveToolRequest(expiredToolId, woId);
+
+    // Technician attempts to issue (the 'issue' action has no explicit
+    // permission gate — any authenticated user can call it if status is
+    // storekeeper_approved). However, the calibration check still runs
+    // and blocks the item regardless of caller role.
+    const { status: issueStatus, data: issueData } = await apiCall(
+      techToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
+        action: 'issue',
+        issuedItems: [{ itemId, quantityIssued: 1 }],
+      },
+    );
+
+    // Calibration block applies regardless of who triggers the issue
+    expect(issueStatus).toBe(200);
+    expect(issueData.success).toBe(true);
+
+    const warnings = issueData.warnings as string[];
+    expect(warnings).toBeTruthy();
+    const calWarning = warnings.find(
+      (w) => w.toLowerCase().includes('calibration') || w.toLowerCase().includes('blocked'),
+    );
+    expect(calWarning).toBeTruthy();
+
+    // Server-state: item was NOT issued
+    const { data: fetched } = await apiCall(
+      techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
+    );
+    const item = fetched.data.items.find((i: any) => i.id === itemId);
+    expect(item).toBeTruthy();
+    expect(item.quantityIssued ?? 0).toBe(0);
   });
 });

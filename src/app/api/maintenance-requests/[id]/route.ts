@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: check if user can edit/delete a pending request (must be requester or admin)
@@ -69,9 +69,9 @@ export async function GET(
     }
 
     // IDOR protection: ensure user has access to this MR's plant
-    if (mr.plantId && !isAdmin(session)) {
+    if (!isAdmin(session)) {
       const plantScope = await getPlantScope(request, session);
-      if (plantScope.isScoped && plantScope.plantId && mr.plantId !== plantScope.plantId) {
+      if (plantScope.denyAccess || !canAccessPlant(plantScope, mr.plantId)) {
         // Check if user has access to the MR's plant via their userPlant records
         const hasPlantAccess = await db.userPlant.findFirst({
           where: { userId: session.userId, plantId: mr.plantId },

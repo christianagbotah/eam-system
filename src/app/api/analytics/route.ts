@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
 
 // Safely check if a Prisma model exists (handles stale cached client)
 function hasModel(client: any, model: string): boolean {
@@ -17,6 +17,9 @@ export async function GET(request: NextRequest) {
     }
 
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
     const plantFilter = getPlantFilterWhere(plantScope);
 
     const { searchParams } = new URL(request.url);

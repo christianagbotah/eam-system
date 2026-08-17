@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { db } from '@/lib/db';
 
 // ============================================================================
@@ -46,7 +46,7 @@ type EntityType = 'work_order' | 'maintenance_request';
 // DEFAULT TRANSITIONS (auto-seeded when table is empty)
 // ============================================================================
 
-const DEFAULT_MR_TRANSITIONS = [
+export const DEFAULT_MR_TRANSITIONS = [
   {
     fromStatus: null as string | null,
     toStatus: 'pending',
@@ -90,7 +90,7 @@ const DEFAULT_MR_TRANSITIONS = [
   },
 ];
 
-const DEFAULT_WO_TRANSITIONS = [
+export const DEFAULT_WO_TRANSITIONS = [
   { fromStatus: null as string | null, toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: false },
   { fromStatus: 'draft', toStatus: 'requested', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
   { fromStatus: 'draft', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
@@ -138,10 +138,85 @@ const DEFAULT_WO_TRANSITIONS = [
 let _seedAttempted = false;
 
 /**
+ * Seed ALL canonical transitions from the authoritative DEFAULT_*_TRANSITIONS arrays.
+ *
+ * Uses upsert on the `entityType_fromStatus_toStatus` unique constraint so it is
+ * fully idempotent — safe to call multiple times, even when partial data already
+ * exists (e.g. from a prior UAT seed that only inserted 14 WO transitions).
+ *
+ * Accepts an optional Prisma client so both the Next.js runtime (default `db`)
+ * and external scripts (their own PrismaClient) can call it.
+ */
+export async function seedCanonicalTransitions(
+  client?: PrismaClient,
+): Promise<number> {
+  const tx = client ?? db;
+  let seeded = 0;
+
+  // Seed MR transitions
+  for (let i = 0; i < DEFAULT_MR_TRANSITIONS.length; i++) {
+    const t = DEFAULT_MR_TRANSITIONS[i];
+    await tx.statusTransition.upsert({
+      where: {
+        entityType_fromStatus_toStatus: {
+          entityType: 'maintenance_request',
+          fromStatus: t.fromStatus,
+          toStatus: t.toStatus,
+        },
+      },
+      update: {
+        allowedRoleSlugs: t.allowedRoleSlugs,
+        requiresReason: t.requiresReason,
+        sortOrder: i,
+      },
+      create: {
+        entityType: 'maintenance_request',
+        fromStatus: t.fromStatus,
+        toStatus: t.toStatus,
+        allowedRoleSlugs: t.allowedRoleSlugs,
+        requiresReason: t.requiresReason,
+        sortOrder: i,
+      },
+    });
+    seeded++;
+  }
+
+  // Seed WO transitions
+  for (let i = 0; i < DEFAULT_WO_TRANSITIONS.length; i++) {
+    const t = DEFAULT_WO_TRANSITIONS[i];
+    await tx.statusTransition.upsert({
+      where: {
+        entityType_fromStatus_toStatus: {
+          entityType: 'work_order',
+          fromStatus: t.fromStatus,
+          toStatus: t.toStatus,
+        },
+      },
+      update: {
+        allowedRoleSlugs: t.allowedRoleSlugs,
+        requiresReason: t.requiresReason,
+        sortOrder: i,
+      },
+      create: {
+        entityType: 'work_order',
+        fromStatus: t.fromStatus,
+        toStatus: t.toStatus,
+        allowedRoleSlugs: t.allowedRoleSlugs,
+        requiresReason: t.requiresReason,
+        sortOrder: i,
+      },
+    });
+    seeded++;
+  }
+
+  return seeded;
+}
+
+/**
  * Ensure the status_transitions table has the required rows.
  * If the table is empty (e.g., after a fresh deploy), auto-seed it.
- * Uses upsert semantics to avoid duplicate key errors.
- * Returns true if seeded, false if already populated.
+ * Uses the canonical seedCanonicalTransitions() which is idempotent via upsert.
+ * Returns true if seeding was performed, false if already populated.
  */
 async function ensureTransitionsSeeded(): Promise<boolean> {
   if (_seedAttempted) return false;
@@ -155,54 +230,8 @@ async function ensureTransitionsSeeded(): Promise<boolean> {
 
     console.warn('[state-machine] status_transitions table is empty — auto-seeding default transitions...');
 
-    // Seed MR transitions
-    for (let i = 0; i < DEFAULT_MR_TRANSITIONS.length; i++) {
-      const t = DEFAULT_MR_TRANSITIONS[i];
-      await db.statusTransition.upsert({
-        where: {
-          // Use a unique composite key workaround: entityType + fromStatus + toStatus
-          // Since there's no unique constraint on these, we use create+catch-duplicate
-          id: `auto-mr-${t.fromStatus ?? 'init'}-to-${t.toStatus}`,
-        },
-        update: {},
-        create: {
-          id: `auto-mr-${t.fromStatus ?? 'init'}-to-${t.toStatus}`,
-          entityType: 'maintenance_request',
-          fromStatus: t.fromStatus,
-          toStatus: t.toStatus,
-          allowedRoleSlugs: t.allowedRoleSlugs,
-          requiresReason: t.requiresReason,
-          sortOrder: i,
-        },
-      }).catch(() => {
-        // If the ID already exists (unlikely but possible), just skip
-      });
-    }
-
-    // Seed WO transitions
-    for (let i = 0; i < DEFAULT_WO_TRANSITIONS.length; i++) {
-      const t = DEFAULT_WO_TRANSITIONS[i];
-      await db.statusTransition.upsert({
-        where: {
-          id: `auto-wo-${t.fromStatus ?? 'init'}-to-${t.toStatus}`,
-        },
-        update: {},
-        create: {
-          id: `auto-wo-${t.fromStatus ?? 'init'}-to-${t.toStatus}`,
-          entityType: 'work_order',
-          fromStatus: t.fromStatus,
-          toStatus: t.toStatus,
-          allowedRoleSlugs: t.allowedRoleSlugs,
-          requiresReason: t.requiresReason,
-          sortOrder: i,
-        },
-      }).catch(() => {
-        // Skip on duplicate
-      });
-    }
-
-    const newCount = await db.statusTransition.count();
-    console.warn(`[state-machine] ✅ Auto-seeded ${newCount} default status transitions`);
+    const seeded = await seedCanonicalTransitions();
+    console.warn(`[state-machine] ✅ Auto-seeded ${seeded} default status transitions`);
 
     _seedAttempted = true;
     return true;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { generateReportPDF, type ReportPDFParams } from '@/lib/generate-report-pdf';
 
 type ReportType = 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance';

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 // 24-hour threshold for overdue detection
 const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -37,9 +37,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Plant scope validation (through linked work order)
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-    if (plantScope.isScoped && plantScope.plantId && matReq.workOrder?.plantId && matReq.workOrder.plantId !== plantScope.plantId) {
-      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, matReq.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Compute overdue flag: pending requests older than 24 hours
