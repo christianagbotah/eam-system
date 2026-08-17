@@ -1,165 +1,194 @@
 /**
  * Scenario D — Assistance Request Flow
  *
- * Tests: technician requests help → supervisor approves →
- * helper joins and logs time → helper time appears in completion.
+ * Tests: technician requests help → supervisor/planner approves →
+ * helper joins and logs time → helper appears in team members.
+ *
+ * Uses the API for assistance request creation and approval.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
 import {
   authenticateAs,
-  navigateToWOList,
+  navigateToWODetail,
 } from './helpers/auth';
+import {
+  getToken,
+  createMR,
+  approveMR,
+  convertMR,
+  startWO,
+ logTime,
+  completeWO,
+  verifyWO,
+  closeWO,
+  getWO,
+  requestAssistance,
+  approveAssistanceRequest,
+  getTeamMemberRequests,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+} from './helpers/api';
 
 test.describe('Scenario D: Assistance Request Flow', () => {
   let context: BrowserContext;
-  const WO_NUMBER = 'WO-UAT-A1'; // Use pre-seeded single-tech WO
+
+  let mrId: string;
+  let woId: string;
+  let assetId: string;
+  let plantId: string;
+  let techSingleUserId: string;
+  let techAssistantUserId: string;
+  let assistanceReqId: string;
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext();
+
+    const plannerToken = await getToken('planner');
+    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    techAssistantUserId = await lookupUserByKey(plannerToken, 'tech_assistant');
+    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   });
 
   test.afterAll(async () => {
     await context?.close();
   });
 
-  test('D1: Technician requests assistance', async () => {
+  // ────────────────────────────────────────────────────────────────────
+  // D1: Create WO and start it (prerequisite for assistance)
+  // ────────────────────────────────────────────────────────────────────
+  test('D1: Create and start WO for assistance scenario', async () => {
+    const reqToken = await getToken('requester');
+    const mr = await createMR(reqToken, {
+      title: 'UAT-Assistance-Pump-Wiring',
+      description: 'Pump wiring needs electrical expertise. Mechanical work done.',
+      assetId,
+      priority: 'high',
+      plantId,
+    });
+    mrId = mr.id;
+    expect(mrId).toBeTruthy();
+
+    const supToken = await getToken('supervisor');
+    await approveMR(supToken, mrId);
+
+    const planToken = await getToken('planner');
+    const wo = await convertMR(planToken, mrId, {
+      assignedTo: techSingleUserId,
+      tradeActivity: 'mechanical',
+      workOrderType: 'corrective',
+    });
+    woId = wo.id;
+    expect(woId).toBeTruthy();
+
+    // Start the WO
+    const techToken = await getToken('tech_single');
+    await startWO(techToken, woId);
+
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // D2: Technician requests assistance (specific user)
+  // ────────────────────────────────────────────────────────────────────
+  test('D2: Technician requests assistance for electrical expertise', async () => {
+    const token = await getToken('tech_single');
+
+    const req = await requestAssistance(token, woId, {
+      requestedUserId: techAssistantUserId,
+      reason: 'Need electrical expertise for motor wiring check',
+      role: 'assistant',
+    });
+
+    assistanceReqId = req.id;
+    expect(assistanceReqId).toBeTruthy();
+    expect(req.status).toBe('pending');
+
+    // Server-state: request exists and is pending
+    const requests = await getTeamMemberRequests(token, woId);
+    const found = requests.find((r: { id: string }) => r.id === assistanceReqId);
+    expect(found).toBeTruthy();
+    expect(found.status).toBe('pending');
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // D3: Planner approves assistance request
+  // ────────────────────────────────────────────────────────────────────
+  test('D3: Planner approves assistance and assigns assistant', async () => {
+    const token = await getToken('planner');
+
+    const result = await approveAssistanceRequest(
+      token,
+      woId,
+      assistanceReqId,
+      techAssistantUserId,
+    );
+
+    expect(result).toBeTruthy();
+    expect(result.status).toBe('approved');
+
+    // Server-state: WO should now have the assistant as team member
+    const fetched = await getWO(token, woId);
+    const teamMemberIds = (fetched.teamMembers || []).map((m: { userId: string }) => m.userId);
+    expect(teamMemberIds).toContain(techAssistantUserId);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // D4: Helper joins and logs time
+  // ────────────────────────────────────────────────────────────────────
+  test('D4: Assistant logs time on the WO', async () => {
+    const token = await getToken('tech_assistant');
+
+    const timeLog = await logTime(token, woId, {
+      action: 'start',
+      manualHours: 1.5,
+      notes: 'Electrical wiring checked. Connections tight.',
+    });
+
+    expect(timeLog).toBeTruthy();
+    expect(timeLog.id).toBeTruthy();
+
+    // Server-state: WO actual hours should include assistant time
+    const fetched = await getWO(token, woId);
+    expect(fetched.actualHours).toBeGreaterThanOrEqual(1.5);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // D5: Verify assistant appears in team on UI
+  // ────────────────────────────────────────────────────────────────────
+  test('D5: UI shows assistant as team member', async () => {
     await authenticateAs(context, 'tech_single');
     const page = await context.newPage();
+    await navigateToWODetail(page, woId);
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Request assistance', async () => {
-      const assistBtn = page.locator('button').filter({ hasText: /Request Help|Assistance|Request Member/i }).first();
-      if (await assistBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await assistBtn.click();
-        await page.waitForTimeout(1000);
-
-        // Fill assistance request
-        const reasonInput = page.locator('textarea, input[placeholder*="reason"]').first();
-        if (await reasonInput.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await reasonInput.fill('Need electrical expertise for motor wiring check');
-        }
-
-        // Select trade needed
-        const tradeSelect = page.locator('text=Electrical').first();
-        if (await tradeSelect.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await tradeSelect.click();
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Request|Send/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(2000);
-      }
-
-      // Verify request was created
-      const bodyText = await page.textContent('body');
-      expect(bodyText).toContain('pending');
-    });
-
+    // The assistant's name should appear on the page
+    await expect(page.locator('body')).toContainText('UAT Tech Assistant', { timeout: 10_000 });
     await page.close();
   });
 
-  test('D2: Supervisor approves assistance request', async () => {
-    await authenticateAs(context, 'supervisor');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // D6: Complete and close the WO
+  // ────────────────────────────────────────────────────────────────────
+  test('D6: Complete, verify, and close WO after assistance', async () => {
+    const techToken = await getToken('tech_single');
+    await completeWO(techToken, woId, 'Pump wiring complete. All checks passed.');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    let fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('completed');
 
-    await test.step('Approve the assistance request', async () => {
-      const approveBtn = page.locator('button').filter({ hasText: /Approve/i }).first();
-      if (await approveBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await approveBtn.click();
-        await page.waitForTimeout(1000);
+    const supToken = await getToken('supervisor');
+    await verifyWO(supToken, woId, 4);
 
-        // Select the assistant user
-        const techOption = page.locator('text=UAT Tech Assistant').first();
-        if (await techOption.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await techOption.click();
-        }
+    fetched = await getWO(supToken, woId);
+    expect(fetched.status).toBe('verified');
 
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Confirm|Approve|Save/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    });
+    const planToken = await getToken('planner');
+    await closeWO(planToken, woId);
 
-    await page.close();
-  });
-
-  test('D3: Helper joins and logs time', async () => {
-    await authenticateAs(context, 'tech_assistant');
-    const page = await context.newPage();
-
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Verify team membership', async () => {
-      const bodyText = await page.textContent('body');
-      expect(bodyText).toContain('UAT Tech Assistant');
-    });
-
-    await test.step('Log time as helper', async () => {
-      const timeTab = page.locator('text=Time').first();
-      if (await timeTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await timeTab.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const logBtn = page.locator('button').filter({ hasText: /Log Time|Start|Add/i }).first();
-      if (await logBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await logBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await page.close();
-  });
-
-  test('D4: Helper time appears in completion data', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
-
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Check time logs include helper', async () => {
-      const timeTab = page.locator('text=Time').first();
-      if (await timeTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await timeTab.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const bodyText = await page.textContent('body');
-      // The assistant's name should appear in the time logs
-      expect(bodyText).toContain('UAT Tech Assistant');
-    });
-
-    await page.close();
+    fetched = await getWO(planToken, woId);
+    expect(fetched.status).toBe('closed');
+    expect(fetched.isLocked).toBe(true);
   });
 });

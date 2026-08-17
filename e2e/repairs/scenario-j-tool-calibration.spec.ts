@@ -1,169 +1,274 @@
 /**
- * Scenario J — Tool Calibration Blocking (UAT-06)
+ * Scenario J — Tool Calibration (UAT-06)
  *
- * Tests: expired calibration tool → issuance MUST be blocked;
- * valid calibrated tool → issuance succeeds.
+ * Tests tool calibration enforcement in the tool issue flow.
+ * The calibration check runs inside `atomicIssueTools` (called from
+ * the repair tool request 'issue' action) and blocks issuance of
+ * tools with expired/overdue/failed calibration.
+ *
+ * IMPORTANT CONSTRAINT: There is no public API to create
+ * `ToolCalibrationRequirement` records. The seed script does not
+ * create calibration data. Therefore:
+ *   - J1 tests the structural behavior of the tool request issue
+ *     flow when a tool item references a non-existent tool (no
+ *     calibration requirement → not blocked).
+ *   - J2 tests successful issuance of tools without calibration
+ *     requirements.
+ *   - J3 tests that technicians cannot create tools (permission)
+ *     and that the tool checkout API is permission-gated.
+ *
+ * The actual calibration BLOCKING logic is tested in unit tests
+ * (toolCalibration.service.test.ts) since the E2E environment lacks
+ * an API to create calibration requirements.
  */
-import { test, expect, type BrowserContext } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import {
-  authenticateAs,
-  navigateToWOList,
-} from './helpers/auth';
+  getToken,
+  createMR,
+  approveMR,
+  convertMR,
+  assignWO,
+  startWO,
+  getWO,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+  apiCall,
+  expectFailure,
+} from './helpers/api';
 
-test.describe('Scenario J: Tool Calibration Blocking', () => {
-  let context: BrowserContext;
+test.describe('Scenario J: Tool Calibration', () => {
+  let woId: string;
+  let assetId: string;
+  let plantId: string;
+  let techSingleUserId: string;
 
-  test.beforeAll(async ({ browser }) => {
-    context = await browser.newContext();
+  test.beforeAll(async () => {
+    const plannerToken = await getToken('planner');
+    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   });
 
-  test.afterAll(async () => {
-    await context?.close();
+  // ────────────────────────────────────────────────────────────────────
+  // J0: Create WO and start it for tool calibration tests
+  // ────────────────────────────────────────────────────────────────────
+  test('J0: Create and start WO for tool calibration tests', async () => {
+    const requesterToken = await getToken('requester');
+    const supervisorToken = await getToken('supervisor');
+    const plannerToken = await getToken('planner');
+    const techToken = await getToken('tech_single');
+
+    const mr = await createMR(requesterToken, {
+      title: 'UAT-ToolCal-Pump-Repair',
+      description: 'Pump repair requiring calibrated measuring tools.',
+      assetId,
+      priority: 'high',
+      plantId,
+    });
+
+    await approveMR(supervisorToken, mr.id);
+    const wo = await convertMR(plannerToken, mr.id, {
+      assignedTo: techSingleUserId,
+      tradeActivity: 'mechanical',
+      workOrderType: 'corrective',
+      priority: 'high',
+    });
+    woId = wo.id;
+    expect(woId).toBeTruthy();
+
+    await assignWO(plannerToken, woId, { assignedTo: techSingleUserId });
+    await startWO(techToken, woId);
+
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
   });
 
-  test('J1: Expired calibration tool — issuance is blocked', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // J1: Tool request issue for tool WITHOUT calibration requirement
+  //     (named tool, no toolId → no calibration check → succeeds)
+  // ────────────────────────────────────────────────────────────────────
+  test('J1: Tool issue succeeds when no calibration requirement exists', async () => {
+    const techToken = await getToken('tech_single');
+    const supervisorToken = await getToken('supervisor');
+    const storekeeperToken = await getToken('storekeeper');
 
-    await test.step('Navigate to WO and open tool request', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    // Step 1: Create a tool request with a named tool (no toolId)
+    const { status: trStatus, data: trData } = await apiCall(
+      techToken, 'POST', '/api/repairs/tool-requests', {
+        workOrderId: woId,
+        reason: 'Need a dial indicator for shaft alignment',
+        urgency: 'normal',
+        items: [{
+          toolName: `UAT Calibrated Dial Indicator ${Date.now().toString(36)}`,
+          quantityRequested: 1,
+        }],
+      },
+    );
+    expect(trStatus).toBe(201);
+    expect(trData.data.id).toBeTruthy();
+    const toolRequestId = trData.data.id;
+    const itemId = trData.data.items[0].id;
+    expect(itemId).toBeTruthy();
 
-    await test.step('Navigate to Tool tab', async () => {
-      const toolTab = page.locator('text=Tool').first();
-      if (await toolTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await toolTab.click();
-        await page.waitForTimeout(1000);
-      }
-    });
+    // Step 2: Supervisor approves
+    const { status: saStatus, data: saData } = await apiCall(
+      supervisorToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'supervisor_approve',
+      },
+    );
+    expect(saStatus).toBe(200);
+    expect(saData.data.status).toBe('supervisor_approved');
 
-    await test.step('Attempt to request expired-calibration tool', async () => {
-      const requestBtn = page.locator('button').filter({ hasText: /Request|Add Tool/i }).first();
-      if (await requestBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await requestBtn.click();
-        await page.waitForTimeout(1000);
+    // Step 3: Storekeeper approves
+    const { status: skStatus, data: skData } = await apiCall(
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'storekeeper_approve',
+      },
+    );
+    expect(skStatus).toBe(200);
+    expect(skData.data.status).toBe('storekeeper_approved');
 
-        // Search for or select the expired calibration tool
-        const searchInput = page.locator('input[placeholder*="search"], input[placeholder*="tool"], input[placeholder*="name"] ').first();
-        if (await searchInput.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await searchInput.fill('Expired Caliper');
-          await page.waitForTimeout(500);
-        }
+    // Step 4: Issue the tool
+    // Since the item has NO toolId, no calibration check runs.
+    // The issue should succeed (the tool is "virtual" / named-only).
+    const { status: issueStatus, data: issueData } = await apiCall(
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'issue',
+        issuedItems: [{
+          itemId,
+          quantityIssued: 1,
+        }],
+      },
+    );
+    // The issue should succeed for items without a linked tool
+    // (no calibration requirement to check)
+    expect(issueStatus).toBe(200);
+    expect(issueData.success).toBe(true);
 
-        // If a result appears, try to select it
-        const resultOption = page.locator('text=Expired Caliper').first();
-        if (await resultOption.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await resultOption.click();
-          await page.waitForTimeout(500);
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Request|Save/i }).last();
-        if (await submitBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await submitBtn.click();
-          await page.waitForTimeout(2000);
-        }
-      }
-    });
-
-    await test.step('Verify issuance is blocked with calibration error', async () => {
-      const bodyText = await page.textContent('body');
-      const isBlocked =
-        bodyText?.includes('calibration') ||
-        bodyText?.includes('expired') ||
-        bodyText?.includes('CALIBRATION') ||
-        bodyText?.includes('CALIBRATION_REQUIRED') ||
-        bodyText?.includes('overdue');
-
-      // Either the tool is filtered out of search results or
-      // an error message is shown when attempting to issue
-      expect(isBlocked || true).toBeTruthy(); // Pass if tool not found (filtered) or error shown
-    });
-
-    await page.close();
+    // Server-state: tool request should be issued
+    const { data: fetchedTR } = await apiCall(
+      techToken, 'GET', `/api/repairs/tool-requests/${toolRequestId}`,
+    );
+    expect(fetchedTR.data.status).toBe('issued');
   });
 
-  test('J2: Valid calibrated tool — issuance succeeds', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // J2: Valid tool creation is permission-gated
+  //     (only tools_shop_attendant and admin can create tools)
+  // ────────────────────────────────────────────────────────────────────
+  test('J2: Tool creation requires proper permissions', async () => {
+    const techToken = await getToken('tech_single');
+    const supervisorToken = await getToken('supervisor');
 
-    await test.step('Navigate to WO and open tool request', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    // Technician tries to create a tool → 403
+    const { status: techStatus, data: techData } = await expectFailure(
+      techToken, 'POST', '/api/tools', {
+        name: 'UAT Unauthorized Tool',
+        category: 'measurement',
+        condition: 'good',
+      },
+    );
+    expect(techStatus).toBe(403);
+    expect(techData.success).toBe(false);
 
-    await test.step('Navigate to Tool tab', async () => {
-      const toolTab = page.locator('text=Tool').first();
-      if (await toolTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await toolTab.click();
-        await page.waitForTimeout(1000);
-      }
-    });
-
-    await test.step('Request a valid calibrated tool', async () => {
-      const requestBtn = page.locator('button').filter({ hasText: /Request|Add Tool/i }).first();
-      if (await requestBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await requestBtn.click();
-        await page.waitForTimeout(1000);
-
-        const searchInput = page.locator('input[placeholder*="search"], input[placeholder*="tool"], input[placeholder*="name"] ').first();
-        if (await searchInput.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await searchInput.fill('Calibrated Torque Wrench');
-          await page.waitForTimeout(500);
-        }
-
-        const resultOption = page.locator('text=Calibrated Torque Wrench').first();
-        if (await resultOption.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await resultOption.click();
-          await page.waitForTimeout(500);
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Request|Save/i }).last();
-        if (await submitBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await submitBtn.click();
-          await page.waitForTimeout(2000);
-        }
-      }
-    });
-
-    await test.step('Verify issuance succeeds (no calibration error)', async () => {
-      const bodyText = await page.textContent('body');
-      const hasCalibrationError =
-        (bodyText?.includes('calibration') && bodyText?.includes('expired')) ||
-        bodyText?.includes('CALIBRATION_REQUIRED') ||
-        bodyText?.includes('CALIBRATION_OVERDUE');
-
-      // Should NOT have a calibration blocker
-      expect(hasCalibrationError === false || hasCalibrationError === undefined).toBeTruthy();
-    });
-
-    await page.close();
+    // Supervisor also cannot create tools (no tools.create permission)
+    const { status: supStatus, data: supData } = await expectFailure(
+      supervisorToken, 'POST', '/api/tools', {
+        name: 'UAT Supervisor Tool',
+        category: 'measurement',
+        condition: 'good',
+      },
+    );
+    expect(supStatus).toBe(403);
+    expect(supData.success).toBe(false);
   });
 
-  test('J3: Emergency override requires authorization', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // J3: Technician cannot perform emergency override
+  //     (no API endpoint exists — service-level function only,
+  //      but we verify the technician can't access calibration management)
+  // ────────────────────────────────────────────────────────────────────
+  test('J3: Technician cannot manage calibration records', async () => {
+    const techToken = await getToken('tech_single');
 
-    await test.step('Technician cannot bypass calibration without override permission', async () => {
-      // Technicians should not have permission to use emergency override
-      // The override is restricted to supervisors/admins
-      const bodyText = await page.textContent('body');
-      const hasOverrideBtn =
-        bodyText?.includes('Emergency Override') ||
-        bodyText?.includes('emergency_override');
+    // Attempt to create a calibration record → 403 (no calibration.create)
+    const { status, data } = await expectFailure(
+      techToken, 'POST', '/api/calibrations', {
+        instrumentName: 'UAT Test Instrument',
+        status: 'calibrated',
+      },
+    );
+    expect(status).toBe(403);
+    expect(data.success).toBe(false);
+  });
 
-      // Technician should not see override option
-      expect(hasOverrideBtn === false || hasOverrideBtn === undefined).toBeTruthy();
-    });
+  // ────────────────────────────────────────────────────────────────────
+  // J4: Tool checkout API enforces permissions
+  // ────────────────────────────────────────────────────────────────────
+  test('J4: Tool checkout requires tools.checkout permission', async () => {
+    const techToken = await getToken('tech_single');
 
-    await page.close();
+    // Technician has tools.checkout permission per seed-permissions-only.ts
+    // Attempt checkout with a fake tool ID — should get 404 (tool not found)
+    // not 403 (permission denied), confirming permission check passes
+    const { status, data } = await expectFailure(
+      techToken, 'POST', '/api/tools/nonexistent-tool-id/checkout', {
+        assignedToId: techSingleUserId,
+      },
+    );
+    // Should be 404 (tool not found), not 403 (permission denied)
+    // This confirms the technician HAS tools.checkout permission
+    expect(status).toBe(404);
+    expect(data.success).toBe(false);
+
+    // A user WITHOUT tools.checkout permission would get 403
+    // The requester user has no tools.checkout
+    const requesterToken = await getToken('requester');
+    const { status: reqStatus, data: reqData } = await expectFailure(
+      requesterToken, 'POST', '/api/tools/nonexistent-tool-id/checkout', {
+        assignedToId: techSingleUserId,
+      },
+    );
+    expect(reqStatus).toBe(403);
+    expect(reqData.success).toBe(false);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // J5: Tool request issue validates status progression
+  //     (cannot issue from 'pending' — must be 'storekeeper_approved')
+  // ────────────────────────────────────────────────────────────────────
+  test('J5: Tool issue blocked when status is not storekeeper_approved', async () => {
+    const techToken = await getToken('tech_single');
+
+    // Create a new tool request (will be in 'pending' status)
+    const { status: trStatus, data: trData } = await apiCall(
+      techToken, 'POST', '/api/repairs/tool-requests', {
+        workOrderId: woId,
+        reason: 'Need a feeler gauge',
+        urgency: 'normal',
+        items: [{
+          toolName: `UAT Feeler Gauge ${Date.now().toString(36)}`,
+          quantityRequested: 1,
+        }],
+      },
+    );
+    expect(trStatus).toBe(201);
+    const newToolRequestId = trData.data.id;
+
+    // Attempt to issue directly (status is 'pending', not 'storekeeper_approved')
+    const { status: issueStatus, data: issueData } = await expectFailure(
+      techToken, 'POST', `/api/repairs/tool-requests/${newToolRequestId}`, {
+        action: 'issue',
+        issuedItems: [{
+          itemId: trData.data.items[0].id,
+          quantityIssued: 1,
+        }],
+      },
+    );
+    // Should fail — status must be 'storekeeper_approved'
+    expect(issueStatus).toBe(400);
+    expect(issueData.success).toBe(false);
+    expect(issueData.error).toContain('storekeeper_approved');
   });
 });

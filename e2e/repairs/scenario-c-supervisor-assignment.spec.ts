@@ -1,124 +1,138 @@
 /**
- * Scenario C — Supervisor Assignment Flow
+ * Scenario C — Supervisor Delegation Assignment Flow
  *
  * Tests the delegation pattern where the planner assigns the WO to
- * the supervisor, who then assigns the technician.
+ * the supervisor (via_supervisor), who then assigns the technician.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
+import { authenticateAs, navigateToWODetail } from './helpers/auth';
 import {
-  authenticateAs,
-  navigateToWOList,
-} from './helpers/auth';
+  getToken,
+  createMR,
+  approveMR,
+  convertMR,
+  assignWO,
+  startWO,
+  getWO,
+  getMR,
+  getCapabilities,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+} from './helpers/api';
 
-test.describe('Scenario C: Supervisor Assignment Flow', () => {
+test.describe('Scenario C: Supervisor Delegation Flow', () => {
   let context: BrowserContext;
+
+  let mrId: string;
+  let woId: string;
+  let assetId: string;
+  let plantId: string;
+  let supervisorUserId: string;
+  let techSingleUserId: string;
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext();
+
+    const plannerToken = await getToken('planner');
+    supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
+    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   });
 
   test.afterAll(async () => {
     await context?.close();
   });
 
-  test('C1: Planner delegates WO to supervisor for assignment', async () => {
-    await authenticateAs(context, 'planner');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // C1: Planner creates MR, approves, converts with via_supervisor
+  // ────────────────────────────────────────────────────────────────────
+  test('C1: Planner delegates WO to supervisor via via_supervisor assignment', async () => {
+    const reqToken = await getToken('requester');
+    const mr = await createMR(reqToken, {
+      title: 'UAT-SupervisorDelegation-Valve-Repair',
+      description: 'Control valve not opening fully. Needs on-site inspection and repair.',
+      assetId,
+      priority: 'high',
+      plantId,
+    });
+    mrId = mr.id;
+    expect(mrId).toBeTruthy();
 
-    await test.step('Navigate to work orders', async () => {
-      await navigateToWOList(page);
-      await expect(page.locator('text=Work Order').first()).toBeVisible({ timeout: 15_000 });
+    // Server-state: MR pending
+    let fetched = await getMR(reqToken, mrId);
+    expect(fetched.status).toBe('pending');
+
+    // Supervisor approves
+    const supToken = await getToken('supervisor');
+    const approved = await approveMR(supToken, mrId);
+    expect(approved.status).toBe('approved');
+
+    fetched = await getMR(supToken, mrId);
+    expect(fetched.status).toBe('approved');
+
+    // Planner converts with via_supervisor assignment (no tech assigned yet)
+    const planToken = await getToken('planner');
+    const wo = await convertMR(planToken, mrId, {
+      assignmentType: 'via_supervisor',
+      assignedSupervisorId: supervisorUserId,
+      tradeActivity: 'mechanical',
+      workOrderType: 'corrective',
     });
 
-    await test.step('Find an approved WO and assign to supervisor', async () => {
-      // Find a WO that needs assignment
-      const woRow = page.locator('text=approved, text=WO-').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
+    woId = wo.id;
+    expect(woId).toBeTruthy();
 
-        // Open assign dialog
-        const assignBtn = page.locator('button').filter({ hasText: /Assign|Delegate/i }).first();
-        if (await assignBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await assignBtn.click();
-          await page.waitForTimeout(1000);
-
-          // Select supervisor as the delegation target
-          const supervisorOption = page.locator('text=UAT Supervisor, text=maintenance_supervisor').first();
-          if (await supervisorOption.isVisible({ timeout: 3_000 }).catch(() => false)) {
-            await supervisorOption.click();
-          }
-
-          // Set assignment type to 'via_supervisor'
-          const assignmentType = page.locator('text=via_supervisor, text=Supervisor').first();
-          if (await assignmentType.isVisible({ timeout: 2_000 }).catch(() => false)) {
-            await assignmentType.click();
-          }
-
-          const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Assign|Save|Confirm/i }).last();
-          await submitBtn.click();
-          await page.waitForTimeout(3000);
-        }
-      }
-    });
-
-    await page.close();
+    // Server-state: WO is 'approved' (no tech assigned directly)
+    const fetchedWO = await getWO(planToken, woId);
+    expect(fetchedWO.status).toBe('approved');
+    expect(fetchedWO.assignedSupervisorId).toBe(supervisorUserId);
+    expect(fetchedWO.assignmentType).toBe('via_supervisor');
   });
 
-  test('C2: Supervisor assigns technician', async () => {
-    await authenticateAs(context, 'supervisor');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // C2: Supervisor assigns technician
+  // ────────────────────────────────────────────────────────────────────
+  test('C2: Supervisor assigns technician to delegated WO', async () => {
+    const token = await getToken('supervisor');
 
-    await test.step('Navigate to WO list', async () => {
-      await navigateToWOList(page);
-      await page.waitForTimeout(2000);
+    const result = await assignWO(token, woId, {
+      assignedTo: techSingleUserId,
+      assignmentType: 'direct',
     });
 
-    await test.step('Find the delegated WO and assign technician', async () => {
-      // Look for a WO in 'planned' or 'approved' status assigned to supervisor
-      const woRow = page.locator('text=UAT Supervisor').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
+    expect(result).toBeTruthy();
 
-        // Assign technician
-        const assignBtn = page.locator('button').filter({ hasText: /Assign Technician|Assign/i }).first();
-        if (await assignBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await assignBtn.click();
-          await page.waitForTimeout(1000);
-
-          // Select a technician
-          const techOption = page.locator('text=UAT Tech Single, text=maintenance_technician').first();
-          if (await techOption.isVisible({ timeout: 3_000 }).catch(() => false)) {
-            await techOption.click();
-          }
-
-          const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Assign|Save|Confirm/i }).last();
-          await submitBtn.click();
-          await page.waitForTimeout(3000);
-        }
-      }
-    });
-
-    await page.close();
+    // Server-state verification
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('assigned');
+    expect(fetched.assignedTo).toBe(techSingleUserId);
   });
 
-  test('C3: Technician can start and complete after supervisor assignment', async () => {
+  // ────────────────────────────────────────────────────────────────────
+  // C3: Technician can start the WO
+  // ────────────────────────────────────────────────────────────────────
+  test('C3: Technician can start the supervisor-assigned WO', async () => {
+    const token = await getToken('tech_single');
+
+    // Verify capabilities
+    const caps = await getCapabilities(token, woId);
+    expect(caps.canStart).toBe(true);
+
+    // Start work
+    const result = await startWO(token, woId);
+    expect(result).toBeTruthy();
+
+    // Server-state verification
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('in_progress');
+
+    // UI verification
     await authenticateAs(context, 'tech_single');
     const page = await context.newPage();
-
-    await test.step('Navigate to WO list', async () => {
-      await navigateToWOList(page);
-      await page.waitForTimeout(2000);
-    });
-
-    await test.step('Find assigned WO and verify start button visible', async () => {
-      const bodyText = await page.textContent('body');
-      // The tech should see their assigned WO
-      const hasAssigned = bodyText?.includes('assigned') || bodyText?.includes('UAT Tech Single');
-      expect(hasAssigned).toBeTruthy();
-    });
-
+    await navigateToWODetail(page, woId);
+    await expect(page.locator('body')).toContainText('in_progress', { timeout: 10_000 });
     await page.close();
   });
 });

@@ -2,191 +2,196 @@
  * Scenario E — Rework Flow
  *
  * Tests: complete WO → supervisor requests rework →
- * execution resumes → second completion → verified and closed.
+ * WO returns to in_progress → second completion → verify → close.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
 import {
   authenticateAs,
-  navigateToWOList,
+  navigateToWODetail,
 } from './helpers/auth';
+import {
+  getToken,
+  createMR,
+  approveMR,
+  convertMR,
+  startWO,
+  logTime,
+  completeWO,
+  verifyWO,
+  closeWO,
+  requestRework,
+  getWO,
+  getMR,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+} from './helpers/api';
 
 test.describe('Scenario E: Rework Flow', () => {
   let context: BrowserContext;
 
+  let mrId: string;
+  let woId: string;
+  let assetId: string;
+  let plantId: string;
+  let techSingleUserId: string;
+
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext();
+
+    const plannerToken = await getToken('planner');
+    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   });
 
   test.afterAll(async () => {
     await context?.close();
   });
 
-  test('E1: Technician completes the WO (first time)', async () => {
+  // ────────────────────────────────────────────────────────────────────
+  // E1: Create WO, start, log time, complete (first time)
+  // ────────────────────────────────────────────────────────────────────
+  test('E1: Create, start, and complete WO (first time)', async () => {
+    // Create MR
+    const reqToken = await getToken('requester');
+    const mr = await createMR(reqToken, {
+      title: 'UAT-Rework-Bearing-Alignment',
+      description: 'Bearing alignment issue. Vibration above threshold.',
+      assetId,
+      priority: 'high',
+      plantId,
+    });
+    mrId = mr.id;
+    expect(mrId).toBeTruthy();
+
+    // Approve
+    const supToken = await getToken('supervisor');
+    await approveMR(supToken, mrId);
+    let fetched = await getMR(supToken, mrId);
+    expect(fetched.status).toBe('approved');
+
+    // Convert and assign
+    const planToken = await getToken('planner');
+    const wo = await convertMR(planToken, mrId, {
+      assignedTo: techSingleUserId,
+      tradeActivity: 'mechanical',
+      workOrderType: 'corrective',
+    });
+    woId = wo.id;
+    expect(woId).toBeTruthy();
+
+    // Start
+    const techToken = await getToken('tech_single');
+    await startWO(techToken, woId);
+    fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
+
+    // Log time
+    await logTime(techToken, woId, {
+      action: 'start',
+      manualHours: 3,
+      notes: 'Initial bearing replacement done.',
+    });
+
+    // Complete (first time)
+    const completed = await completeWO(techToken, woId, 'Bearing replaced. Initial completion.');
+    expect(completed).toBeTruthy();
+
+    // Server-state: completed
+    const fetchedWO = await getWO(techToken, woId);
+    expect(fetchedWO.status).toBe('completed');
+    expect(fetchedWO.actualHours).toBeGreaterThanOrEqual(3);
+
+    // UI verification
     await authenticateAs(context, 'tech_single');
     const page = await context.newPage();
-
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Start work if needed', async () => {
-      const startBtn = page.locator('button').filter({ hasText: /Start Work|Start/i }).first();
-      if (await startBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await startBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Complete the WO', async () => {
-      const completeBtn = page.locator('button').filter({ hasText: /Complete Work|Complete|Finish/i }).first();
-      if (await completeBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await completeBtn.click();
-        await page.waitForTimeout(1000);
-
-        const notesArea = page.locator('textarea, [contenteditable]').first();
-        if (await notesArea.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await notesArea.fill('Initial completion. Bearing replaced.');
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Complete|Confirm/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    });
-
+    await navigateToWODetail(page, woId);
+    await expect(page.locator('body')).toContainText('completed', { timeout: 10_000 });
     await page.close();
   });
 
+  // ────────────────────────────────────────────────────────────────────
+  // E2: Supervisor requests rework
+  // ────────────────────────────────────────────────────────────────────
   test('E2: Supervisor requests rework', async () => {
+    const token = await getToken('supervisor');
+
+    const result = await requestRework(token, woId, 'Vibration still above acceptable levels. Check bearing alignment.');
+    expect(result).toBeTruthy();
+
+    // Server-state: WO should be back to in_progress
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('in_progress');
+
+    // UI verification
     await authenticateAs(context, 'supervisor');
     const page = await context.newPage();
-
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Request rework instead of verify', async () => {
-      const reworkBtn = page.locator('button').filter({ hasText: /Rework|Request Rework/i }).first();
-      if (await reworkBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await reworkBtn.click();
-        await page.waitForTimeout(1000);
-
-        // Fill rework reason
-        const reasonInput = page.locator('textarea, input[placeholder*="reason"]').first();
-        if (await reasonInput.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await reasonInput.fill('Vibration still above acceptable levels. Check bearing alignment.');
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Confirm|Rework/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(3000);
-      }
-
-      // Verify WO went back to in_progress
-      const bodyText = await page.textContent('body');
-      expect(bodyText).toContain('in_progress');
-    });
-
+    await navigateToWODetail(page, woId);
+    await expect(page.locator('body')).toContainText('in_progress', { timeout: 10_000 });
     await page.close();
   });
 
-  test('E3: Technician resumes and re-completes', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // E3: Technician resumes and re-completes
+  // ────────────────────────────────────────────────────────────────────
+  test('E3: Technician re-completes after rework', async () => {
+    const token = await getToken('tech_single');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
+    // Server-state: confirm WO is in_progress
+    let fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('in_progress');
+
+    // Log more time for the rework
+    await logTime(token, woId, {
+      action: 'start',
+      manualHours: 2,
+      notes: 'Bearing realigned and shimmed.',
     });
 
-    await test.step('Verify WO is back in in_progress', async () => {
-      const bodyText = await page.textContent('body');
-      expect(bodyText).toContain('in_progress');
-    });
+    // Complete again
+    const completed = await completeWO(token, woId, 'Rework complete. Bearing realigned and shimmed. Vibration now 0.3mm/s.');
+    expect(completed).toBeTruthy();
 
-    await test.step('Complete the WO again (second attempt)', async () => {
-      const completeBtn = page.locator('button').filter({ hasText: /Complete Work|Complete|Finish/i }).first();
-      if (await completeBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await completeBtn.click();
-        await page.waitForTimeout(1000);
-
-        const notesArea = page.locator('textarea, [contenteditable]').first();
-        if (await notesArea.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await notesArea.fill('Rework complete. Bearing realigned and shimmed. Vibration now 0.3mm/s.');
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Complete|Confirm/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    });
-
-    await page.close();
+    // Server-state: completed again
+    fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('completed');
+    expect(fetched.actualHours).toBeGreaterThanOrEqual(5); // 3 + 2
   });
 
-  test('E4: Supervisor verifies (second time)', async () => {
-    await authenticateAs(context, 'supervisor');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // E4: Supervisor verifies (second time)
+  // ────────────────────────────────────────────────────────────────────
+  test('E4: Supervisor verifies rework completion', async () => {
+    const token = await getToken('supervisor');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    const result = await verifyWO(token, woId, 5);
+    expect(result).toBeTruthy();
 
-    await test.step('Verify the rework completion', async () => {
-      const verifyBtn = page.locator('button').filter({ hasText: /Verify|Approve/i }).first();
-      if (await verifyBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await verifyBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    });
-
-    await page.close();
+    // Server-state verification
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('verified');
   });
 
-  test('E5: Planner closes (after rework)', async () => {
+  // ────────────────────────────────────────────────────────────────────
+  // E5: Planner closes (after rework)
+  // ────────────────────────────────────────────────────────────────────
+  test('E5: Planner closes WO after rework', async () => {
+    const token = await getToken('planner');
+
+    const result = await closeWO(token, woId);
+    expect(result).toBeTruthy();
+
+    // Server-state verification
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('closed');
+    expect(fetched.isLocked).toBe(true);
+
+    // UI verification
     await authenticateAs(context, 'planner');
     const page = await context.newPage();
-
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Close the WO', async () => {
-      const closeBtn = page.locator('button').filter({ hasText: /Close/i }).first();
-      if (await closeBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await closeBtn.click();
-        await page.waitForTimeout(1000);
-
-        const confirmBtn = page.locator('button[type="submit"], button').filter({ hasText: /Confirm|Close/i }).last();
-        await confirmBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    });
-
+    await navigateToWODetail(page, woId);
+    await expect(page.locator('body')).toContainText('closed', { timeout: 10_000 });
     await page.close();
   });
 });

@@ -1,23 +1,51 @@
 /**
- * Scenario B — Multi-Tech WO Flow
+ * Scenario B — Multi-Technician WO Flow
  *
- * Tests team assignment, assistant work logging,
- * assistant completion restrictions, team leader final completion,
- * supervisor verification, and planner closure.
+ * Tests team assignment with leader + assistant,
+ * capability checks (only leader can complete),
+ * assistant completion restriction, and full lifecycle.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
 import {
   authenticateAs,
-  navigateToWOList,
   navigateToWODetail,
 } from './helpers/auth';
+import {
+  getToken,
+  createMR,
+  approveMR,
+  convertMR,
+  startWO,
+  completeWO,
+  verifyWO,
+  closeWO,
+  getWO,
+  getMR,
+  getCapabilities,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+  expectFailure,
+} from './helpers/api';
 
 test.describe('Scenario B: Multi-Tech Team Flow', () => {
   let context: BrowserContext;
-  const WO_NUMBER = 'WO-UAT-A2'; // Pre-seeded multi-tech WO
+
+  let mrId: string;
+  let woId: string;
+  let assetId: string;
+  let plantId: string;
+  let techLeaderUserId: string;
+  let techAssistantUserId: string;
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext();
+
+    const plannerToken = await getToken('planner');
+    techLeaderUserId = await lookupUserByKey(plannerToken, 'tech_leader');
+    techAssistantUserId = await lookupUserByKey(plannerToken, 'tech_assistant');
+    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   });
 
   test.afterAll(async () => {
@@ -25,220 +53,138 @@ test.describe('Scenario B: Multi-Tech Team Flow', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────
-  // STEP 1: Planner assigns team + leader (WO-UAT-A2 already assigned)
+  // B1: Create MR, approve, convert with team assignment
   // ────────────────────────────────────────────────────────────────────
-  test('B1: Verify team assignment on pre-seeded WO', async () => {
-    await authenticateAs(context, 'planner');
-    const page = await context.newPage();
+  test('B1: Create MR, approve, convert with multi-tech team', async () => {
+    // Requester creates MR
+    const reqToken = await getToken('requester');
+    const mr = await createMR(reqToken, {
+      title: 'UAT-MultiTech-Motor-Overhaul',
+      description: 'Motor running hot, high current draw. Needs mechanical and electrical inspection.',
+      assetId,
+      priority: 'medium',
+      plantId,
+    });
+    mrId = mr.id;
+    expect(mrId).toBeTruthy();
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
+    // Server-state: MR is pending
+    let fetched = await getMR(reqToken, mrId);
+    expect(fetched.status).toBe('pending');
+
+    // Supervisor approves
+    const supToken = await getToken('supervisor');
+    const approved = await approveMR(supToken, mrId);
+    expect(approved.status).toBe('approved');
+
+    fetched = await getMR(supToken, mrId);
+    expect(fetched.status).toBe('approved');
+
+    // Planner converts with team
+    const planToken = await getToken('planner');
+    const wo = await convertMR(planToken, mrId, {
+      assignedTo: techLeaderUserId,
+      teamLeaderId: techLeaderUserId,
+      teamMembers: [
+        { userId: techLeaderUserId, role: 'team_leader' },
+        { userId: techAssistantUserId, role: 'assistant' },
+      ],
+      tradeActivity: 'mechanical',
+      workOrderType: 'corrective',
     });
 
-    await test.step('Verify team members are visible', async () => {
-      const bodyText = await page.textContent('body');
-      // Team leader and assistant should be visible
-      expect(bodyText).toContain('UAT Tech Leader');
-      expect(bodyText).toContain('UAT Tech Assistant');
-    });
+    woId = wo.id;
+    expect(woId).toBeTruthy();
 
-    await page.close();
+    // Server-state: WO assigned, team members present
+    const fetchedWO = await getWO(planToken, woId);
+    expect(fetchedWO.status).toBe('assigned');
+    expect(fetchedWO.assignedTo).toBe(techLeaderUserId);
+    expect(fetchedWO.teamLeaderId).toBe(techLeaderUserId);
   });
 
   // ────────────────────────────────────────────────────────────────────
-  // STEP 2: Assistant logs own work
+  // B2: Check capabilities — only leader has canSubmitCompletion
   // ────────────────────────────────────────────────────────────────────
-  test('B2: Assistant logs time on WO', async () => {
-    await authenticateAs(context, 'tech_assistant');
-    const page = await context.newPage();
+  test('B2: Only team leader has canSubmitCompletion capability', async () => {
+    // Start WO first
+    const leaderToken = await getToken('tech_leader');
+    await startWO(leaderToken, woId);
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    // Check leader capabilities
+    const leaderCaps = await getCapabilities(leaderToken, woId);
+    expect(leaderCaps.canSubmitCompletion).toBe(true);
+    expect(leaderCaps.isTeamLeader).toBe(true);
 
-    await test.step('Log time as assistant', async () => {
-      const timeTab = page.locator('text=Time, text=Timer').first();
-      if (await timeTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await timeTab.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const logBtn = page.locator('button').filter({ hasText: /Log Time|Start|Add/i }).first();
-      if (await logBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await logBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Add a comment', async () => {
-      const commentTab = page.locator('text=Comment').first();
-      if (await commentTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await commentTab.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const commentInput = page.locator('textarea, input[placeholder*="comment"]').first();
-      if (await commentInput.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await commentInput.fill('Electrical wiring checked. Connections tight.');
-        const sendBtn = page.locator('button').filter({ hasText: /Send|Post|Submit/i }).first();
-        if (await sendBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await sendBtn.click();
-          await page.waitForTimeout(2000);
-        }
-      }
-    });
-
-    await page.close();
+    // Check assistant capabilities
+    const assistToken = await getToken('tech_assistant');
+    const assistCaps = await getCapabilities(assistToken, woId);
+    expect(assistCaps.canSubmitCompletion).toBe(false);
+    expect(assistCaps.isTeamMember).toBe(true);
   });
 
   // ────────────────────────────────────────────────────────────────────
-  // STEP 3: Assistant cannot submit final completion
+  // B3: Assistant cannot submit final completion
   // ────────────────────────────────────────────────────────────────────
   test('B3: Assistant cannot submit final completion', async () => {
-    await authenticateAs(context, 'tech_assistant');
-    const page = await context.newPage();
+    const token = await getToken('tech_assistant');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
+    const { status, data } = await expectFailure(token, 'POST', `/api/work-orders/${woId}/complete`, {
+      notes: 'Should not work',
     });
 
-    await test.step('Verify Complete Work button is hidden for assistant', async () => {
-      // The completion tab/button should NOT be visible for a non-leader team member
-      const completeBtn = page.locator('button').filter({ hasText: /Complete Work|Complete|Finish/i });
-      const isVisible = await completeBtn.isVisible({ timeout: 2_000 }).catch(() => false);
-
-      // The button should either be invisible or disabled for assistants
-      // (depending on the UI implementation)
-      const bodyText = await page.textContent('body');
-      const hasReadOnlyIndicator = bodyText?.includes('read_only') || bodyText?.includes('Read Only');
-
-      expect(isVisible === false || hasReadOnlyIndicator).toBeTruthy();
-    });
-
-    await page.close();
+    // Should fail — either 403 (permissions) or 400/422 (not allowed)
+    expect(status).toBeGreaterThanOrEqual(400);
+    expect(data.success).toBe(false);
   });
 
   // ────────────────────────────────────────────────────────────────────
-  // STEP 4: Team leader starts and completes
+  // B4: Team leader completes the WO
   // ────────────────────────────────────────────────────────────────────
-  test('B4: Team leader starts and completes the WO', async () => {
+  test('B4: Team leader completes the WO', async () => {
+    const token = await getToken('tech_leader');
+
+    const result = await completeWO(token, woId, 'Motor rewound and tested. All connections verified.');
+    expect(result).toBeTruthy();
+
+    // Server-state verification
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('completed');
+
+    // UI verification
     await authenticateAs(context, 'tech_leader');
     const page = await context.newPage();
-
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Start work', async () => {
-      const startBtn = page.locator('button').filter({ hasText: /Start Work|Start/i }).first();
-      if (await startBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await startBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Complete the WO as team leader', async () => {
-      const completeBtn = page.locator('button').filter({ hasText: /Complete Work|Complete|Finish/i }).first();
-      if (await completeBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await completeBtn.click();
-        await page.waitForTimeout(1000);
-
-        // Fill completion notes
-        const notesArea = page.locator('textarea, [contenteditable]').first();
-        if (await notesArea.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await notesArea.fill('Motor rewound and tested. All connections verified.');
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Complete|Confirm/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    });
-
+    await navigateToWODetail(page, woId);
+    await expect(page.locator('body')).toContainText('completed', { timeout: 10_000 });
     await page.close();
   });
 
   // ────────────────────────────────────────────────────────────────────
-  // STEP 5: Supervisor verifies
+  // B5: Supervisor verifies
   // ────────────────────────────────────────────────────────────────────
   test('B5: Supervisor verifies multi-tech WO', async () => {
-    await authenticateAs(context, 'supervisor');
-    const page = await context.newPage();
+    const token = await getToken('supervisor');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    const result = await verifyWO(token, woId, 5);
+    expect(result).toBeTruthy();
 
-    await test.step('Verify includes team member time', async () => {
-      const bodyText = await page.textContent('body');
-      // The assistant's time should be visible in the completion data
-      expect(bodyText).toContain('UAT Tech Assistant');
-    });
-
-    await test.step('Verify the WO', async () => {
-      const verifyBtn = page.locator('button').filter({ hasText: /Verify|Approve/i }).first();
-      if (await verifyBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await verifyBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await page.close();
+    // Server-state verification
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('verified');
   });
 
   // ────────────────────────────────────────────────────────────────────
-  // STEP 6: Planner closes
+  // B6: Planner closes
   // ────────────────────────────────────────────────────────────────────
   test('B6: Planner closes multi-tech WO', async () => {
-    await authenticateAs(context, 'planner');
-    const page = await context.newPage();
+    const token = await getToken('planner');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator(`text=${WO_NUMBER}`).first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    const result = await closeWO(token, woId);
+    expect(result).toBeTruthy();
 
-    await test.step('Close the WO', async () => {
-      const closeBtn = page.locator('button').filter({ hasText: /Close/i }).first();
-      if (await closeBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await closeBtn.click();
-        await page.waitForTimeout(1000);
-
-        const confirmBtn = page.locator('button[type="submit"], button').filter({ hasText: /Confirm|Close/i }).last();
-        await confirmBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    });
-
-    await page.close();
+    // Server-state verification
+    const fetched = await getWO(token, woId);
+    expect(fetched.status).toBe('closed');
+    expect(fetched.isLocked).toBe(true);
   });
 });

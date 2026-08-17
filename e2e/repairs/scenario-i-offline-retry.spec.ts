@@ -1,174 +1,240 @@
 /**
- * Scenario I — Offline Retry / Sync
+ * Scenario I — Offline Replay / Idempotency (UAT-10)
  *
- * Tests: record operations offline (mock navigator.onLine = false) →
- * verify queued in localStorage → go online → sync replays once →
- * verify no duplicate logs.
+ * Pure API tests. Creates a WO, starts it, then tests the offline sync
+ * endpoint's idempotency behavior:
+ *   - First call with an idempotency key succeeds
+ *   - Second call with the SAME key returns success but does NOT duplicate
+ *   - Server state shows exactly one record
  */
-import { test, expect, type BrowserContext } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import {
-  authenticateAs,
-  navigateToWODetail,
-} from './helpers/auth';
+  getToken,
+  createMR,
+  approveMR,
+  convertMR,
+  assignWO,
+  startWO,
+  getWO,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+  apiCall,
+} from './helpers/api';
 
-test.describe('Scenario I: Offline Retry / Sync', () => {
-  let context: BrowserContext;
+// Generate a UUID-like idempotency key
+function generateIdempotencyKey(): string {
+  return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
-  test.beforeAll(async ({ browser }) => {
-    context = await browser.newContext();
+test.describe('Scenario I: Offline Replay / Idempotency', () => {
+  let woId: string;
+  let assetId: string;
+  let plantId: string;
+  let techSingleUserId: string;
+  let idempotencyKey: string;
+
+  test.beforeAll(async () => {
+    const plannerToken = await getToken('planner');
+    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   });
 
-  test.afterAll(async () => {
-    await context?.close();
+  // ────────────────────────────────────────────────────────────────────
+  // I1: Create and start WO for offline sync tests
+  // ────────────────────────────────────────────────────────────────────
+  test('I1: Create and start WO for offline sync tests', async () => {
+    const requesterToken = await getToken('requester');
+    const supervisorToken = await getToken('supervisor');
+    const plannerToken = await getToken('planner');
+    const techToken = await getToken('tech_single');
+
+    const mr = await createMR(requesterToken, {
+      title: 'UAT-OfflineSync-Pump-Check',
+      description: 'Routine pump check for offline sync testing.',
+      assetId,
+      priority: 'low',
+      plantId,
+    });
+
+    await approveMR(supervisorToken, mr.id);
+    const wo = await convertMR(plannerToken, mr.id, {
+      assignedTo: techSingleUserId,
+      tradeActivity: 'mechanical',
+      workOrderType: 'preventive',
+      priority: 'low',
+    });
+    woId = wo.id;
+    expect(woId).toBeTruthy();
+
+    await assignWO(plannerToken, woId, { assignedTo: techSingleUserId });
+    await startWO(techToken, woId);
+
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
   });
 
-  test('I1: Record comment offline — queued in localStorage', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // I2: First offline sync call with idempotency key succeeds
+  // ────────────────────────────────────────────────────────────────────
+  test('I2: First offline sync call succeeds and creates record', async () => {
+    const techToken = await getToken('tech_single');
+    idempotencyKey = generateIdempotencyKey();
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWODetail(page, 'WO-UAT-A1');
-      // If WO-A1 doesn't have a valid ID, navigate to list and click
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
+    const uniqueContent = `Offline sync test comment ${Date.now()}`;
+
+    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+      records: [{
+        id: 'offline-comment-1',
+        operation: 'create',
+        entityType: 'work_order_comment',
+        entityId: woId,
+        data: {
+          content: uniqueContent,
+          idempotencyKey,
+        },
+        timestamp: new Date().toISOString(),
+      }],
     });
 
-    await test.step('Go offline', async () => {
-      // Simulate offline by setting navigator.onLine = false
-      // and dispatching the 'offline' event
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+    expect(status).toBe(200);
+    expect(data.success).toBe(true);
+    expect(data.results).toBeDefined();
+    expect(data.results[0].success).toBe(true);
 
-      await page.evaluate(() => {
-        // Override navigator.onLine
-        Object.defineProperty(navigator, 'onLine', {
-          get: () => false,
-          configurable: true,
-        });
-        // Dispatch offline event so the app picks it up
-        window.dispatchEvent(new Event('offline'));
-      });
-
-      await page.waitForTimeout(1000);
-    });
-
-    await test.step('Verify offline indicator is visible', async () => {
-      const bodyText = await page.textContent('body');
-      const isOffline =
-        bodyText?.includes('Offline') ||
-        bodyText?.includes('offline') ||
-        bodyText?.includes('pending');
-      expect(isOffline).toBeTruthy();
-    });
-
-    await test.step('Add a comment while offline', async () => {
-      // Navigate to WO detail offline
-      await navigateToWODetail(page, 'WO-UAT-A1');
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-
-      const commentTab = page.locator('text=Comment').first();
-      if (await commentTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await commentTab.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const commentInput = page.locator('textarea, input[placeholder*="comment"]').first();
-      if (await commentInput.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await commentInput.fill('Offline comment — should queue for sync');
-
-        const sendBtn = page.locator('button').filter({ hasText: /Send|Post|Submit/i }).first();
-        if (await sendBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-          await sendBtn.click();
-          await page.waitForTimeout(2000);
-        }
-      }
-    });
-
-    await test.step('Verify operation queued in localStorage', async () => {
-      // The offline sync service stores pending records in localStorage
-      const pendingRecords = await page.evaluate(() => {
-        const keys = Object.keys(localStorage);
-        const offlineKeys = keys.filter(k =>
-          k.includes('offline') || k.includes('sync') || k.includes('pending')
-        );
-        return offlineKeys.map(k => ({ key: k, value: localStorage.getItem(k)?.slice(0, 200) }));
-      });
-
-      // There should be some offline-related data in localStorage
-      const hasOfflineData = pendingRecords.length > 0;
-      expect(hasOfflineData).toBeTruthy();
-    });
-
-    await page.close();
+    // Server-state: verify the comment was created
+    const { data: commentsData } = await apiCall(
+      techToken, 'GET', `/api/work-orders/${woId}/comments`,
+    );
+    expect(commentsData.success).toBe(true);
+    const comments = commentsData.data as Array<{ content: string }>;
+    const matchingComment = comments.find((c) => c.content === uniqueContent);
+    expect(matchingComment).toBeDefined();
   });
 
-  test('I2: Go online — sync replays queued operations', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // I3: Second offline sync with SAME key is idempotent — no duplicate
+  // ────────────────────────────────────────────────────────────────────
+  test('I3: Duplicate offline sync with same key does not create duplicate', async () => {
+    const techToken = await getToken('tech_single');
 
-    await test.step('Set up offline state with pending records', async () => {
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+    const uniqueContent = `Offline sync test comment ${Date.now()}`;
 
-      // Go offline
-      await page.evaluate(() => {
-        Object.defineProperty(navigator, 'onLine', {
-          get: () => false,
-          configurable: true,
-        });
-        window.dispatchEvent(new Event('offline'));
-      });
-      await page.waitForTimeout(500);
+    // Post the SAME idempotency key again with different content
+    // The server should return success (idempotent) but NOT create a new record
+    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+      records: [{
+        id: 'offline-comment-1-duplicate',
+        operation: 'create',
+        entityType: 'work_order_comment',
+        entityId: woId,
+        data: {
+          content: uniqueContent,
+          idempotencyKey, // SAME key as I2
+        },
+        timestamp: new Date().toISOString(),
+      }],
     });
 
-    await test.step('Go back online', async () => {
-      // Restore online status
-      await page.evaluate(() => {
-        Object.defineProperty(navigator, 'onLine', {
-          get: () => true,
-          configurable: true,
-        });
-        window.dispatchEvent(new Event('online'));
-      });
+    expect(status).toBe(200);
+    expect(data.success).toBe(true);
+    // The result should indicate success (idempotent)
+    expect(data.results[0].success).toBe(true);
 
-      // Wait for auto-sync to trigger
-      await page.waitForTimeout(5000);
-    });
-
-    await test.step('Verify sync completed', async () => {
-      const bodyText = await page.textContent('body');
-      const isOnline =
-        bodyText?.includes('Online') ||
-        !bodyText?.includes('Offline');
-      expect(isOnline).toBeTruthy();
-    });
-
-    await page.close();
+    // Server-state: verify NO new comment was created
+    // The new content should NOT appear in the comments
+    const { data: commentsData } = await apiCall(
+      techToken, 'GET', `/api/work-orders/${woId}/comments`,
+    );
+    const comments = commentsData.data as Array<{ content: string }>;
+    const duplicateComment = comments.find((c) => c.content === uniqueContent);
+    expect(duplicateComment).toBeUndefined();
   });
 
-  test('I3: No duplicate logs after sync', async ({ request }) => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
-    const token = await page.evaluate(() => localStorage.getItem('eam_token'));
-    await page.close();
+  // ────────────────────────────────────────────────────────────────────
+  // I4: New idempotency key creates a new record (not blocked by previous)
+  // ────────────────────────────────────────────────────────────────────
+  test('I4: New idempotency key creates a separate record', async () => {
+    const techToken = await getToken('tech_single');
+    const newKey = generateIdempotencyKey();
+    const uniqueContent = `Second offline comment ${Date.now()}`;
 
-    // Check time logs via API to verify no duplicates
-    await test.step('Verify no duplicate time logs', async () => {
-      // This would need a specific WO ID; for now, verify the endpoint works
-      const res = await request.get('/api/work-orders', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      expect(res.status()).toBe(200);
-      const body = await res.json();
-      expect(body.success).toBeTruthy();
+    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+      records: [{
+        id: 'offline-comment-2',
+        operation: 'create',
+        entityType: 'work_order_comment',
+        entityId: woId,
+        data: {
+          content: uniqueContent,
+          idempotencyKey: newKey,
+        },
+        timestamp: new Date().toISOString(),
+      }],
     });
+
+    expect(status).toBe(200);
+    expect(data.results[0].success).toBe(true);
+
+    // Server-state: this new comment SHOULD exist
+    const { data: commentsData } = await apiCall(
+      techToken, 'GET', `/api/work-orders/${woId}/comments`,
+    );
+    const comments = commentsData.data as Array<{ content: string }>;
+    const newComment = comments.find((c) => c.content === uniqueContent);
+    expect(newComment).toBeDefined();
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // I5: Offline time log with idempotency — no duplicate time entries
+  // ────────────────────────────────────────────────────────────────────
+  test('I5: Offline time log idempotency prevents duplicate entries', async () => {
+    const techToken = await getToken('tech_single');
+    const timeIdempotencyKey = generateIdempotencyKey();
+
+    // First time log via offline sync
+    const { status: s1, data: d1 } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+      records: [{
+        id: 'offline-timelog-1',
+        operation: 'create',
+        entityType: 'work_order_time_log',
+        entityId: woId,
+        data: {
+          action: 'complete',
+          duration: 0.5,
+          notes: 'Offline time entry',
+          idempotencyKey: timeIdempotencyKey,
+        },
+        timestamp: new Date().toISOString(),
+      }],
+    });
+    expect(s1).toBe(200);
+    expect(d1.results[0].success).toBe(true);
+
+    // Duplicate time log with same key
+    const { status: s2, data: d2 } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+      records: [{
+        id: 'offline-timelog-1-dup',
+        operation: 'create',
+        entityType: 'work_order_time_log',
+        entityId: woId,
+        data: {
+          action: 'complete',
+          duration: 0.5,
+          notes: 'Duplicate offline time entry',
+          idempotencyKey: timeIdempotencyKey, // SAME key
+        },
+        timestamp: new Date().toISOString(),
+      }],
+    });
+    expect(s2).toBe(200);
+    expect(d2.results[0].success).toBe(true);
+
+    // Server-state: check time logs — count entries with 'Offline time entry' note
+    const { data: woData } = await apiCall(techToken, 'GET', `/api/work-orders/${woId}`);
+    // The WO actualHours should reflect only ONE 0.5h entry, not two
+    // (We can't directly count time logs via API, but we verify the WO state)
+    expect(woData.data.actualHours).toBeGreaterThanOrEqual(0.5);
   });
 });

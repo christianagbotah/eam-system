@@ -1,185 +1,249 @@
 /**
- * Scenario G — Resource Blockers
+ * Scenario G — Resource Blocking/Reconciliation (UAT-07)
  *
- * Tests: outstanding tool/material request blocks completion →
- * custody reconciled → completion allowed.
+ * Tests that outstanding tool requests block WO completion via
+ * the readiness check, and that returning/reconciling tools
+ * removes the blocker.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
 import {
-  authenticateAs,
-  navigateToWOList,
-} from './helpers/auth';
+  getToken,
+  createMR,
+  approveMR,
+  convertMR,
+  assignWO,
+  startWO,
+  logTime,
+  getWO,
+  completeWO,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+  apiCall,
+  expectFailure,
+} from './helpers/api';
+import { authenticateAs, navigateToWODetail } from './helpers/auth';
 
 test.describe('Scenario G: Resource Blockers on Completion', () => {
   let context: BrowserContext;
+  let woId: string;
+  let assetId: string;
+  let plantId: string;
+  let techSingleUserId: string;
+  let toolRequestId: string;
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext();
+
+    const plannerToken = await getToken('planner');
+    techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   });
 
   test.afterAll(async () => {
     await context?.close();
   });
 
-  test('G1: Outstanding tool request blocks completion', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // G1: Create WO, start it, create and fully issue a tool request
+  // ────────────────────────────────────────────────────────────────────
+  test('G1: Create WO and issue tool request for it', async () => {
+    const requesterToken = await getToken('requester');
+    const supervisorToken = await getToken('supervisor');
+    const plannerToken = await getToken('planner');
+    const techToken = await getToken('tech_single');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
+    // Create MR → approve → convert → assign → start
+    const mr = await createMR(requesterToken, {
+      title: 'UAT-ResourceBlocker-Pump-Repair',
+      description: 'Pump seal replacement requiring special tools.',
+      assetId,
+      priority: 'high',
+      plantId,
     });
 
-    await test.step('Request a tool (creating outstanding request)', async () => {
-      const toolTab = page.locator('text=Tool').first();
-      if (await toolTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await toolTab.click();
-        await page.waitForTimeout(1000);
-      }
+    await approveMR(supervisorToken, mr.id);
+    const wo = await convertMR(plannerToken, mr.id, {
+      assignedTo: techSingleUserId,
+      tradeActivity: 'mechanical',
+      workOrderType: 'corrective',
+      priority: 'high',
+    });
+    woId = wo.id;
+    expect(woId).toBeTruthy();
 
-      const requestBtn = page.locator('button').filter({ hasText: /Request|Add Tool/i }).first();
-      if (await requestBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await requestBtn.click();
-        await page.waitForTimeout(1000);
+    await assignWO(plannerToken, woId, { assignedTo: techSingleUserId });
+    await startWO(techToken, woId);
 
-        const nameInput = page.locator('input[placeholder*="name"], input[placeholder*="tool"] ').first();
-        if (await nameInput.isVisible()) {
-          await nameInput.fill('Torque Wrench');
-        }
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
 
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Request|Save/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(2000);
-      }
+    // Log time so the WO has some work recorded
+    await logTime(techToken, woId, {
+      action: 'start',
+      manualHours: 1,
+      notes: 'Started disassembly',
     });
 
-    await test.step('Verify completion is blocked by outstanding tool', async () => {
-      const bodyText = await page.textContent('body');
-      // Check for tool custody blocker
-      const hasBlocker =
-        bodyText?.includes('TOOLS_ISSUED') ||
-        bodyText?.includes('OPEN_TOOL_CUSTODY') ||
-        bodyText?.includes('tool') ||
-        bodyText?.includes('Tool');
+    // Create a tool request (no linked tool — just a tool name)
+    const { status: trStatus, data: trData } = await apiCall(
+      techToken, 'POST', '/api/repairs/tool-requests', {
+        workOrderId: woId,
+        reason: 'Need a torque wrench for seal installation',
+        urgency: 'normal',
+        items: [{
+          toolName: 'UAT Test Torque Wrench',
+          quantityRequested: 1,
+        }],
+      },
+    );
+    expect(trStatus).toBe(201);
+    expect(trData.success).toBe(true);
+    toolRequestId = trData.data.id;
+    expect(toolRequestId).toBeTruthy();
 
-      // There should be at least some indication of the tool
-      // in the readiness checks or warnings
-      expect(hasBlocker).toBeTruthy();
-    });
+    // Supervisor approves
+    const { status: saStatus, data: saData } = await apiCall(
+      supervisorToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'supervisor_approve',
+      },
+    );
+    expect(saStatus).toBe(200);
+    expect(saData.data.status).toBe('supervisor_approved');
 
-    await page.close();
+    // Storekeeper approves
+    const storekeeperToken = await getToken('storekeeper');
+    const { status: skStatus, data: skData } = await apiCall(
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'storekeeper_approve',
+      },
+    );
+    expect(skStatus).toBe(200);
+    expect(skData.data.status).toBe('storekeeper_approved');
+
+    // Issue the tool
+    const { status: issueStatus, data: issueData } = await apiCall(
+      storekeeperToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'issue',
+        issuedItems: [{
+          itemId: trData.data.items[0].id,
+          quantityIssued: 1,
+        }],
+      },
+    );
+    expect(issueStatus).toBe(200);
+    expect(issueData.data.status).toBe('issued');
+
+    // Server-state: tool request is issued
+    const { data: fetchedTR } = await apiCall(
+      techToken, 'GET', `/api/repairs/tool-requests/${toolRequestId}`,
+    );
+    expect(fetchedTR.data.status).toBe('issued');
   });
 
-  test('G2: Outstanding material request blocks completion', async () => {
-    await authenticateAs(context, 'tech_single');
-    const page = await context.newPage();
+  // ────────────────────────────────────────────────────────────────────
+  // G2: Outstanding issued tools BLOCK completion
+  // ────────────────────────────────────────────────────────────────────
+  test('G2: Outstanding issued tools block completion', async () => {
+    const techToken = await getToken('tech_single');
 
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
+    // Attempt completion via the repairs completion endpoint (runs readiness checks)
+    const { status, data } = await expectFailure(
+      techToken, 'POST', `/api/repairs/completion/${woId}`, {
+        action: 'submit',
+        completionNotes: 'Seal replaced.',
+      },
+    );
 
-    await test.step('Request a material', async () => {
-      const materialTab = page.locator('text=Material').first();
-      if (await materialTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await materialTab.click();
-        await page.waitForTimeout(1000);
-      }
+    // Should be blocked with 422 (readiness failure)
+    expect(status).toBe(422);
+    expect(data.success).toBe(false);
+    // The blockers array should contain TOOLS_ISSUED
+    expect(data.blockers).toBeDefined();
+    const toolBlocker = data.blockers.find(
+      (b: { code: string }) => b.code === 'TOOLS_ISSUED',
+    );
+    expect(toolBlocker).toBeDefined();
+    expect(toolBlocker.code).toBe('TOOLS_ISSUED');
 
-      const requestBtn = page.locator('button').filter({ hasText: /Request|Add Material/i }).first();
-      if (await requestBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await requestBtn.click();
-        await page.waitForTimeout(1000);
-
-        const nameInput = page.locator('input[placeholder*="name"], input[placeholder*="item"] ').first();
-        if (await nameInput.isVisible()) {
-          await nameInput.fill('Grease NLGI 2');
-        }
-
-        const qtyInput = page.locator('input[type="number"], input[placeholder*="qty"] ').first();
-        if (await qtyInput.isVisible()) {
-          await qtyInput.fill('1');
-        }
-
-        const submitBtn = page.locator('button[type="submit"], button').filter({ hasText: /Submit|Request|Save/i }).last();
-        await submitBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Verify material reconciliation is needed', async () => {
-      const bodyText = await page.textContent('body');
-      const hasMaterialBlocker =
-        bodyText?.includes('UNRECONCILED_MATERIALS') ||
-        bodyText?.includes('OPEN_MATERIAL_RECONCILIATION') ||
-        bodyText?.includes('Material');
-
-      expect(hasMaterialBlocker).toBeTruthy();
-    });
-
-    await page.close();
+    // WO status should still be in_progress (completion was rejected)
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
   });
 
-  test('G3: Custody reconciled — completion allowed', async () => {
+  // ────────────────────────────────────────────────────────────────────
+  // G3: Return tool → reconciliation removes blocker → completion succeeds
+  // ────────────────────────────────────────────────────────────────────
+  test('G3: Return tools, then completion succeeds', async () => {
+    const techToken = await getToken('tech_single');
+    const storekeeperToken = await getToken('storekeeper');
+
+    // Technician initiates return
+    const { status: retStatus, data: retData } = await apiCall(
+      techToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'return',
+        returnedItems: [{
+          itemId: toolRequestId, // placeholder — we'll use the correct item ID
+          quantityReturned: 1,
+          conditionAtReturn: 'good',
+        }],
+      },
+    );
+
+    // We need the actual item ID from the tool request
+    const { data: trData } = await apiCall(
+      techToken, 'GET', `/api/repairs/tool-requests/${toolRequestId}`,
+    );
+    const actualItemId = trData.data.items?.[0]?.id;
+
+    if (actualItemId) {
+      // Initiate return with correct item ID
+      const { status: retStatus2, data: retData2 } = await apiCall(
+        techToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+          action: 'return',
+          returnedItems: [{
+            itemId: actualItemId,
+            quantityReturned: 1,
+            conditionAtReturn: 'good',
+          }],
+        },
+      );
+      expect(retStatus2).toBe(200);
+      expect(retData2.data.status).toBe('pending_return');
+
+      // Storekeeper confirms return
+      const { status: confirmStatus, data: confirmData } = await apiCall(
+        storekeeperToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+          action: 'storekeeper_confirm_return',
+        },
+      );
+      expect(confirmStatus).toBe(200);
+      // After full return, status should be 'returned'
+      expect(confirmData.data.status).toBe('returned');
+    }
+
+    // Now attempt completion again
+    const { status, data } = await apiCall(
+      techToken, 'POST', `/api/repairs/completion/${woId}`, {
+        action: 'submit',
+        completionNotes: 'Seal replaced. All tools returned.',
+      },
+    );
+
+    // Should succeed now — no tool blocker
+    expect(status).toBe(200);
+    expect(data.success).toBe(true);
+
+    // Server-state: WO should be 'completed'
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('completed');
+
+    // UI verification
     await authenticateAs(context, 'tech_single');
     const page = await context.newPage();
-
-    await test.step('Navigate to WO detail', async () => {
-      await navigateToWOList(page);
-      const woRow = page.locator('text=WO-UAT-A1').first();
-      if (await woRow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await woRow.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Reconcile materials', async () => {
-      const materialTab = page.locator('text=Material').first();
-      if (await materialTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await materialTab.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const reconBtn = page.locator('button').filter({ hasText: /Reconcile|Return|Update|Consume/i }).first();
-      if (await reconBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await reconBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Return tools', async () => {
-      const toolTab = page.locator('text=Tool').first();
-      if (await toolTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await toolTab.click();
-        await page.waitForTimeout(1000);
-      }
-
-      const returnBtn = page.locator('button').filter({ hasText: /Return/i }).first();
-      if (await returnBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await returnBtn.click();
-        await page.waitForTimeout(2000);
-      }
-    });
-
-    await test.step('Verify completion button is now available', async () => {
-      const bodyText = await page.textContent('body');
-      // After reconciling, there should be no blockers
-      const hasOpenBlocker =
-        bodyText?.includes('OPEN_TOOL_CUSTODY') &&
-        bodyText?.includes('UNRECONCILED_MATERIALS');
-
-      // At least one of the blocker codes should be gone
-      expect(hasOpenBlocker === false).toBeTruthy();
-    });
-
+    await navigateToWODetail(page, woId);
+    await expect(page.locator('body')).toContainText('completed', { timeout: 10_000 });
     await page.close();
   });
 });

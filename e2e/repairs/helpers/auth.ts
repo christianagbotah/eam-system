@@ -7,7 +7,7 @@
  * context so the SPA recognises the session.
  */
 
-import { type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page, expect } from '@playwright/test';
 
 // ── UAT credentials ────────────────────────────────────────────────────────
 export const UAT_PASSWORD = 'TestPass123!';
@@ -65,12 +65,6 @@ export async function authenticateAs(
 
   const token = await loginViaApi(user, baseURL);
 
-  // The auth store's login() sets these localStorage keys:
-  //   eam_token        — the Bearer token
-  //   user_permissions — JSON array of permission slugs
-  //   user_roles       — JSON array of role slugs
-  //   user_plant_id    — primary plant ID
-  //   user_plant_access — JSON array of plant access objects
   await context.addInitScript((tok) => {
     localStorage.setItem('eam_token', tok);
   }, token);
@@ -89,27 +83,13 @@ export async function loginViaUI(
   if (!user) throw new Error(`Unknown UAT user key: ${userKey}`);
 
   await page.goto('/');
-  await page.waitForSelector('input[placeholder="Enter your username"]', { timeout: 15_000 });
+  await expect(page.locator('input[placeholder="Enter your username"]')).toBeVisible({ timeout: 15_000 });
   await page.fill('input[placeholder="Enter your username"]', user.username);
   await page.fill('input[placeholder="Enter your password"]', user.password);
   await page.click('button[type="submit"]');
 
   // Wait for the SPA to render the dashboard
-  await page.waitForURL(/#\/(dashboard|maintenance)/, { timeout: 20_000 }).catch(() => {});
-  await page.waitForTimeout(2000); // Allow Zustand stores to hydrate
-}
-
-/**
- * Logout by clearing auth state from localStorage and reloading.
- */
-export async function logout(context: BrowserContext): Promise<void> {
-  await context.addInitScript(() => {
-    localStorage.removeItem('eam_token');
-    localStorage.removeItem('user_permissions');
-    localStorage.removeItem('user_roles');
-    localStorage.removeItem('user_plant_id');
-    localStorage.removeItem('user_plant_access');
-  });
+  await page.waitForURL(/#\/(dashboard|maintenance)/, { timeout: 20_000 });
 }
 
 /**
@@ -136,7 +116,9 @@ export async function switchUser(
 
   // Reload so the SPA picks up the new token
   await page.goto('/');
-  await page.waitForTimeout(3000); // Let the app hydrate
+  // Wait for app shell to render (sidebar indicates loaded SPA)
+  await page.waitForSelector('[data-sidebar]', { timeout: 10_000 });
+  await expect(page.locator('body')).not.toHaveText('Sign in', { timeout: 10_000 });
 }
 
 // ── Navigation helpers ─────────────────────────────────────────────────────
@@ -144,25 +126,26 @@ export async function switchUser(
 /** Navigate to the maintenance requests page (hash-based SPA routing) */
 export async function navigateToMRList(page: Page): Promise<void> {
   await page.goto('/#/maintenance-requests');
-  await page.waitForTimeout(2000);
+  await expect(page.locator('text=Maintenance Request, text=Requests').first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Navigate to the work orders page */
 export async function navigateToWOList(page: Page): Promise<void> {
   await page.goto('/#/maintenance-work-orders');
-  await page.waitForTimeout(2000);
+  await expect(page.locator('text=Work Order').first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Navigate to a specific work order detail by ID */
 export async function navigateToWODetail(page: Page, woId: string): Promise<void> {
-  await page.goto(`/#/work-order-detail?id=${woId}`);
-  await page.waitForTimeout(3000);
+  await page.goto(`/#/wo-detail?id=${woId}`);
+  // Wait for the WO ID or status badge to appear
+  await expect(page.locator(`[data-testid="wo-status"], text=${woId}`).first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Navigate to the repairs dashboard */
 export async function navigateToRepairsDashboard(page: Page): Promise<void> {
   await page.goto('/#/repairs-dashboard');
-  await page.waitForTimeout(2000);
+  await expect(page.locator('text=Repairs, text=Maintenance').first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Wait for the app to be in a loaded state (login page or dashboard) */
@@ -172,14 +155,13 @@ export async function waitForAppReady(page: Page): Promise<void> {
     // Login page visible — not authenticated
   } catch {
     // No login form — should be authenticated; wait for sidebar/content
-    await page.waitForTimeout(3000);
+    await page.waitForSelector('[data-sidebar], nav, main', { timeout: 10_000 });
   }
 }
 
-/** Get the currently authenticated user's username from the page */
-export async function getCurrentUsername(page: Page): Promise<string | null> {
+/** Get the currently authenticated user's token from the page */
+export async function getCurrentToken(page: Page): Promise<string | null> {
   return page.evaluate(() => {
- const token = localStorage.getItem('eam_token');
-    return token ? token.slice(0, 8) + '...' : null;
+    return localStorage.getItem('eam_token');
   });
 }
