@@ -487,3 +487,83 @@ Stage Summary:
 - Repairs module declared FUNCTIONALLY FROZEN
 - Zero BLOCKER, zero MAJOR defects remain
 - 3 MINOR items documented (all are FUTURE ENHANCEMENT candidates)
+
+---
+Task ID: 11
+Agent: Labor Rate Structure Agent
+Task: STEP 11 — Implement Labor Rate Structure (Release Blocker)
+
+Work Log:
+- **Schema Changes (prisma/schema.prisma):**
+  - Added `LaborRate` model (lines 5045-5066) with fields: id, userId, tradeId, plantId, normalHourlyRate, overtimeHourlyRate, effectiveFrom, effectiveTo, currency, createdAt, updatedAt
+  - Added reverse relation `laborRates LaborRate[] @relation("UserLaborRate")` to User model (line 198)
+  - Added reverse relation `laborRates LaborRate[]` to Plant model (line 399)
+  - Added reverse relation `laborRates LaborRate[]` to Trade model (line 1223)
+  - Added `laborRateApplied Float?` and `laborCurrency String? @default("GHS")` to WorkOrder model (lines 604-605)
+
+- **Migration SQL (prisma/migrations/20250102000000_labor_rates/migration.sql):**
+  - CREATE TABLE `labor_rates` with PK, 3 indexes, 3 FK constraints (CASCADE)
+  - ALTER TABLE `work_orders` ADD COLUMN `laborRateApplied` DOUBLE NULL
+  - ALTER TABLE `work_orders` ADD COLUMN `laborCurrency` VARCHAR(191) NULL DEFAULT 'GHS'
+  - Also applied equivalent changes to dev SQLite database
+
+- **Service Changes (src/services/workExecution.service.ts):**
+  - Extended `AuthoritativeCostResult` interface with `appliedLaborRate: number | null` and `appliedLaborCurrency: string | null` (lines 131-134)
+  - Added `plantId: true` to WO select in `calculateAuthoritativeCosts()` (line 396)
+  - Replaced placeholder labor cost logic (lines 468-572) with full LaborRate lookup:
+    - Priority 1: User-specific rate (plant-specific first, then plant-agnostic)
+    - Priority 2: Trade-level rate (trade looked up by code/name from WO.tradeActivity, plant-specific first, then plant-agnostic)
+    - Effective date filtering: effectiveFrom <= now, (effectiveTo >= now OR effectiveTo null)
+    - Most recent rate wins: orderBy effectiveFrom DESC, take first
+  - Updated return statement to include `appliedLaborRate` and `appliedLaborCurrency` (lines 612-613)
+  - `submitCompletion()`: Added `appliedLaborRate` and `appliedLaborCurrency` to extraData in executeTransition call (lines 1044-1045)
+  - `plannerClose()`: Added `laborRateApplied` and `laborCurrency` to WO update data (lines 1298-1299)
+
+- **Test Fixes:**
+  - Added `laborRate.findFirst` and `trade.findFirst` mocks to transaction mock in workExecution.service.test.ts (lines 193-198)
+  - Added same mocks to workExecution-idempotency.test.ts (lines 155-160)
+  - Added `laborRate.findFirst` and `trade.findFirst` mocks to mockDb in workExecution-costs.test.ts (lines 20-25)
+
+Validation Results:
+- `npx prisma validate`: ✅ Schema is valid
+- `bun run lint`: ✅ 0 errors (34 pre-existing warnings)
+- `bun run test`: ✅ 604/604 tests passed, 22/22 test files passed
+
+Stage Summary:
+- Labor rate structure fully implemented and wired into WO costing pipeline
+- Rate lookup follows proper priority: user-specific → trade-level, with plant-specific overriding plant-agnostic
+- Rate snapshot stored on WO closure for audit trail
+- No existing model fields or relations modified
+- No new API routes added
+- No UI changes
+
+---
+Task ID: 17-18
+Agent: Security Hardening Agent
+Task: Steps 17-18 — Verify and Harden Closed WO Immutability & Security
+
+Work Log:
+- **STEP 17 — Closed WO Immutability Verification:**
+  - Verified state machine: zero transitions FROM 'closed' status in DEFAULT_WO_TRANSITIONS — all service-layer transitions (startWork, submitCompletion, pauseWork, resumeWork, cancelWorkOrder, requestRework, plannerClose) are blocked by state machine.
+  - Verified existing API-route guards: time-logs, materials, personal-tools routes already check isLocked + status='closed'.
+  - Found and fixed gaps:
+    - `measurements/route.ts` POST: Added isLocked + status='closed' guard (returns 409)
+    - `attachments/route.ts` POST: Added isLocked + status='closed' guard (returns 409)
+    - `sync/offline/route.ts` all 5 handlers: Added isLocked + status='closed' guards per handler; added status='verified' to time log handler.
+
+- **STEP 18 — Security Verification:**
+  - Verified capabilities route: auth ✅, plant scope ✅, role ✅ — PASS
+  - Found and fixed plant scope gaps:
+    - `complete/route.ts`: Added getPlantScope IDOR check
+    - `start/route.ts`: Added getPlantScope IDOR check
+    - `measurements/route.ts`: Added getPlantScope IDOR check (POST + GET)
+    - `attachments/route.ts`: Added getPlantScope IDOR check (POST)
+    - `sync/offline/route.ts`: Added request-level denyAccess check + per-record plant scope validation for WO-linked records
+
+- `bun run lint`: 0 errors, 34 warnings (all pre-existing)
+
+Stage Summary:
+- 5 files modified, 0 new files created
+- All closed WO mutation paths now properly guarded (state machine + explicit isLocked/status checks)
+- All identified API routes now have plant scope IDOR protection
+- No UI changes, no schema changes, no test changes

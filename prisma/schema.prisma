@@ -194,6 +194,9 @@ model User {
   primaryTrade String?
   userSkills   UserSkill[]
 
+  // Labor Rate relation
+  laborRates             LaborRate[] @relation("UserLaborRate")
+
   // Repair module relations
   downtimeLogged      WorkOrderDowntime[]      @relation("DowntimeCreatedBy")
   repairMatReqRequested      RepairMaterialRequest[] @relation("RepairMatReqRequested")
@@ -391,6 +394,9 @@ model Plant {
 
   // Industrial Connectivity (Phase 1)
   gateways EdgeGateway[] @relation("GatewayPlant")
+
+  // Labor Rate relation
+  laborRates LaborRate[]
 
   @@map("plants")
 }
@@ -593,6 +599,10 @@ model WorkOrder {
 
   shiftHandovers ShiftHandover[]
   toolTransactions ToolTransaction[] @relation("WOToolTransaction")
+
+  // Labor rate snapshot (applied on WO close/completion)
+  laborRateApplied     Float?
+  laborCurrency        String? @default("GHS")
 
   @@index([plantId])
   @@index([workPackageId])
@@ -1212,6 +1222,9 @@ model Trade {
   updatedAt   DateTime @updatedAt
 
   userSkills UserSkill[]
+
+  // Labor Rate relation
+  laborRates LaborRate[]
 
   @@map("trades")
 }
@@ -5023,4 +5036,31 @@ model IdempotencyRecord {
   @@index([key])
   @@index([entityType, entityId])
   @@map("idempotency_records")
+}
+
+// ============================================================================
+// LABOR RATE STRUCTURE (Maintenance Costing)
+// ============================================================================
+
+model LaborRate {
+  id                   String    @id @default(cuid())
+  userId               String?   // Specific user override
+  tradeId              String?   // Trade-level rate
+  plantId              String?   // Plant-specific override (null = all plants)
+  normalHourlyRate     Float     // GHS per hour (or configured currency)
+  overtimeHourlyRate   Float?    // Overtime multiplier rate (null = 1.5x normal)
+  effectiveFrom        DateTime  // When this rate becomes active
+  effectiveTo          DateTime? // When this rate expires (null = current)
+  currency             String    @default("GHS")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user                 User?     @relation("UserLaborRate", fields: [userId], references: [id], onDelete: Cascade)
+  trade                Trade?    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  plant                Plant?    @relation(fields: [plantId], references: [id], onDelete: Cascade)
+
+  @@index([userId, effectiveFrom, effectiveTo])
+  @@index([tradeId, effectiveFrom, effectiveTo])
+  @@index([plantId])
+  @@map("labor_rates")
 }

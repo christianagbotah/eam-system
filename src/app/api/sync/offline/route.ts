@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('sync:offline');
@@ -48,8 +49,9 @@ async function handleCommentCreate(
     throw new Error('Comment content is required');
   }
 
-  const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
+  const wo = await db.workOrder.findUnique({ where: { id: workOrderId }, select: { id: true, isLocked: true, status: true, plantId: true } });
   if (!wo) throw new Error('Work order not found');
+  if (wo.isLocked || wo.status === 'closed') throw new Error('Work order is closed or locked and cannot be modified');
 
   await db.workOrderComment.create({
     data: {
@@ -73,6 +75,11 @@ async function handleTaskUpdate(
   if (!VALID_STATUSES.includes(status)) {
     throw new Error(`Invalid status: ${status}`);
   }
+
+  // Closed/locked WO immutability guard
+  const wo = await db.workOrder.findUnique({ where: { id: workOrderId }, select: { id: true, isLocked: true, status: true } });
+  if (!wo) throw new Error('Work order not found');
+  if (wo.isLocked || wo.status === 'closed') throw new Error('Work order is closed or locked and cannot be modified');
 
   const task = await db.workOrderTaskExecution.findUnique({ where: { id: taskId } });
   if (!task || task.workOrderId !== workOrderId) {
@@ -114,9 +121,10 @@ async function handleTimeLogCreate(
     throw new Error(`Invalid time log action: ${action}`);
   }
 
-  const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
+  const wo = await db.workOrder.findUnique({ where: { id: workOrderId }, select: { id: true, isLocked: true, status: true } });
   if (!wo) throw new Error('Work order not found');
-  if (wo.isLocked) throw new Error('Work order is locked');
+  if (wo.isLocked || wo.status === 'closed') throw new Error('Work order is closed or locked and cannot be modified');
+  if (wo.status === 'verified') throw new Error('Work order has been reviewed and time logging is no longer allowed');
 
   await db.workOrderTimeLog.create({
     data: {
@@ -148,8 +156,9 @@ async function handleMeasurementCreate(
     throw new Error('Measurement value is required');
   }
 
-  const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
+  const wo = await db.workOrder.findUnique({ where: { id: workOrderId }, select: { id: true, isLocked: true, status: true } });
   if (!wo) throw new Error('Work order not found');
+  if (wo.isLocked || wo.status === 'closed') throw new Error('Work order is closed or locked and cannot be modified');
 
   const content = `[Measurement] ${point}: ${value}${unit ? ` ${unit}` : ''}`;
 
@@ -172,9 +181,9 @@ async function handleAssistanceCreate(
     throw new Error('Assistance reason is required');
   }
 
-  const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
+  const wo = await db.workOrder.findUnique({ where: { id: workOrderId }, select: { id: true, isLocked: true, status: true } });
   if (!wo) throw new Error('Work order not found');
-  if (wo.isLocked) throw new Error('Work order is locked');
+  if (wo.isLocked || wo.status === 'closed') throw new Error('Work order is closed or locked and cannot be modified');
 
   await db.woTeamMemberRequest.create({
     data: {
@@ -195,6 +204,12 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // Pre-compute plant scope for this request
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -241,6 +256,18 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        // Plant scope validation for WO-linked records
+        if (record.entityType.startsWith('work_order')) {
+          const woForScope = await db.workOrder.findUnique({
+            where: { id: record.entityId },
+            select: { id: true, plantId: true },
+          });
+          if (woForScope?.plantId && plantScope.isScoped && plantScope.plantId && woForScope.plantId !== plantScope.plantId) {
+            results.push({ id: record.id, success: false, error: 'Access denied: work order is outside your plant scope' });
+            continue;
+          }
+        }
+
         // Route to the appropriate handler
         const key = `${record.entityType}+${record.operation}` as const;
 

@@ -190,6 +190,12 @@ function mockTransactionExec() {
     shiftHandover: {
       findFirst: mockDb.shiftHandover.findFirst,
     },
+    laborRate: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    trade: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     idempotencyRecord: {
       findUnique: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({}),

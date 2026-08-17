@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 export async function POST(
   request: NextRequest,
@@ -33,10 +34,32 @@ export async function POST(
     // Fetch WO with its components
     const wo = await db.workOrder.findUnique({
       where: { id },
-      include: { workOrderComponents: { select: { componentRegistryId: true } } },
+      select: {
+        id: true,
+        status: true,
+        isLocked: true,
+        plantId: true,
+        workOrderComponents: { select: { componentRegistryId: true } },
+      },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    // Plant scope check (IDOR protection)
+    if (wo.plantId) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.isScoped && plantScope.plantId && wo.plantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+    }
+
+    // Closed/locked WO immutability guard
+    if (wo.isLocked) {
+      return NextResponse.json({ success: false, error: 'Work order is locked and cannot be modified' }, { status: 409 });
+    }
+    if (wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order is closed and cannot be modified' }, { status: 409 });
     }
 
     // Resolve componentId
@@ -111,6 +134,18 @@ export async function GET(
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const componentIdFilter = searchParams.get('componentId') || undefined;
+
+    // Plant scope check for GET (read-only — still enforce plant isolation)
+    const woForGet = await db.workOrder.findUnique({
+      where: { id },
+      select: { id: true, plantId: true },
+    });
+    if (woForGet?.plantId) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.isScoped && plantScope.plantId && woForGet.plantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+    }
 
     // Get all component IDs for this WO
     const woComponents = await db.workOrderComponent.findMany({

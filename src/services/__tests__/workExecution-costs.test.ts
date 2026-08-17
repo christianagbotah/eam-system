@@ -17,6 +17,12 @@ const { mockDb } = vi.hoisted(() => ({
     workOrder: {
       findUnique: vi.fn(),
     },
+    laborRate: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    trade: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
   },
 }));
 

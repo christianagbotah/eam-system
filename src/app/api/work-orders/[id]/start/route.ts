@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 import { startWork, type SessionContext, type AuditContext } from '@/services/workExecution.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 
@@ -18,6 +20,15 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    // Plant scope check (IDOR protection)
+    const woForScope = await db.workOrder.findUnique({ where: { id }, select: { id: true, plantId: true } });
+    if (woForScope?.plantId) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.isScoped && plantScope.plantId && woForScope.plantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+    }
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
 

@@ -128,6 +128,10 @@ export interface AuthoritativeCostResult {
   incompleteLaborRate: boolean;
   toolCostNote?: string;
   warnings: string[];
+  /** Snapshot of the hourly rate applied for labor costing */
+  appliedLaborRate: number | null;
+  /** Currency of the applied labor rate */
+  appliedLaborCurrency: string | null;
 }
 
 // ─── Helper: Enriched WO used internally ────────────────────────────────────
@@ -389,6 +393,7 @@ export async function calculateAuthoritativeCosts(
       estimatedHours: true,
       tradeActivity: true,
       assignedTo: true,
+      plantId: true,
       timeLogs: {
         select: {
           id: true,
@@ -460,16 +465,107 @@ export async function calculateAuthoritativeCosts(
     warnings.push('Labor hours resolved to 0 despite time log entries — check for missing duration/start/end data');
   }
 
-  // ── 2. Labor cost: look for a configured rate ──
+  // ── 2. Labor cost: look up configured rate via LaborRate table ──
   let laborCost = 0;
   let incompleteLaborRate = true;
+  let appliedLaborRate: number | null = null;
+  let appliedLaborCurrency: string | null = null;
 
-  // Attempt: Look up a Trade-level hourly rate via the user's primaryTrade.
-  // The Trade model currently does NOT have an hourlyRate field.
-  // Attempt: Look up a user-level rate — the User model also does NOT have one.
-  // Since no rate field exists in the schema, laborCost is 0 with a flag.
-  laborCost = 0;
-  incompleteLaborRate = true;
+  const now = new Date();
+  const woPlantId = wo.plantId;
+  const woAssignedTo = wo.assignedTo;
+  const woTradeActivity = wo.tradeActivity; // e.g. "mechanical", "electrical"
+
+  // Helper: build the base where clause for effective date range
+  const effectiveWhere = {
+    effectiveFrom: { lte: now },
+    OR: [
+      { effectiveTo: null },
+      { effectiveTo: { gte: now } },
+    ],
+  };
+
+  // Priority 1: User-specific rate (most specific)
+  if (woAssignedTo && incompleteLaborRate) {
+    // Try plant-specific user rate first
+    let userRate = null;
+    if (woPlantId) {
+      userRate = await client.laborRate.findFirst({
+        where: {
+          userId: woAssignedTo,
+          plantId: woPlantId,
+          ...effectiveWhere,
+        },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+    }
+    // Fall back to plant-agnostic user rate
+    if (!userRate) {
+      userRate = await client.laborRate.findFirst({
+        where: {
+          userId: woAssignedTo,
+          plantId: null,
+          ...effectiveWhere,
+        },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+    }
+
+    if (userRate) {
+      laborCost = Math.round(laborHours * userRate.normalHourlyRate * 100) / 100;
+      incompleteLaborRate = false;
+      appliedLaborRate = userRate.normalHourlyRate;
+      appliedLaborCurrency = userRate.currency;
+    }
+  }
+
+  // Priority 2: Trade-level rate
+  if (woTradeActivity && incompleteLaborRate) {
+    // Look up the trade by code (tradeActivity stores the trade code/name)
+    const trade = await client.trade.findFirst({
+      where: {
+        OR: [
+          { code: woTradeActivity },
+          { name: woTradeActivity },
+        ],
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    if (trade) {
+      // Try plant-specific trade rate first
+      let tradeRate = null;
+      if (woPlantId) {
+        tradeRate = await client.laborRate.findFirst({
+          where: {
+            tradeId: trade.id,
+            plantId: woPlantId,
+            ...effectiveWhere,
+          },
+          orderBy: { effectiveFrom: 'desc' },
+        });
+      }
+      // Fall back to plant-agnostic trade rate
+      if (!tradeRate) {
+        tradeRate = await client.laborRate.findFirst({
+          where: {
+            tradeId: trade.id,
+            plantId: null,
+            ...effectiveWhere,
+          },
+          orderBy: { effectiveFrom: 'desc' },
+        });
+      }
+
+      if (tradeRate) {
+        laborCost = Math.round(laborHours * tradeRate.normalHourlyRate * 100) / 100;
+        incompleteLaborRate = false;
+        appliedLaborRate = tradeRate.normalHourlyRate;
+        appliedLaborCurrency = tradeRate.currency;
+      }
+    }
+  }
 
   if (incompleteLaborRate) {
     warnings.push('No configured labor rate found — labor cost set to 0. Configure trade or user-level hourly rates to enable automatic labor cost calculation.');
@@ -513,6 +609,8 @@ export async function calculateAuthoritativeCosts(
     incompleteLaborRate,
     toolCostNote,
     warnings,
+    appliedLaborRate,
+    appliedLaborCurrency,
   };
 }
 
@@ -943,6 +1041,8 @@ export async function submitCompletion(
         partsCost,
         contractorCost,
         totalCost,
+        appliedLaborRate: costs.appliedLaborRate,
+        appliedLaborCurrency: costs.appliedLaborCurrency,
       },
       tx,
     });
@@ -1195,6 +1295,8 @@ export async function plannerClose(
           partsCost: costs.actualMaterialCost,
           contractorCost: costs.actualContractorCost,
           totalCost: costs.totalActualCost,
+          laborRateApplied: costs.appliedLaborRate ?? undefined,
+          laborCurrency: costs.appliedLaborCurrency ?? undefined,
         },
       });
     }

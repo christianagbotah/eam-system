@@ -152,6 +152,12 @@ function mockTransactionExec() {
     shiftHandover: {
       findFirst: mockDb.shiftHandover.findFirst,
     },
+    laborRate: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    trade: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
   };
   (mockDb.$transaction as Mock).mockImplementation(async (cb: (t: any) => Promise<any>) => cb(tx)); // eslint-disable-line @typescript-eslint/no-explicit-any
   return tx;

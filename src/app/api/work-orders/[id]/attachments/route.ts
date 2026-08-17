@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 import { ObjectStorageService } from '@/services/objectStorage.service';
 
 export async function POST(
@@ -20,9 +21,28 @@ export async function POST(
     const { id: workOrderId } = await params;
 
     // Verify WO exists
-    const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
+    const wo = await db.workOrder.findUnique({
+      where: { id: workOrderId },
+      select: { id: true, status: true, isLocked: true, plantId: true },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    // Plant scope check (IDOR protection)
+    if (wo.plantId) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.isScoped && plantScope.plantId && wo.plantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+    }
+
+    // Closed/locked WO immutability guard
+    if (wo.isLocked) {
+      return NextResponse.json({ success: false, error: 'Work order is locked and cannot be modified' }, { status: 409 });
+    }
+    if (wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order is closed and cannot be modified' }, { status: 409 });
     }
 
     const formData = await request.formData();
