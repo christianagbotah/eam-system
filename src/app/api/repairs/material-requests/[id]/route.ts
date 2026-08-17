@@ -165,7 +165,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       include: {
         workOrder: {
           select: {
-            id: true, woNumber: true, title: true,
+            id: true, woNumber: true, title: true, plantId: true,
             assignedSupervisorId: true, plannerId: true, assignedTo: true,
           },
         },
@@ -174,6 +174,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
 
     if (!matReq) return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
+
+    // Plant scope validation for ALL workflow actions
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, matReq.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     // ── Role-based access control for workflow actions ──
     if (action === 'supervisor_approve' || action === 'supervisor_reject') {
@@ -190,6 +196,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           !hasRole(session, 'inventory_manager') &&
           !hasRole(session, 'tools_shop_attendant')) {
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve material requests' }, { status: 403 });
+      }
+    }
+    // ISSUE action — store keeper / inventory-authorized role ONLY
+    if (action === 'issue') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only store keeper or inventory manager can issue materials' }, { status: 403 });
+      }
+    }
+    // RECORD_RETURN — store keeper must confirm physical return for inventory adjustment
+    if (action === 'record_return') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager')) {
+        return NextResponse.json({ success: false, error: 'Only store keeper or inventory manager can record material returns' }, { status: 403 });
       }
     }
 

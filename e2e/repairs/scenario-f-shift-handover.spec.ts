@@ -1,12 +1,17 @@
 /**
- * Scenario F — Shift Handover Lifecycle (UAT-08)
+ * Scenario F — Shift Handover Full Lifecycle (UAT-08)
  *
- * Tests the REAL POST /api/work-orders/[id]/handover endpoint:
- *   F1: Create MR → supervisor approve → planner convert → assign tech → start work
- *   F2: Technician initiates handover → verify pending_handover status
- *   F3: Attempt to start work BEFORE confirmation — must be blocked
- *   F4: Incoming technician confirms handover (resume)
- *   F5: Original outgoing technician cannot self-resume
+ * Tests the COMPLETE shift handover lifecycle via API-only assertions:
+ *   F1: Create MR → approve → convert → assign to tech_single → start work
+ *   F2: tech_single initiates handover via POST /api/work-orders/[id]/handover (action='initiate')
+ *       → verify WO status = 'pending_handover'
+ *   F3: Attempt to start work or resume BEFORE confirmation → must FAIL (403 or 400)
+ *   F4: POST /api/shift-handovers/[id]/confirm as the INCOMING designated recipient
+ *       → verify ShiftHandover status = 'confirmed'
+ *   F5: Wrong user (not the receivedById) tries to confirm → must FAIL (403)
+ *   F6: POST /api/work-orders/[id]/handover (action='resume') after confirmation
+ *       → verify WO status = 'in_progress'
+ *   F7: Verify a time log entry was created for the resume
  *
  * ALL assertions are server-state based (API responses), never UI text.
  * Uses single test() with test.step() pattern — no describe/beforeAll/afterAll.
@@ -25,11 +30,13 @@ import {
   lookupPlantId,
   apiCall,
   expectFailure,
-  initiateHandoverWO,
+  resumeAfterHandoverWO,
+  confirmShiftHandover,
 } from './helpers/api';
 
-test('UAT-08: Scenario F — Shift Handover Lifecycle', async ({ page, browser }) => {
+test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
   let woId = '';
+  let handoverId = '';
 
   // ── F1: Create MR → approve → convert → assign → start ─────────────────
   await test.step('F1: Create WO and start work', async () => {
@@ -75,104 +82,142 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async ({ page, browser }
   });
 
   // ── F2: Technician initiates handover ───────────────────────────────────
-  await test.step('F2: Technician initiates handover via POST /api/work-orders/[id]/handover', async () => {
+  await test.step('F2: Technician initiates handover → WO status = pending_handover', async () => {
     const techToken = await getToken('tech_single');
     const plannerToken = await getToken('planner');
 
-    // Initiate handover
-    const result = await initiateHandoverWO(techToken, woId, 'End of shift — bearing partially removed');
-    expect(result).toBeTruthy();
+    // Initiate handover with action='initiate'
+    const { status: initStatus, data: initData } = await apiCall(
+      techToken, 'POST', `/api/work-orders/${woId}/handover`, {
+        action: 'initiate',
+        reason: 'End of shift — bearing partially removed',
+      },
+    );
+    expect(initStatus).toBe(200);
+    expect(initData.success).toBe(true);
 
     // Verify WO status is now pending_handover via API GET
     const fetched = await getWO(plannerToken, woId);
     expect(fetched.status).toBe('pending_handover');
 
-    // Check for ShiftHandover records linked to this WO.
-    // initiateHandover transitions WO status but does NOT create a ShiftHandover record.
-    // ShiftHandover records are managed separately via POST /api/shift-handovers.
-    const { status, data } = await apiCall(
+    // Retrieve the ShiftHandover record for this WO
+    const { status: shStatus, data: shData } = await apiCall(
       plannerToken, 'GET', `/api/shift-handovers?workOrderId=${woId}`,
     );
-    expect(status).toBe(200);
-    expect(data.success).toBe(true);
-    const handovers = data.data as unknown[];
+    expect(shStatus).toBe(200);
+    expect(shData.success).toBe(true);
+    const handovers = shData.data as Array<{ id: string; status: string; workOrderId?: string }>;
     expect(Array.isArray(handovers)).toBe(true);
+    // Capture the handover ID for subsequent steps
+    const pendingHandover = handovers.find(
+      (h) => h.status === 'pending' || h.workOrderId === woId,
+    );
+    expect(pendingHandover).toBeTruthy();
+    handoverId = pendingHandover!.id;
+    expect(handoverId).toBeTruthy();
   });
 
-  // ── F3: Attempt to start work BEFORE confirmation ───────────────────────
-  await test.step('F3: Cannot start work while pending_handover', async () => {
+  // ── F3: Attempt to start work or resume BEFORE confirmation → FAIL ──────
+  await test.step('F3: Cannot start work or resume while pending_handover (before confirmation)', async () => {
     const techToken = await getToken('tech_single');
     const plannerToken = await getToken('planner');
 
-    // POST /api/work-orders/[id]/start should FAIL (status >= 400)
-    const { status } = await expectFailure(
+    // POST /api/work-orders/[id]/start should FAIL (403 or 400)
+    const { status: startStatus, data: startData } = await expectFailure(
       techToken, 'POST', `/api/work-orders/${woId}/start`, {},
     );
-    expect(status).toBeGreaterThanOrEqual(400);
+    expect([400, 403]).toContain(startStatus);
+    expect(startData.success).toBe(false);
+
+    // POST /api/work-orders/[id]/handover with action='resume' should also FAIL
+    const { status: resumeStatus, data: resumeData } = await expectFailure(
+      techToken, 'POST', `/api/work-orders/${woId}/handover`,
+      { action: 'resume', reason: 'Trying to resume before confirmation' },
+    );
+    expect([400, 403]).toContain(resumeStatus);
+    expect(resumeData.success).toBe(false);
 
     // WO should still be pending_handover
     const fetched = await getWO(plannerToken, woId);
     expect(fetched.status).toBe('pending_handover');
   });
 
-  // ── F4: Incoming technician (tech_assistant) attempts to confirm handover ─
-  await test.step('F4: Incoming technician (tech_assistant) attempts resume', async () => {
-    const techAssistantToken = await getToken('tech_assistant');
+  // ── F4: INCOMING designated recipient confirms handover ────────────────
+  await test.step('F4: INCOMING recipient confirms handover → ShiftHandover status = confirmed', async () => {
     const plannerToken = await getToken('planner');
 
-    // POST /api/work-orders/[id]/handover with action='resume'
-    // resumeAfterHandover requires:
-    //   1. A confirmed ShiftHandover record for this WO
-    //   2. Team authority (assignedTo or team_leader)
-    // tech_assistant is NOT on the WO team, so this should fail with 400.
-    const { status, data } = await expectFailure(
-      techAssistantToken, 'POST', `/api/work-orders/${woId}/handover`,
-      { action: 'resume', reason: 'Taking over from previous shift' },
-    );
-    expect(status).toBeGreaterThanOrEqual(400);
-    expect(data.success).toBe(false);
+    // Confirm the handover — the INCOMING designated recipient calls confirm
+    const confirmResult = await confirmShiftHandover(plannerToken, handoverId);
+    expect(confirmResult).toBeTruthy();
 
-    // Verify WO is still pending_handover (resume did not succeed)
+    // Verify ShiftHandover record is now 'confirmed' via GET
+    const { status: shStatus, data: shData } = await apiCall(
+      plannerToken, 'GET', `/api/shift-handovers/${handoverId}`,
+    );
+    expect(shStatus).toBe(200);
+    expect(shData.success).toBe(true);
+    expect(shData.data.status).toBe('confirmed');
+
+    // WO should still be pending_handover until resume is called
     const fetched = await getWO(plannerToken, woId);
     expect(fetched.status).toBe('pending_handover');
   });
 
-  // ── F5: Original outgoing technician cannot self-resume ────────────────
-  await test.step('F5: Original technician (tech_single) cannot resume their own handover', async () => {
+  // ── F5: Wrong user tries to confirm → must FAIL (403) ─────────────────
+  await test.step('F5: Wrong user (not the receivedById) tries to confirm → 403', async () => {
     const techToken = await getToken('tech_single');
     const plannerToken = await getToken('planner');
 
-    // The original technician (who initiated the handover) should NOT be able
-    // to resume. Even though they have team authority (assignedTo), the
-    // resumeAfterHandover service requires a confirmed ShiftHandover record
-    // which does not exist (initiateHandover only changes WO status).
+    // tech_single (the outgoing user) tries to confirm their own handover
+    // This should be rejected with 403
     const { status, data } = await expectFailure(
-      techToken, 'POST', `/api/work-orders/${woId}/handover`,
-      { action: 'resume', reason: 'Attempting to self-resume' },
+      techToken, 'POST', `/api/shift-handovers/${handoverId}/confirm`, {},
     );
-    expect(status).toBeGreaterThanOrEqual(400);
+    expect([400, 403]).toContain(status);
     expect(data.success).toBe(false);
 
-    // WO should remain pending_handover
-    const fetched = await getWO(plannerToken, woId);
-    expect(fetched.status).toBe('pending_handover');
+    // Verify handover status is still confirmed (unchanged)
+    const { data: shData } = await apiCall(
+      plannerToken, 'GET', `/api/shift-handovers/${handoverId}`,
+    );
+    expect(shData.data.status).toBe('confirmed');
   });
 
-  // ── Verify handover audit trail via ShiftHandover records ──────────────
-  await test.step('Verify handover audit exists via ShiftHandover records', async () => {
+  // ── F6: Resume after confirmed handover → WO status = in_progress ──────
+  await test.step('F6: Resume after confirmed handover → WO status = in_progress', async () => {
+    const techToken = await getToken('tech_single');
+
+    // POST /api/work-orders/[id]/handover with action='resume' after confirmation
+    await resumeAfterHandoverWO(techToken, woId, 'Resuming work after shift handover');
+
+    // Server-state: WO should be in_progress again
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
+  });
+
+  // ── F7: Verify a time log entry was created for the resume ─────────────
+  await test.step('F7: Verify a time log entry was created for the resume', async () => {
     const plannerToken = await getToken('planner');
 
-    // Query shift-handovers list for this WO
+    // GET /api/work-orders/[woId]/time-logs and verify there is an entry
     const { status, data } = await apiCall(
-      plannerToken, 'GET', `/api/shift-handovers?workOrderId=${woId}`,
+      plannerToken, 'GET', `/api/work-orders/${woId}/time-logs`,
     );
     expect(status).toBe(200);
     expect(data.success).toBe(true);
-    expect(data.kpis).toBeDefined();
-    expect(typeof data.kpis.total).toBe('number');
+    const timeLogs = data.data as Array<{ id: string; action?: string; notes?: string }>;
+    expect(Array.isArray(timeLogs)).toBe(true);
+    expect(timeLogs.length).toBeGreaterThanOrEqual(1);
 
-    // Confirm the WO ended in pending_handover (no resume succeeded during this test)
-    const fetched = await getWO(plannerToken, woId);
-    expect(fetched.status).toBe('pending_handover');
+    // Verify that the handover/resume is reflected in the audit trail
+    const { status: shStatus, data: shData } = await apiCall(
+      plannerToken, 'GET', `/api/shift-handovers?workOrderId=${woId}`,
+    );
+    expect(shStatus).toBe(200);
+    expect(shData.success).toBe(true);
+    const handovers = shData.data as Array<{ id: string; status: string }>;
+    expect(handovers.length).toBeGreaterThanOrEqual(1);
+    const confirmed = handovers.find((h) => h.status === 'confirmed');
+    expect(confirmed).toBeTruthy();
   });
 });

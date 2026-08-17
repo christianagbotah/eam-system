@@ -57,6 +57,14 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    // Block direct confirmation via PUT — must use the dedicated confirm endpoint
+    if (body.status === 'confirmed') {
+      return NextResponse.json(
+        { success: false, error: 'Use POST /api/shift-handovers/[id]/confirm to confirm a handover' },
+        { status: 403 },
+      );
+    }
+
     const existing = await db.shiftHandover.findUnique({
       where: { id },
       include: { workOrder: { select: { plantId: true } } },

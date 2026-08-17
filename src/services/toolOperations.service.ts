@@ -211,10 +211,45 @@ export async function atomicIssueTools(
         });
       }
 
-      // Update request status to issued
+      // Determine aggregate issue status based on items
+      let aggregateStatus: string;
+      if (toolReq.items.length > 0) {
+        // Multi-item path: count issued vs blocked
+        const refreshedItems = await tx.repairToolRequestItem.findMany({
+          where: { repairToolRequestId: toolRequestId },
+        });
+        let itemsIssued = 0;
+        let itemsFullySatisfied = 0;
+        let totalItems = refreshedItems.length;
+
+        for (const item of refreshedItems) {
+          if ((item.quantityIssued ?? 0) > 0) {
+            itemsIssued++;
+            if ((item.quantityIssued ?? 0) >= (item.quantityRequested ?? 0)) {
+              itemsFullySatisfied++;
+            }
+          }
+        }
+
+        if (itemsIssued === 0) {
+          // Zero items were actually issued — keep at storekeeper_approved
+          aggregateStatus = 'storekeeper_approved';
+        } else {
+          // At least some items issued — use 'issued' (schema has no 'partially_issued')
+          aggregateStatus = 'issued';
+          if (itemsFullySatisfied < totalItems) {
+            warnings.push(`${itemsIssued}/${totalItems} items issued (${itemsFullySatisfied} fully satisfied). Status set to 'issued' — check individual item availability for details.`);
+          }
+        }
+      } else {
+        // Legacy single-tool path — already handled above, status is 'issued'
+        aggregateStatus = 'issued';
+      }
+
+      // Update request status
       const updated = await tx.repairToolRequest.update({
         where: { id: toolRequestId },
-        data: { status: 'issued', issuedById: session.userId, issuedAt: now },
+        data: { status: aggregateStatus, issuedById: session.userId, issuedAt: now },
         include: {
           requestedBy: { select: { id: true, fullName: true, username: true } },
           supervisorApprovedBy: { select: { id: true, fullName: true } },

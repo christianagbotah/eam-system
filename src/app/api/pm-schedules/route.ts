@@ -35,9 +35,15 @@ export async function GET(request: NextRequest) {
       where.nextDueDate = { lte: weekFromNow };
     }
 
-    // Apply plant scoping via nested Asset relation filter
-    if (plantScope.isScoped && plantScope.plantId) {
-      where.asset = { plantId: plantScope.plantId };
+    // ALWAYS apply plant scoping via nested Asset relation filter
+    if (!plantScope.isSystemWide) {
+      if (plantScope.plantId) {
+        where.asset = { plantId: plantScope.plantId };
+      } else if (plantScope.accessiblePlantIds.length > 0) {
+        where.asset = { plantId: { in: plantScope.accessiblePlantIds } };
+      } else {
+        where.asset = { plantId: '__ACCESS_DENIED__' };
+      }
     }
 
     const schedules = await db.pmSchedule.findMany({
@@ -102,10 +108,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate asset exists
-    const assetExists = await db.asset.findUnique({ where: { id: assetId } });
+    // Validate asset exists and user has plant access to it
+    const assetExists = await db.asset.findUnique({ where: { id: assetId }, select: { id: true, plantId: true } });
     if (!assetExists) {
       return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 400 });
+    }
+    const postScope = await getPlantScope(request, session);
+    if (postScope.denyAccess || !canAccessPlant(postScope, assetExists.plantId)) {
+      return NextResponse.json({ success: false, error: 'Cannot create PM schedule for an asset in an inaccessible plant' }, { status: 403 });
     }
 
     const schedule = await db.pmSchedule.create({

@@ -214,29 +214,24 @@ export async function seedCanonicalTransitions(
 
 /**
  * Ensure the status_transitions table has the required rows.
- * If the table is empty (e.g., after a fresh deploy), auto-seed it.
- * Uses the canonical seedCanonicalTransitions() which is idempotent via upsert.
- * Returns true if seeding was performed, false if already populated.
+ * ALWAYS calls seedCanonicalTransitions() (which uses idempotent upsert) so that
+ * partial data from a prior seed is repaired.
+ * Returns true if seeding was performed (first call), false on subsequent calls.
  */
 async function ensureTransitionsSeeded(): Promise<boolean> {
   if (_seedAttempted) return false;
 
   try {
-    const count = await db.statusTransition.count();
-    if (count > 0) {
-      _seedAttempted = true;
-      return false;
-    }
+    const isFirstCall = (await db.statusTransition.count()) === 0;
 
-    console.warn('[state-machine] status_transitions table is empty — auto-seeding default transitions...');
-
+    console.warn('[state-machine] Running canonical transition seed (idempotent upsert)...');
     const seeded = await seedCanonicalTransitions();
-    console.warn(`[state-machine] ✅ Auto-seeded ${seeded} default status transitions`);
+    console.warn(`[state-machine] ✅ Seeded ${seeded} status transitions (upsert)`);
 
     _seedAttempted = true;
-    return true;
+    return isFirstCall;
   } catch (err) {
-    console.error('[state-machine] ❌ Auto-seed failed:', err);
+    console.error('[state-machine] ❌ Seed failed:', err);
     _seedAttempted = true; // Don't keep trying
     return false;
   }

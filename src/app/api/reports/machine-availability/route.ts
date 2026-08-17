@@ -155,8 +155,8 @@ export async function GET(request: NextRequest) {
     const plantScope = await getPlantScope(request, session);
     let plantFilterWhere = getPlantFilterWhere(plantScope);
 
-    // If caller explicitly passed plantId param and plant scope is not active, use the param
-    if (!plantScope.isScoped && plantIdParam) {
+    // If caller explicitly passed plantId param and user is system-wide, use the param
+    if (plantScope.isSystemWide && plantIdParam) {
       plantFilterWhere = { plantId: plantIdParam };
     }
 

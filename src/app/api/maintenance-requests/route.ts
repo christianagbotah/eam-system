@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: generate request number MR-YYYYMM-NNNN
@@ -48,6 +48,9 @@ export async function GET(request: NextRequest) {
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
@@ -145,6 +148,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    // ── Plant scope validation ──
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       title,
@@ -171,13 +180,39 @@ export async function POST(request: NextRequest) {
 
     const requestNumber = await generateRequestNumber();
 
-    // Get user's primary plant if not provided
+    // Resolve plant ID with plant-scope validation
     let resolvedPlantId = plantId;
-    if (!resolvedPlantId) {
-      const userPlant = await db.userPlant.findFirst({
-        where: { userId: session.userId, isPrimary: true },
+    if (resolvedPlantId) {
+      // Explicit plantId provided — verify user has access
+      if (!canAccessPlant(plantScope, resolvedPlantId)) {
+        return NextResponse.json({ success: false, error: 'Cannot create maintenance request for an inaccessible plant' }, { status: 403 });
+      }
+    } else {
+      // No explicit plantId — derive from user's primary plant
+      if (plantScope.accessiblePlantIds.length === 1) {
+        resolvedPlantId = plantScope.accessiblePlantIds[0];
+      } else if (plantScope.accessiblePlantIds.length > 1) {
+        // Multiple plants — try primary
+        const userPlant = await db.userPlant.findFirst({
+          where: { userId: session.userId, isPrimary: true },
+        });
+        resolvedPlantId = userPlant?.plantId ?? null;
+      }
+      // If still null and user has no plants, MR will have no plant (acceptable for non-plant entities)
+    }
+
+    // If assetId provided, validate asset exists in the resolved plant
+    if (assetId && resolvedPlantId) {
+      const asset = await db.asset.findUnique({
+        where: { id: assetId },
+        select: { id: true, plantId: true },
       });
-      resolvedPlantId = userPlant?.plantId ?? null;
+      if (!asset) {
+        return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
+      }
+      if (asset.plantId !== resolvedPlantId) {
+        return NextResponse.json({ success: false, error: 'Cannot link an asset from a different plant to this maintenance request' }, { status: 403 });
+      }
     }
 
     // Use explicitly provided supervisorId, or auto-detect from department

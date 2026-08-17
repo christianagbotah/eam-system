@@ -67,6 +67,12 @@ export async function PUT(
       );
     }
 
+    // Plant scope check
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'type', 'severity', 'status', 'incidentDate',
@@ -134,6 +140,12 @@ export async function DELETE(
         { success: false, error: 'Safety incident not found' },
         { status: 404 }
       );
+    }
+
+    // Plant scope check
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     await db.safetyIncident.delete({ where: { id } });

@@ -85,13 +85,12 @@ export async function GET(request: NextRequest) {
 
     const where: Record<string, unknown> = {};
 
-    // Apply plant scope filter
-    if (session) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope) {
-        applyPlantScope(where, plantScope);
-      }
+    // Apply plant scope filter (fail-closed — ALWAYS filter for non-system-wide)
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
+    applyPlantScope(where, plantScope);
 
     if (workOrderId) where.workOrderId = workOrderId;
     if (status) where.status = status;

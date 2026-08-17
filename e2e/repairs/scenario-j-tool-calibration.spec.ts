@@ -39,6 +39,9 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
   const expiredToolId = await lookupToolId(plannerToken, 'UAT-CAL-EXPIRED');
   const failedToolId = await lookupToolId(plannerToken, 'UAT-CAL-FAILED');
 
+  // WO ID captured in J1 and reused in ALL subsequent steps
+  let woId: string;
+
   // ── J1: Create and start a WO (prerequisite) ──────────────────────────
   await test.step('J1: Create and start WO for calibration tests', async () => {
     const requesterToken = await getToken('requester');
@@ -60,12 +63,13 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
       workOrderType: 'corrective',
       priority: 'high',
     });
-    expect(wo.id).toBeTruthy();
+    woId = wo.id;
+    expect(woId).toBeTruthy();
 
-    await assignWO(plannerToken, wo.id, { assignedTo: techUserId });
-    await startWO(techToken, wo.id);
+    await assignWO(plannerToken, woId, { assignedTo: techUserId });
+    await startWO(techToken, woId);
 
-    const fetched = await getWO(techToken, wo.id);
+    const fetched = await getWO(techToken, woId);
     expect(fetched.status).toBe('in_progress');
   });
 
@@ -121,20 +125,6 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
   }
 
   /**
-   * Helper: get a WO ID for the current technician (finds an in_progress WO).
-   */
-  async function getInProgressWoId(): Promise<string> {
-    const { status, data } = await apiCall(
-      techToken, 'GET', '/api/work-orders?status=in_progress&limit=1',
-    );
-    expect(status).toBe(200);
-    expect(data.success).toBe(true);
-    const wos = data.data as Array<{ id: string; status: string }>;
-    expect(wos.length).toBeGreaterThanOrEqual(1);
-    return wos[0].id;
-  }
-
-  /**
    * Helper: get tool transactions for a tool.
    */
   async function getToolTransactions(toolId: string) {
@@ -147,7 +137,6 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J2: VALID calibration — tool issues successfully ───────────────────
   await test.step('J2: VALID calibration — tool issues successfully', async () => {
-    const woId = await getInProgressWoId();
     const { trId, itemId } = await createAndApproveToolRequest(validToolId, woId);
 
     // Issue the tool
@@ -187,7 +176,6 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J3: EXPIRED calibration — item blocked with calibration warning ────
   await test.step('J3: EXPIRED calibration — item blocked', async () => {
-    const woId = await getInProgressWoId();
     const { trId, itemId } = await createAndApproveToolRequest(expiredToolId, woId);
 
     // Issue the tool
@@ -234,7 +222,6 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J4: FAILED calibration — item blocked with calibration warning ─────
   await test.step('J4: FAILED calibration — item blocked', async () => {
-    const woId = await getInProgressWoId();
     const { trId, itemId } = await createAndApproveToolRequest(failedToolId, woId);
 
     // Issue the tool
@@ -278,8 +265,6 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J5: EMERGENCY OVERRIDE — technician cannot bypass calibration ─────
   await test.step('J5: Emergency override — technician cannot bypass calibration', async () => {
-    const woId = await getInProgressWoId();
-
     // Create a tool request for the expired tool and get it approved
     const { trId, itemId } = await createAndApproveToolRequest(expiredToolId, woId);
 

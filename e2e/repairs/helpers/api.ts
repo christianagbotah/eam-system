@@ -133,6 +133,35 @@ export async function lookupToolId(token: string, toolName: string): Promise<str
   return found.id;
 }
 
+const inventoryItemCache: Record<string, string> = {};
+
+/** Look up an inventory item's DB ID by its itemCode (e.g. 'UAT-BRG-6205') */
+export async function lookupInventoryItemId(token: string, itemCode: string): Promise<string> {
+  if (inventoryItemCache[itemCode]) return inventoryItemCache[itemCode];
+  const { data } = await apiCall(token, 'GET', '/api/inventory?search=' + encodeURIComponent(itemCode) + '&limit=5');
+  const items = data.data ?? data.items ?? data.results ?? [];
+  const item = items.find((i: any) => i.itemCode === itemCode);
+  if (!item) throw new Error(`Inventory item ${itemCode} not found`);
+  inventoryItemCache[itemCode] = item.id;
+  return item.id;
+}
+
+const toolCodeCache: Record<string, string> = {};
+
+/** Look up a tool's DB ID by its toolCode (e.g. 'UAT-NON-CAL-TOOL') */
+export async function lookupToolIdByCode(token: string, toolCode: string): Promise<string> {
+  if (toolCodeCache[toolCode]) return toolCodeCache[toolCode];
+  const { status, data } = await apiCall(token, 'GET', `/api/tools?search=${encodeURIComponent(toolCode)}`);
+  if (status !== 200 || !data.success) {
+    throw new Error(`Failed to look up tool by code ${toolCode}: ${status} ${JSON.stringify(data)}`);
+  }
+  const tools = data.data as Array<{ id: string; toolCode: string }>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const found = tools.find((t) => t.toolCode === toolCode);
+  if (!found) throw new Error(`Tool with code ${toolCode} not found`);
+  toolCodeCache[toolCode] = found.id;
+  return found.id;
+}
+
 // ── MR operations ────────────────────────────────────────────────────────
 
 /** Create MR via API and return the created MR */
@@ -390,6 +419,36 @@ export async function resumeAfterHandoverWO(token: string, woId: string, reason?
   const { status, data } = await apiCall(token, 'POST', `/api/work-orders/${woId}/handover`, { action: 'resume', reason });
   if (status < 200 || status >= 300) throw new Error(`Resume after handover failed: ${status} ${JSON.stringify(data)}`);
   return data.data || data;
+}
+
+/** Confirm a shift handover */
+export async function confirmShiftHandover(token: string, handoverId: string) {
+  const { status, data } = await apiCall(token, 'POST', `/api/shift-handovers/${handoverId}/confirm`, {});
+  if (status < 200 || status >= 300) throw new Error(`Confirm handover failed: ${status} ${JSON.stringify(data)}`);
+  return data.data || data;
+}
+
+/** Upload an attachment to a work order using multipart form data */
+export async function uploadAttachment(
+  token: string,
+  woId: string,
+  fileName: string,
+  fileContent: Buffer,
+  contentType: string,
+) {
+  const formData = new FormData();
+  const blob = new Blob([fileContent], { type: contentType });
+  formData.append('file', blob, fileName);
+
+  const res = await fetch(`${BASE}/api/work-orders/${woId}/attachments`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+  const json = await res.json();
+  return { status: res.status, data: json };
 }
 
 /** Request rework */

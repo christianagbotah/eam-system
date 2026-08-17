@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { generateClosedWOPackPDF, type ClosedWOPackData } from '@/lib/generate-closed-wo-pack';
 
 // GET /api/work-orders/[id]/closed-pack
@@ -151,7 +151,7 @@ export async function GET(
     }
 
     // ── Plant scope filter ──
-    if (scope.isScoped && scope.plantId && wo.plantId !== scope.plantId) {
+    if (!scope.isSystemWide && !canAccessPlant(scope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Work order not in your plant scope' }, { status: 403 });
     }
 

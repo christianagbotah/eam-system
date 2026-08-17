@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant, applyPlantScope } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
 // Helper: generate WO number WO-YYYYMM-NNNN (must be called inside a transaction)
@@ -174,6 +174,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    // Plant scope validation
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       title,
@@ -212,6 +218,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
     }
 
+    // ── Plant scope: validate body.plantId ──
+    if (body.plantId) {
+      if (!canAccessPlant(plantScope, body.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied to the specified plant' }, { status: 403 });
+      }
+    }
+
     // ── Validate maintenance request if provided ──
     // We validate the MR exists and is in 'approved' status, but we do NOT change
     // the MR status here. The MR → WO conversion (status change to 'converted') must
@@ -220,12 +233,19 @@ export async function POST(request: NextRequest) {
     if (maintenanceRequestId) {
       const mr = await db.maintenanceRequest.findUnique({
         where: { id: maintenanceRequestId },
-        select: { id: true, status: true, workflowStatus: true, workOrderId: true },
+        select: { id: true, status: true, workflowStatus: true, workOrderId: true, plantId: true },
       });
       if (!mr) {
         return NextResponse.json(
           { success: false, error: 'Maintenance request not found' },
           { status: 400 }
+        );
+      }
+      // Validate MR belongs to the same plant
+      if (mr.plantId && resolvedPlantId && mr.plantId !== resolvedPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Maintenance request does not belong to the resolved plant' },
+          { status: 400 },
         );
       }
       if (mr.status !== 'approved') {
@@ -245,11 +265,33 @@ export async function POST(request: NextRequest) {
     // Resolve plantId (outside transaction — reads user config, no WO data yet)
     let resolvedPlantId = plantId;
     if (!resolvedPlantId) {
-      const userPlant = await db.userPlant.findFirst({
-        where: { userId: session.userId, isPrimary: true },
-      });
-      resolvedPlantId = userPlant?.plantId ?? null;
+      // Derive from plant scope: single accessible plant → use it; multiple → try primary userPlant
+      if (plantScope.accessiblePlantIds.length === 1) {
+        resolvedPlantId = plantScope.accessiblePlantIds[0];
+      } else {
+        const userPlant = await db.userPlant.findFirst({
+          where: { userId: session.userId, isPrimary: true },
+        });
+        resolvedPlantId = userPlant?.plantId ?? (plantScope.accessiblePlantIds[0] ?? null);
+      }
     }
+
+    // ── Validate asset plant if assetId provided ──
+    if (assetId) {
+      const asset = await db.asset.findUnique({
+        where: { id: assetId },
+        select: { id: true, plantId: true },
+      });
+      if (asset && asset.plantId !== resolvedPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Asset does not belong to the resolved plant' },
+          { status: 400 },
+        );
+      }
+    }
+
+    // ── Validate maintenance request plant if maintenanceRequestId provided ──
+    // (MR plant validation is done below after the MR existence check)
 
     // Validate team members if provided
     if (teamMembers && Array.isArray(teamMembers)) {

@@ -97,9 +97,16 @@ export async function GET(request: NextRequest) {
     if (triggerType && VALID_TRIGGER_TYPES.includes(triggerType)) where.triggerType = triggerType;
     if (active !== null) where.isActive = active === 'true';
 
-    // Apply plant scoping via nested Schedule → Asset relation
-    if (plantScope.isScoped && plantScope.plantId) {
-      where.schedule = { asset: { plantId: plantScope.plantId } };
+    // Apply plant scoping via nested Schedule → Asset relation (ALWAYS filter when not system-wide)
+    if (!plantScope.isSystemWide) {
+      if (plantScope.plantId) {
+        where.schedule = { asset: { plantId: plantScope.plantId } };
+      } else if (plantScope.accessiblePlantIds.length > 0) {
+        where.schedule = { asset: { plantId: { in: plantScope.accessiblePlantIds } } };
+      } else {
+        // deny sentinel — user has no plant assignments
+        where.schedule = { asset: { plantId: '__ACCESS_DENIED__' } };
+      }
     }
 
     const triggers = await db.pmTrigger.findMany({
@@ -164,7 +171,7 @@ export async function POST(request: NextRequest) {
     // --- Validate schedule exists and is active ---
     const schedule = await db.pmSchedule.findUnique({
       where: { id: scheduleId },
-      include: { asset: { select: { id: true, name: true } } },
+      include: { asset: { select: { id: true, name: true, plantId: true } } },
     });
 
     if (!schedule) {
@@ -172,6 +179,12 @@ export async function POST(request: NextRequest) {
     }
     if (!schedule.isActive) {
       return NextResponse.json({ success: false, error: 'Cannot create a trigger for an inactive schedule' }, { status: 400 });
+    }
+
+    // --- Plant scope check: validate the linked schedule's asset is in an accessible plant ---
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, schedule.asset?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // --- Check for existing trigger (unique constraint on scheduleId) ---

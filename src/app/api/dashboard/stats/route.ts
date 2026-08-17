@@ -124,9 +124,13 @@ export async function GET(request: NextRequest) {
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-    // Merge plant filter into raw SQL where clause if scoped
-    const plantSqlFilter = plantScope.isScoped && plantScope.plantId
-      ? Prisma.sql` AND plantId = ${plantScope.plantId}`
+    // Merge plant filter into raw SQL where clause (ALWAYS filter when not system-wide)
+    const plantSqlFilter = !plantScope.isSystemWide
+      ? (plantScope.plantId
+        ? Prisma.sql` AND plantId = ${plantScope.plantId}`
+        : plantScope.accessiblePlantIds.length > 0
+          ? Prisma.sql` AND plantId IN (${Prisma.join(plantScope.accessiblePlantIds)})`
+          : Prisma.sql` AND 1=0`)
       : Prisma.sql``;
 
     const emptyAggregate = { _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 }, _count: 0 };

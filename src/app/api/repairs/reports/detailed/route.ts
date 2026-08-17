@@ -23,7 +23,13 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo');
     const status = searchParams.get('status');
     const type = searchParams.get('type');
-    const plantId = plantScope.isScoped && plantScope.plantId ? plantScope.plantId : searchParams.get('plantId');
+    const effectivePlantId = plantScope.isSystemWide
+      ? (searchParams.get('plantId') || undefined)
+      : plantScope.plantId
+        ? plantScope.plantId
+        : plantScope.accessiblePlantIds.length === 1
+          ? plantScope.accessiblePlantIds[0]
+          : undefined;
     const format = searchParams.get('format') || 'json';
 
     // Pagination params (used for JSON format; XLSX always fetches full filtered set)
@@ -48,7 +54,7 @@ export async function GET(request: NextRequest) {
       where.status = { in: ['completed', 'verified', 'closed'] };
     }
 
-    if (plantId) where.plantId = plantId;
+    if (effectivePlantId) where.plantId = effectivePlantId;
 
     if (dateFrom || dateTo) {
       const dateFilter: Record<string, unknown> = {};

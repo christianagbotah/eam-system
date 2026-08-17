@@ -39,9 +39,8 @@ export async function GET(request: NextRequest) {
     if (plantScope.denyAccess) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
-    if (plantScope.isScoped) {
-      applyPlantScope(where, plantScope);
-    }
+    // ALWAYS apply plant filter for non-system-wide users (covers isScoped + accessiblePlantIds)
+    applyPlantScope(where, plantScope);
 
     if (workOrderId) where.workOrderId = workOrderId;
     if (status) where.status = status;

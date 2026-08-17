@@ -93,9 +93,13 @@ export async function GET(request: NextRequest) {
         }).catch(() => ({ _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 } }))
       : { _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 } };
 
-    // Merge plant filter into raw SQL where clause if scoped (for inventory value KPI)
-    const plantSqlFilter = plantScope.isScoped && plantScope.plantId
-      ? Prisma.sql` AND plantId = ${plantScope.plantId}`
+    // Merge plant filter into raw SQL where clause (ALWAYS filter when not system-wide, for inventory value KPI)
+    const plantSqlFilter = !plantScope.isSystemWide
+      ? (plantScope.plantId
+        ? Prisma.sql` AND plantId = ${plantScope.plantId}`
+        : plantScope.accessiblePlantIds.length > 0
+          ? Prisma.sql` AND plantId IN (${Prisma.join(plantScope.accessiblePlantIds)})`
+          : Prisma.sql` AND 1=0`)
       : Prisma.sql``;
 
     const inventoryValueRaw = hasModel(db, 'inventoryItem')

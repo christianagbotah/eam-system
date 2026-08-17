@@ -3,7 +3,7 @@
  *
  * Creates:
  *   - 2 Plants (Plant A, Plant B)
- *   - 1 Asset in Plant A
+ *   - 2 Assets (one per plant)
  *   - 2 Trades (mechanical, electrical)
  *   - 13 UAT users with roles + plant access (incl. plant-limited supervisors/planners)
  *   - Status transitions from the canonical source of truth (state-machine.ts)
@@ -22,6 +22,21 @@ import {
   DEFAULT_WO_TRANSITIONS,
   DEFAULT_MR_TRANSITIONS,
 } from '../src/lib/state-machine';
+
+// ══════════════════════════════════════════════════════════════════════════
+// DATE HELPERS
+// ══════════════════════════════════════════════════════════════════════════
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function subDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() - days);
+  return result;
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // DATABASE CONNECTION
@@ -273,14 +288,14 @@ async function main() {
     }
   }
 
-  // ── 5. Asset in Plant A ────────────────────────────────────────────────
-  console.log('  🏗️  Creating asset...');
-  const asset = await db.asset.upsert({
-    where: { assetTag: 'UAT-PUMP-001' },
+  // ── 5. Assets (Plant A & Plant B) ─────────────────────────────────────
+  console.log('  🏗️  Creating assets...');
+  const assetA = await db.asset.upsert({
+    where: { assetTag: 'UAT-PUMP-A-001' },
     update: {},
     create: {
       name: 'UAT Test Pump',
-      assetTag: 'UAT-PUMP-001',
+      assetTag: 'UAT-PUMP-A-001',
       description: 'Centrifugal pump for UAT testing',
       categoryId: assetCategory.id,
       plantId: plantA.id,
@@ -291,6 +306,23 @@ async function main() {
       building: 'Building A',
     },
   });
+  const assetB = await db.asset.upsert({
+    where: { assetTag: 'UAT-PUMP-B-001' },
+    update: {},
+    create: {
+      name: 'UAT Test Pump B',
+      assetTag: 'UAT-PUMP-B-001',
+      description: 'Centrifugal pump for UAT testing in Plant B',
+      categoryId: assetCategory.id,
+      plantId: plantB.id,
+      condition: 'fair',
+      status: 'operational',
+      criticality: 'high',
+      location: 'Workshop Bay 1',
+      building: 'Building B',
+    },
+  });
+  const asset = assetA;
 
   // ── 6. Status Transitions (canonical from state-machine.ts) ────────────
   console.log('  🔄 Seeding canonical status transitions...');
@@ -412,7 +444,7 @@ async function main() {
     create: {
       requestNumber: 'MR-UAT-001',
       title: 'UAT Pump Vibration Complaint',
-      description: 'Pump UAT-PUMP-001 has abnormal vibration at 3000 RPM. Needs inspection.',
+      description: 'Pump UAT-PUMP-A-001 has abnormal vibration at 3000 RPM. Needs inspection.',
       priority: 'high',
       category: 'mechanical',
       status: 'pending',
@@ -460,21 +492,22 @@ async function main() {
   console.log('  📦 Creating inventory materials...');
   const storekeeperId = userIds['uat_storekeeper'];
   const materials = [
-    { itemCode: 'UAT-BRG-6205', name: 'UAT Bearing 6205', quantity: 10, unit: 'each', category: 'spare_part' },
+    { itemCode: 'UAT-BRG-6205', name: '6205-2RS Bearing', quantity: 100, unit: 'each', category: 'bearings', unitCost: 25.00, minStockLevel: 10 },
     { itemCode: 'UAT-SEAL-KIT', name: 'UAT Seal Kit', quantity: 5, unit: 'each', category: 'spare_part' },
     { itemCode: 'UAT-LUB-5W30', name: 'UAT Lubricant 5W-30', quantity: 20, unit: 'litre', category: 'consumable' },
   ];
   for (const m of materials) {
     await db.inventoryItem.upsert({
       where: { itemCode: m.itemCode },
-      update: { currentStock: m.quantity, unitOfMeasure: m.unit },
+      update: { currentStock: m.quantity, unitOfMeasure: m.unit, unitCost: (m as any).unitCost ?? null, minStockLevel: (m as any).minStockLevel ?? 0 },
       create: {
         itemCode: m.itemCode,
         name: m.name,
         category: m.category,
         unitOfMeasure: m.unit,
         currentStock: m.quantity,
-        minStockLevel: 0,
+        minStockLevel: (m as any).minStockLevel ?? 0,
+        unitCost: (m as any).unitCost ?? null,
         plantId: plantA.id,
         createdById: storekeeperId,
         specification: '{}',
@@ -494,7 +527,7 @@ async function main() {
       condition: 'good',
       status: 'available',
       calStatus: 'calibrated' as const,
-      nextCalDue: new Date('2026-01-01'),
+      nextCalDue: addDays(new Date(), 180),
       calIntervalDays: 365,
     },
     {
@@ -504,7 +537,7 @@ async function main() {
       condition: 'good',
       status: 'available',
       calStatus: 'expired' as const,
-      nextCalDue: new Date('2023-06-01'),
+      nextCalDue: subDays(new Date(), 30),
       calIntervalDays: 365,
     },
     {
@@ -514,7 +547,7 @@ async function main() {
       condition: 'fair',
       status: 'in_repair',
       calStatus: 'failed' as const,
-      nextCalDue: null,
+      nextCalDue: subDays(new Date(), 60),
       calIntervalDays: 365,
     },
   ];
@@ -554,17 +587,53 @@ async function main() {
     console.log(`    ✅ ${t.toolCode} (cal: ${t.calStatus})`);
   }
 
+  // UAT-NON-CAL-TOOL: tool without any calibration requirement
+  const nonCalTool = await db.tool.upsert({
+    where: { toolCode: 'UAT-NON-CAL-TOOL' },
+    update: { name: 'UAT-NON-CAL-TOOL', category: 'Hand Tool', condition: 'good', status: 'available', plantId: plantA.id },
+    create: {
+      toolCode: 'UAT-NON-CAL-TOOL',
+      name: 'UAT-NON-CAL-TOOL',
+      description: 'UAT non-calibration test tool — no calibration required',
+      category: 'Hand Tool',
+      condition: 'good',
+      status: 'available',
+      quantity: 1,
+      location: 'Workshop',
+      plantId: plantA.id,
+      createdById: storekeeperId,
+    },
+  });
+  try {
+    await db.toolCalibrationRequirement.upsert({
+      where: { toolId: nonCalTool.id },
+      update: {
+        calibrationRequired: false,
+        calibrationStatus: 'not_calibrated' as const,
+        nextCalibrationDue: null,
+      },
+      create: {
+        toolId: nonCalTool.id,
+        calibrationRequired: false,
+        calibrationStatus: 'not_calibrated' as const,
+        nextCalibrationDue: null,
+      },
+    });
+    console.log('    ✅ UAT-NON-CAL-TOOL (cal: not_calibrated)');
+  } catch {
+  }
+
   // ── Summary ────────────────────────────────────────────────────────────
   console.log('\n✅ Repairs UAT seed completed successfully!');
   console.log(`   Plants: ${plantA.name} (${plantA.id.slice(0, 6)}), ${plantB.name} (${plantB.id.slice(0, 6)})`);
   console.log(`   Trades: Mechanical (${tradeMech.id.slice(0, 6)}), Electrical (${tradeElec.id.slice(0, 6)})`);
   console.log(`   Users: ${Object.keys(userIds).length} created/updated`);
-  console.log(`   Asset: ${asset.assetTag}`);
+  console.log(`   Assets: ${assetA.assetTag} (Plant A), ${assetB.assetTag} (Plant B)`);
   console.log(`   WOs: ${woA1.woNumber} (single-tech), ${woA2.woNumber} (multi-tech)`);
   console.log(`   MR: ${mrUat.requestNumber}`);
   console.log(`   Labor Rate: GHS 50/hr normal, 75/hr OT for uat_tech_single`);
   console.log(`   Materials: 3 inventory items in Plant A`);
-  console.log(`   Tools: 3 calibration tools in Plant A (valid, expired, failed)`);
+  console.log(`   Tools: 3 calibration tools + 1 non-cal tool in Plant A`);
   console.log(`   All passwords: ${PASSWORD}`);
 }
 

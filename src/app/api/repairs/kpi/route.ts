@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // GET /api/repairs/kpi
 export async function GET(request: NextRequest) {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     if (plantScope.denyAccess) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
-    const plantWhere = plantScope?.isScoped && plantScope.plantId ? { plantId: plantScope.plantId } : {};
+    const plantWhere = getPlantFilterWhere(plantScope);
 
     const [
       totalWos,

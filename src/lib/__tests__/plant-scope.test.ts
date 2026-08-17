@@ -448,3 +448,128 @@ describe('Security contract (documented)', () => {
     expect(canAccessPlant(scope, null)).toBe(true);
   });
 });
+
+// ============================================================================
+// Test 8: Plant scope list/aggregate filtering
+// ============================================================================
+describe('Plant scope list/aggregate filtering', () => {
+  // 1. isSystemWide=true → where clause unchanged
+  it('should return where clause unchanged when isSystemWide=true (no filter)', () => {
+    const where = { status: 'open', priority: 'high' };
+    const scope = makeScope({ isSystemWide: true });
+    const result = applyPlantScope(where, scope);
+    expect(result).toBe(where); // same reference — returned as-is
+    expect(result).toEqual({ status: 'open', priority: 'high' });
+  });
+
+  // 2. isScoped=false with accessiblePlantIds → IN filter
+  it('should add IN filter when isScoped=false with accessiblePlantIds', () => {
+    const where = { status: 'active' };
+    const scope = makeScope({
+      isScoped: false,
+      isSystemWide: false,
+      accessiblePlantIds: ['plant-a', 'plant-b'],
+    });
+    const result = applyPlantScope(where, scope);
+    expect(result).toEqual({
+      status: 'active',
+      plantId: { in: ['plant-a', 'plant-b'] },
+    });
+  });
+
+  // 3. denyAccess=true → sentinel filter
+  it('should add ACCESS_DENIED sentinel when denyAccess=true', () => {
+    const where = { type: 'inspection' };
+    const scope = makeScope({
+      accessLevel: 'none',
+      isScoped: true,
+      denyAccess: true,
+    });
+    const result = applyPlantScope(where, scope);
+    expect(result).toEqual({
+      type: 'inspection',
+      plantId: '__ACCESS_DENIED__',
+    });
+  });
+
+  // 4. isScoped=true with plantId → exact match filter
+  it('should add exact plantId filter when isScoped=true', () => {
+    const where = { category: 'pm' };
+    const scope = makeScope({
+      plantId: 'plant-a',
+      isScoped: true,
+      accessiblePlantIds: ['plant-a', 'plant-b'],
+    });
+    const result = applyPlantScope(where, scope);
+    expect(result).toEqual({
+      category: 'pm',
+      plantId: 'plant-a',
+    });
+  });
+
+  // 5. empty accessiblePlantIds and not systemWide → sentinel (zero records)
+  it('should add ACCESS_DENIED sentinel when accessiblePlantIds is empty and not systemWide', () => {
+    const where = { status: 'completed' };
+    const scope = makeScope({
+      isScoped: false,
+      isSystemWide: false,
+      accessiblePlantIds: [],
+    });
+    const result = applyPlantScope(where, scope);
+    expect(result).toEqual({
+      status: 'completed',
+      plantId: '__ACCESS_DENIED__',
+    });
+  });
+
+  // 6. getPlantFilterWhere with nested relation field
+  it('should return correct filter with nested relation field name', () => {
+    const scopedFilter = makeScope({
+      plantId: 'plant-1',
+      isScoped: true,
+      accessiblePlantIds: ['plant-1', 'plant-2'],
+    });
+    const result = getPlantFilterWhere(scopedFilter, 'workOrder.plantId');
+    expect(result).toEqual({ 'workOrder.plantId': 'plant-1' });
+
+    const listFilter = makeScope({
+      isScoped: false,
+      isSystemWide: false,
+      accessiblePlantIds: ['plant-1', 'plant-2'],
+    });
+    const listResult = getPlantFilterWhere(listFilter, 'workOrder.plantId');
+    expect(listResult).toEqual({
+      'workOrder.plantId': { in: ['plant-1', 'plant-2'] },
+    });
+
+    const denyFilter = makeScope({
+      accessLevel: 'none',
+      isScoped: true,
+      denyAccess: true,
+    });
+    const denyResult = getPlantFilterWhere(denyFilter, 'workOrder.plantId');
+    expect(denyResult).toEqual({ 'workOrder.plantId': '__ACCESS_DENIED__' });
+  });
+
+  // 7. canAccessPlant returns false when denyAccess=true for any non-null entityPlantId
+  it('should return false when denyAccess=true for any non-null entityPlantId', () => {
+    const scope = makeScope({
+      accessLevel: 'none',
+      isScoped: true,
+      denyAccess: true,
+      accessiblePlantIds: ['plant-a', 'plant-b'],
+    });
+
+    // Even a matching plant ID should be denied
+    expect(canAccessPlant(scope, 'plant-a')).toBe(false);
+    // Non-matching plant ID should also be denied
+    expect(canAccessPlant(scope, 'plant-z')).toBe(false);
+    // Any arbitrary plant ID is denied
+    expect(canAccessPlant(scope, 'plant-b')).toBe(false);
+    // Note: null/undefined entityPlantId returns true due to the
+    // !entityPlantId guard that fires before denyAccess check.
+    // This is by design — entities without a plant are not plant-scoped.
+    expect(canAccessPlant(scope, null)).toBe(true);
+    expect(canAccessPlant(scope, undefined)).toBe(true);
+  });
+});

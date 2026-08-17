@@ -78,7 +78,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const toolReq = await db.repairToolRequest.findUnique({
       where: { id },
       include: {
-        workOrder: { select: { id: true, woNumber: true, title: true, assignedSupervisorId: true, plannerId: true } },
+        workOrder: { select: { id: true, woNumber: true, title: true, assignedSupervisorId: true, plannerId: true, plantId: true } },
         requestedBy: { select: { id: true, fullName: true } },
         tool: true,
         items: {
@@ -89,6 +89,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
+
+    // Plant scope validation for ALL workflow actions
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, toolReq.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     // ── Role-based access control for workflow actions ──
     if (action === 'supervisor_approve' || action === 'supervisor_reject') {
@@ -105,6 +111,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           !hasRole(session, 'inventory_manager') &&
           !hasRole(session, 'tools_shop_attendant')) {
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve tool requests' }, { status: 403 });
+      }
+    }
+    // ISSUE action — store keeper / tools shop attendant ONLY
+    if (action === 'issue') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only store keeper, inventory manager, or tools shop attendant can issue tools' }, { status: 403 });
+      }
+    }
+    // STOREKEEPER_CONFIRM_RETURN — store/tool keeper ONLY
+    if (action === 'storekeeper_confirm_return') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only store keeper or inventory manager can confirm tool returns' }, { status: 403 });
+      }
+    }
+    // STOREKEEPER_REJECT_RETURN — store/tool keeper ONLY
+    if (action === 'storekeeper_reject_return') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only store keeper or inventory manager can reject tool returns' }, { status: 403 });
       }
     }
 
