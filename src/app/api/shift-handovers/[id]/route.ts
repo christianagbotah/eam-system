@@ -71,49 +71,15 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const isConfirming = body.status === 'confirmed' || body.action === 'confirm';
-    const isSupervisorOrAdmin = isAdmin(session) || hasRole(session, 'supervisor');
-    const isOverride = isConfirming && existing.receivedById && session.userId !== existing.receivedById;
-
-    // ── Confirmation permission gate ───────────────────────────────────
-    if (isConfirming) {
-      if (isOverride) {
-        // Supervisor/admin override: requires explicit reason
-        if (!isSupervisorOrAdmin) {
-          return NextResponse.json(
-            { success: false, error: 'Only the designated receiver can confirm this handover' },
-            { status: 403 },
-          );
-        }
-        if (!body.overrideReason || typeof body.overrideReason !== 'string' || body.overrideReason.trim().length === 0) {
-          return NextResponse.json(
-            { success: false, error: 'Supervisor override requires an overrideReason' },
-            { status: 400 },
-          );
-        }
-      }
-      // If not an override and there IS a designated receiver, enforce it
-      if (!isOverride && existing.receivedById && session.userId !== existing.receivedById) {
-        return NextResponse.json(
-          { success: false, error: 'Only the designated receiver can confirm this handover' },
-          { status: 403 },
-        );
-      }
+    // ── Confirmed immutability: once confirmed, no further updates ──
+    if (existing.status === 'confirmed') {
+      return NextResponse.json({ success: false, error: 'Confirmed handover is immutable' }, { status: 400 });
     }
 
-    // ── Immutability: confirmed handovers cannot be edited ─────────────
-    if (existing.status === 'confirmed' && !isSupervisorOrAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'This handover is confirmed and cannot be modified' },
-        { status: 403 },
-      );
-    }
-
-    // ── Build update data (excluding status from generic field set) ────
     const updateData: Record<string, unknown> = {};
-    const editableFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes'];
+    const allowedFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes', 'status'];
 
-    for (const field of editableFields) {
+    for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === 'shiftDate') {
           updateData[field] = body[field] ? new Date(body[field]) : null;
@@ -125,11 +91,14 @@ export async function PUT(
       }
     }
 
-    // ── Handle confirmation separately with full audit ────────────────
-    if (isConfirming) {
-      updateData.status = 'confirmed';
-      // Ensure the receiver is set (use existing if present, else set to current user)
-      updateData.receivedById = existing.receivedById || session.userId;
+    // ── Supervisor/admin override requires reason ──
+    if (body.status === 'confirmed' && !isAdmin(session) && !hasPermission(session, 'shift_handovers.create')) {
+      if (!body.overrideReason) {
+        return NextResponse.json({ success: false, error: 'Supervisor/admin override requires a reason' }, { status: 400 });
+      }
+      updateData.overrideReason = body.overrideReason;
+      updateData.overriddenBy = session.userId;
+      updateData.overriddenAt = new Date();
     }
 
     const updated = await db.shiftHandover.update({
@@ -202,6 +171,11 @@ export async function DELETE(
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    // Confirmed handovers cannot be deleted
+    if (existing.status === 'confirmed') {
+      return NextResponse.json({ success: false, error: 'Confirmed handover cannot be deleted' }, { status: 400 });
     }
 
     await db.shiftHandover.delete({ where: { id } });

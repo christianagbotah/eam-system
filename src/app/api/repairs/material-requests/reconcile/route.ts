@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
 // POST /api/repairs/material-requests/reconcile
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
       include: {
         workOrder: {
           select: {
-            id: true, woNumber: true, title: true,
+            id: true, woNumber: true, title: true, plantId: true,
             assignedSupervisorId: true, plannerId: true, assignedTo: true,
           },
         },
@@ -55,6 +56,12 @@ export async function POST(request: NextRequest) {
 
     if (!matReq) {
       return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
+    }
+
+    // ── Plant scope validation ──
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, matReq.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Validate status — must be issued or picking (allows reconciliation from both)
