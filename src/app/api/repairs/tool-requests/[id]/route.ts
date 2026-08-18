@@ -107,6 +107,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve tool requests' }, { status: 403 });
       }
     }
+    if (action === 'issue') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can issue tools' }, { status: 403 });
+      }
+    }
 
     const now = new Date();
     let updated: any;

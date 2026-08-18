@@ -1550,3 +1550,135 @@ Stage Summary:
 - Three user profiles tested: technician (view_own), supervisor (broad perms), planner (broad perms)
 - Forged X-Plant-ID header attack tested — server rejects with 403 denyAccess
 - Default (no header) list behavior tested — Plant B WO never leaks into Plant A users' queries
+
+---
+Task ID: 1-4
+Agent: backend-security-fixes
+Task: Fix defects 1-4: TDZ bug, WO plant integrity, Material Request PUT/DELETE scope, MR PUT/DELETE scope
+
+Work Log:
+- Fixed resolvedPlantId TDZ ordering in WO creation POST — moved resolution before MR validation
+- Added `plantId` to MR query select and added plant match check against resolvedPlantId
+- Added full plant integrity validation in WO creation for: asset, assignedTo/teamLeaderId/assignedSupervisorId, team members, required parts, required tools, and component IDs (all batched with findMany)
+- Added plant scope validation (getPlantScope + canAccessPlant) to Material Request PUT handler via work order relation
+- Added plant scope validation to Material Request DELETE handler via work order relation
+- Added plant scope validation to Maintenance Request PUT handler on existing.plantId
+- Added plant scope validation to Maintenance Request DELETE handler via modified canModifyPendingRequest helper (now accepts `request` param)
+- Protected MR `plantId` and `assetId` from modification in PUT — removed from allowedFields, added explicit 400 rejection
+
+Stage Summary:
+- 3 files modified: src/app/api/work-orders/route.ts, src/app/api/repairs/material-requests/[id]/route.ts, src/app/api/maintenance-requests/[id]/route.ts
+- All plant scope gaps closed for PUT/DELETE on MR and Material Request
+- WO creation now enforces plant integrity across all referenced entities
+- MR plantId/assetId immutable after creation
+
+---
+Task ID: 5-6
+Agent: handover-workflow-fixes
+Task: Fix defects 5-6: atomic handover workflow and confirm permission hardening
+
+Work Log:
+- **Defect 5 — Atomic Shift Handover Workflow:**
+  - In `initiateHandover()` inside `db.$transaction`, added step to close any active WorkOrderTimeLog entries (action=start, endTime=null) for the user.
+  - After state transition, added `tx.shiftHandover.create()` with all required fields: workOrderId, handedOverById, status='pending_confirmation', shiftType='end_of_shift', shiftDate, fromShift/toShift (derived from plannedStart hour), notes (from reason or auto-generated), tasksSummary (JSON with WO progress snapshot), pendingIssues (JSON with open material/tool requests), departmentId.
+  - Included `handoverId: createdHandoverId` in returned TransitionResult data.
+  - Updated audit entry newValues to include the handover ID.
+  - Updated JSDoc to reflect the full atomic workflow.
+- **Defect 6 — Handover Confirm Permission Hardening:**
+  - Rewrote PUT handler in `src/app/api/shift-handovers/[id]/route.ts`.
+  - Added confirmation permission gate: only `receivedById` user can confirm. Supervisor/admin override requires explicit `overrideReason` in the body.
+  - Made confirmed handovers immutable (403 for non-supervisor/non-admin users).
+  - Separated `status` from generic editable fields — confirmation handled explicitly with `receivedById` assignment.
+  - Supervisor override creates a dedicated audit log entry with `override: true`, `overrideReason`, and `overrideBy` fields.
+  - Imported `hasRole` from `@/lib/auth` for supervisor role check.
+
+Stage Summary:
+- 2 files modified: src/services/workExecution.service.ts, src/app/api/shift-handovers/[id]/route.ts
+- Atomic handover workflow: WO status transition + active timer closure + ShiftHandover creation in single tx
+- Confirm permission: receivedById enforcement + supervisor override with audit trail
+- Confirmed handovers are immutable except for supervisor/admin edits
+
+---
+Task ID: 13
+Agent: state-machine-fix
+Task: Fix defect 13: ensureTransitionsSeeded self-heal bug
+
+Work Log:
+- Changed `ensureTransitionsSeeded()` return type from `Promise<boolean>` to `Promise<{ attempted: boolean; succeeded: boolean }>`
+- Moved `_seedAttempted = true` to BEFORE any async work (prevents concurrent duplicate seeding attempts)
+- Updated return semantics: already-checked → `{ attempted: false, succeeded: false }`; count > 0 or seed OK → `{ attempted: true, succeeded: true }`; seed failed → `{ attempted: true, succeeded: false }`
+- In `checkTransition()`, after `ensureTransitionsSeeded()` returns `succeeded: true`, re-query now uses global `db` (not the potentially-isolated `tx` client) to avoid transaction-isolation visibility gaps
+- Updated `getAvailableTransitions()` call site with comment explaining no isolation concern since it always queries `db`
+- Added regression test file `src/lib/__tests__/state-machine-self-heal.test.ts` with 8 tests covering: return shape, _seedAttempted timing, db-vs-tx re-query after seeding, seeding failure handling, and getAvailableTransitions compatibility
+
+Stage Summary:
+- 2 files modified: `src/lib/state-machine.ts`, new test file `src/lib/__tests__/state-machine-self-heal.test.ts`
+- Return type: `{ attempted: boolean, succeeded: boolean }`
+- Re-query uses global `db` to avoid transaction isolation gap
+- _seedAttempted set synchronously before async work
+
+---
+Task ID: 9
+Agent: material-reconciliation
+Task: Fix defect 9: real material consumption/reconciliation
+
+Work Log:
+- Read Prisma schema for `RepairMaterialRequest` — identified fields: `consumedQty` (Float?), `wastedQty` (Float?), `quantityIssued`, `quantityReturned`, `status` (String)
+- Read existing POST handler — found 6 actions: `supervisor_approve`, `supervisor_reject`, `storekeeper_approve`, `storekeeper_reject`, `issue`, `record_return`
+- Added `consume_material` action: validates technician/admin role, checks status is `issued`, validates quantity <= available, increments `consumedQty`, auto-sets `fully_consumed` when all accounted for, creates audit log, notifies supervisor
+- Added `waste_material` action: same pattern as consume but for `wastedQty`
+- Added `reconcile` action: read-only validation returning reconciliation report with `consumed + wasted + returned == issued` check, floating-point tolerance, balanced/unreconciled status
+- Added body destructuring for `quantityConsumed` and `quantityWasted`
+- Added 8 e2e helper functions: `createMaterialRequest`, `supervisorApproveMaterial`, `storekeeperApproveMaterial`, `issueMaterial`, `consumeMaterial`, `wasteMaterial`, `returnMaterial`, `reconcileMaterial`, `getMaterialRequest`
+- Updated Scenario A test: split old A9 into A9a (material consumption/waste/return/reconciliation) and A9b (tool return)
+- A9a asserts: consume 1 + waste 0.5 + return 0.5 = 2 issued, reconciliation balanced with discrepancy 0
+
+Stage Summary:
+- Files modified: `src/app/api/repairs/material-requests/[id]/route.ts`, `e2e/repairs/scenario-a-single-tech.spec.ts`, `e2e/repairs/helpers/api.ts`
+- Material lifecycle now supports real consume, waste, return operations with reconciliation
+- consumed + wasted + returned == issued enforced on reconciliation
+- Authorization: only assigned technician or admin can consume/waste
+- Auto-status transition to `fully_consumed` when all material is accounted for
+
+---
+Task ID: 7-8
+Agent: e2e-scenario-fixes
+Task: Fix defects 7-8: Rewrite Scenario F, fix Scenario J semantics
+
+Work Log:
+- Rewrote Scenario F with F1-F10 real handover flow
+- F2 now verifies ShiftHandover record creation with pending_confirmation status and handedOverById
+- F3 blocks start while pending_handover
+- F4 verifies resume fails without confirmed handover
+- F5 sets receivedById on ShiftHandover via PUT
+- F6 tech_assistant confirms handover via PUT with action=confirm
+- F7 tech_assistant resumes work via resumeAfterHandoverWO helper
+- F8 original tech_single cannot self-resume
+- F9 verifies audit trail exists
+- F10 verifies ShiftHandover confirmed status and timestamps
+- J3/J4 now assert storekeeper_approved for blocked requests (was 'issued')
+- J5 now expects 403 for technician issue attempt (was 200)
+- Added storekeeper role check to tool request issue handler (admin, store_keeper, inventory_manager, tools_shop_attendant)
+
+Stage Summary:
+- Files modified: e2e/repairs/scenario-f-shift-handover.spec.ts (rewrite), e2e/repairs/scenario-j-tool-calibration.spec.ts (fix), src/app/api/repairs/tool-requests/[id]/route.ts (role check)
+- Scenario F now tests complete atomic handover lifecycle with ShiftHandover record management
+- Scenario J matches production semantics: blocked requests stay storekeeper_approved, technicians get 403 on issue
+
+---
+Task ID: 14-15
+Agent: security-matrix-tests
+Task: Fix defects 14-15: security audit matrix and contract tests
+
+Work Log:
+- Read all 11 handler route files to extract actual security controls
+- Generated security audit matrix documenting 26 endpoint-method combinations
+- Created 11 static contract tests verifying security invariants via source code pattern matching
+- Matrix covers: auth, permissions, plant scoping, IDOR checks, rejection conditions for every endpoint
+- Identified gaps: WO [id] PUT and Tool Request [id] PUT/DELETE lack getPlantScope (documented in matrix notes)
+
+Stage Summary:
+- 2 new files: docs/REPAIRS_FINAL_SECURITY_AUDIT_MATRIX.md, src/__tests__/security-contract.test.ts
+- 11 invariants tested via static code analysis (fs.readFileSync pattern matching)
+- Matrix accurate to actual handler implementations with 26 documented endpoints
+- Known gaps documented: WO [id] PUT, Tool Request [id] PUT/DELETE missing plant scope

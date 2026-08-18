@@ -5,12 +5,19 @@ import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: check if user can edit/delete a pending request (must be requester or admin)
-async function canModifyPendingRequest(id: string, session: any) {
+async function canModifyPendingRequest(id: string, session: any, request: NextRequest) {
   const existing = await db.maintenanceRequest.findUnique({ where: { id } });
   if (!existing) return { error: 'Maintenance request not found', status: 404 };
   if (existing.status !== 'pending') return { error: 'Can only modify requests with status "pending"', status: 400 };
   if (existing.requestedBy !== session.userId && !isAdmin(session)) {
     return { error: 'Only the requester can modify this request', status: 403 };
+  }
+  // Plant scope validation
+  if (!isAdmin(session)) {
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
+      return { error: 'Access denied', status: 403 };
+    }
   }
   return { mr: existing };
 }
@@ -117,6 +124,14 @@ export async function PUT(
       );
     }
 
+    // Plant scope validation
+    if (!isAdmin(session)) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+    }
+
     // If request is pending, only the requester (or admin/supervisor with update) can edit it
     if (existing.status === 'pending' && !hasUpdateAll) {
       if (existing.requestedBy !== session.userId) {
@@ -147,11 +162,19 @@ export async function PUT(
       );
     }
 
+    // Protect plantId and assetId from modification on existing requests
+    if (body.plantId !== undefined || body.assetId !== undefined) {
+      return NextResponse.json(
+        { success: false, error: 'Cannot change plantId or assetId on an existing maintenance request' },
+        { status: 400 }
+      );
+    }
+
     // Build update data (only allow certain fields)
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'priority', 'category',
-      'assetId', 'assetName', 'location', 'departmentId', 'plantId', 'machineDownStatus',
+      'assetName', 'location', 'departmentId', 'machineDownStatus',
       'estimatedHours', 'slaHours', 'plannedStart', 'plannedEnd', 'notes',
     ];
 
@@ -233,7 +256,7 @@ export async function DELETE(
     const { id } = await params;
 
     // Check: only pending requests, and only by requester or admin
-    const check = await canModifyPendingRequest(id, session);
+    const check = await canModifyPendingRequest(id, session, request);
     if ('error' in check) {
       return NextResponse.json({ success: false, error: check.error }, { status: check.status });
     }

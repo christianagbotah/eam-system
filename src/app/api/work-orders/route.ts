@@ -212,6 +212,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
     }
 
+    // Resolve plantId (outside transaction — reads user config, no WO data yet)
+    // Must be resolved BEFORE MR validation so MR plant matching can be enforced.
+    let resolvedPlantId = plantId;
+    if (!resolvedPlantId) {
+      const userPlant = await db.userPlant.findFirst({
+        where: { userId: session.userId, isPrimary: true },
+      });
+      resolvedPlantId = userPlant?.plantId ?? null;
+    }
+
     // ── Validate maintenance request if provided ──
     // We validate the MR exists and is in 'approved' status, but we do NOT change
     // the MR status here. The MR → WO conversion (status change to 'converted') must
@@ -220,7 +230,7 @@ export async function POST(request: NextRequest) {
     if (maintenanceRequestId) {
       const mr = await db.maintenanceRequest.findUnique({
         where: { id: maintenanceRequestId },
-        select: { id: true, status: true, workflowStatus: true, workOrderId: true },
+        select: { id: true, status: true, workflowStatus: true, workOrderId: true, plantId: true },
       });
       if (!mr) {
         return NextResponse.json(
@@ -240,15 +250,113 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      // Plant scope check: MR's plant must match the WO's resolved plant
+      if (mr.plantId && resolvedPlantId && mr.plantId !== resolvedPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Maintenance request plant does not match work order plant' },
+          { status: 400 }
+        );
+      }
     }
 
-    // Resolve plantId (outside transaction — reads user config, no WO data yet)
-    let resolvedPlantId = plantId;
-    if (!resolvedPlantId) {
-      const userPlant = await db.userPlant.findFirst({
-        where: { userId: session.userId, isPrimary: true },
+    // ── Plant integrity validation for all referenced entities ──
+    // Asset plant check
+    if (assetId && resolvedPlantId) {
+      const asset = await db.asset.findUnique({ where: { id: assetId }, select: { id: true, plantId: true } });
+      if (asset && asset.plantId !== resolvedPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Asset does not belong to the work order plant' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Collect user IDs that need plant access checks
+    const userIdsToCheck: string[] = [];
+    if (assignedTo) userIdsToCheck.push(assignedTo);
+    if (teamLeaderId) userIdsToCheck.push(teamLeaderId);
+    if (assignedSupervisorId) userIdsToCheck.push(assignedSupervisorId);
+    if (teamMembers && Array.isArray(teamMembers)) {
+      for (const member of teamMembers) {
+        if (member.userId) userIdsToCheck.push(member.userId);
+      }
+    }
+
+    if (userIdsToCheck.length > 0 && resolvedPlantId) {
+      const userPlants = await db.userPlant.findMany({
+        where: { userId: { in: userIdsToCheck }, plantId: resolvedPlantId },
+        select: { userId: true },
       });
-      resolvedPlantId = userPlant?.plantId ?? null;
+      const usersWithAccess = new Set(userPlants.map(up => up.userId));
+      for (const uid of userIdsToCheck) {
+        if (!usersWithAccess.has(uid)) {
+          return NextResponse.json(
+            { success: false, error: `User ${uid} does not have access to the work order plant` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // Parts plant check
+    const partItemIds = (requiredParts && Array.isArray(requiredParts))
+      ? requiredParts.map((p: any) => p.itemId || p).filter(Boolean) : [];
+    if (partItemIds.length > 0 && resolvedPlantId) {
+      const parts = await db.inventoryItem.findMany({
+        where: { id: { in: partItemIds } },
+        select: { id: true, plantId: true },
+      });
+      for (const part of parts) {
+        if (part.plantId !== resolvedPlantId) {
+          return NextResponse.json(
+            { success: false, error: `Inventory item ${part.id} does not belong to the work order plant` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // Tools plant check
+    const toolIds = (requiredTools && Array.isArray(requiredTools))
+      ? requiredTools.map((t: any) => t.toolId || t).filter(Boolean) : [];
+    if (toolIds.length > 0 && resolvedPlantId) {
+      const tools = await db.tool.findMany({
+        where: { id: { in: toolIds } },
+        select: { id: true, plantId: true },
+      });
+      for (const tool of tools) {
+        if (tool.plantId !== resolvedPlantId) {
+          return NextResponse.json(
+            { success: false, error: `Tool ${tool.id} does not belong to the work order plant` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // Components plant check (component must belong to an asset in the same plant)
+    if (componentIds && Array.isArray(componentIds) && componentIds.length > 0 && resolvedPlantId) {
+      const components = await db.componentRegistry.findMany({
+        where: { id: { in: componentIds } },
+        select: { id: true, assetId: true },
+      });
+      const assetIds = [...new Set(components.map(c => c.assetId).filter(Boolean))];
+      if (assetIds.length > 0) {
+        const assets = await db.asset.findMany({
+          where: { id: { in: assetIds } },
+          select: { id: true, plantId: true },
+        });
+        const assetPlantMap = new Map(assets.map(a => [a.id, a.plantId]));
+        for (const comp of components) {
+          const compPlantId = comp.assetId ? assetPlantMap.get(comp.assetId) : undefined;
+          if (compPlantId && compPlantId !== resolvedPlantId) {
+            return NextResponse.json(
+              { success: false, error: `Component ${comp.id} belongs to an asset in a different plant` },
+              { status: 400 }
+            );
+          }
+        }
+      }
     }
 
     // Validate team members if provided
