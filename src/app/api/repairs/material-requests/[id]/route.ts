@@ -63,8 +63,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;
-    const existing = await db.repairMaterialRequest.findUnique({ where: { id } });
+    const existing = await db.repairMaterialRequest.findUnique({
+      where: { id },
+      include: { workOrder: { select: { plantId: true } } },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+
+    // Plant scope validation (through linked work order)
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     // Ownership check: only the requester (or admin/supervisor/manager) can edit a pending request
     if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
@@ -117,8 +126,17 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;
-    const existing = await db.repairMaterialRequest.findUnique({ where: { id } });
+    const existing = await db.repairMaterialRequest.findUnique({
+      where: { id },
+      include: { workOrder: { select: { plantId: true } } },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+
+    // Plant scope validation (through linked work order)
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     if (existing.status !== 'pending') {
       return NextResponse.json({ success: false, error: 'Only pending requests can be cancelled' }, { status: 400 });
@@ -158,7 +176,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const { id } = await params;
     const body = await request.json();
-    const { action, approvedQuantity, quantityApproved, quantityReturned, notes } = body;
+    const { action, approvedQuantity, quantityApproved, quantityReturned, quantityConsumed, quantityWasted, notes } = body;
 
     const matReq = await db.repairMaterialRequest.findUnique({
       where: { id },
@@ -724,6 +742,192 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           `material-requests?id=${id}`,
         );
         break;
+      }
+
+      // ──────────────────────────────────────────────
+      // CONSUME MATERIAL — record actual consumption
+      // ──────────────────────────────────────────────
+      case 'consume_material': {
+        // Authorization: only assigned technician or admin
+        if (!isAdmin(session) && matReq.workOrder.assignedTo !== session.userId) {
+          return NextResponse.json({ success: false, error: 'Only the assigned technician or admin can record material consumption' }, { status: 403 });
+        }
+
+        if (matReq.status !== 'issued') {
+          return NextResponse.json({ success: false, error: `Cannot consume: current status is ${matReq.status}. Materials must be issued first.` }, { status: 400 });
+        }
+
+        if (!quantityConsumed || quantityConsumed <= 0) {
+          return NextResponse.json({ success: false, error: 'Consumption quantity must be greater than 0' }, { status: 400 });
+        }
+
+        const previousConsumed = matReq.consumedQty || 0;
+        const previousWasted = matReq.wastedQty || 0;
+        const previousReturned = matReq.quantityReturned || 0;
+        const available = matReq.quantityIssued - previousConsumed - previousWasted - previousReturned;
+
+        if (quantityConsumed > available + 0.0001) { // floating-point tolerance
+          return NextResponse.json({
+            success: false,
+            error: `Cannot consume ${quantityConsumed}: only ${Math.max(0, available)} available (issued: ${matReq.quantityIssued}, consumed: ${previousConsumed}, wasted: ${previousWasted}, returned: ${previousReturned})`,
+          }, { status: 400 });
+        }
+
+        const newConsumed = previousConsumed + quantityConsumed;
+        const totalAccounted = newConsumed + previousWasted + previousReturned;
+        const newStatus = totalAccounted >= matReq.quantityIssued - 0.0001 ? 'fully_consumed' : matReq.status;
+
+        updated = await db.repairMaterialRequest.update({
+          where: { id },
+          data: {
+            consumedQty: newConsumed,
+            ...(newStatus !== matReq.status ? { status: newStatus } : {}),
+          },
+        });
+
+        // Audit trail for consumption
+        await db.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'material_request_consume',
+            entityType: 'repair_material_request',
+            entityId: id,
+            newValues: JSON.stringify({
+              action: 'consume_material',
+              quantityConsumed,
+              previousConsumed,
+              newConsumed,
+              available,
+              quantityIssued: matReq.quantityIssued,
+              status: newStatus,
+              notes: notes || null,
+            }),
+          },
+        });
+
+        // Notify supervisor when material is consumed
+        if (matReq.workOrder.assignedSupervisorId) {
+          await notifyUser(
+            matReq.workOrder.assignedSupervisorId,
+            'repair_material_request',
+            'Material Consumed',
+            `${quantityConsumed} ${matReq.unit} of ${matReq.itemName} consumed for WO ${matReq.workOrder.woNumber}. Total consumed: ${newConsumed}/${matReq.quantityIssued}`,
+            'repair_material_request',
+            id,
+            'maintenance-work-orders',
+          );
+        }
+
+        break;
+      }
+
+      // ──────────────────────────────────────────────
+      // WASTE MATERIAL — record wasted/discarded material
+      // ──────────────────────────────────────────────
+      case 'waste_material': {
+        // Authorization: only assigned technician or admin
+        if (!isAdmin(session) && matReq.workOrder.assignedTo !== session.userId) {
+          return NextResponse.json({ success: false, error: 'Only the assigned technician or admin can record material waste' }, { status: 403 });
+        }
+
+        if (matReq.status !== 'issued') {
+          return NextResponse.json({ success: false, error: `Cannot record waste: current status is ${matReq.status}. Materials must be issued first.` }, { status: 400 });
+        }
+
+        if (!quantityWasted || quantityWasted <= 0) {
+          return NextResponse.json({ success: false, error: 'Waste quantity must be greater than 0' }, { status: 400 });
+        }
+
+        const previousConsumed = matReq.consumedQty || 0;
+        const previousWasted = matReq.wastedQty || 0;
+        const previousReturned = matReq.quantityReturned || 0;
+        const available = matReq.quantityIssued - previousConsumed - previousWasted - previousReturned;
+
+        if (quantityWasted > available + 0.0001) { // floating-point tolerance
+          return NextResponse.json({
+            success: false,
+            error: `Cannot waste ${quantityWasted}: only ${Math.max(0, available)} available (issued: ${matReq.quantityIssued}, consumed: ${previousConsumed}, wasted: ${previousWasted}, returned: ${previousReturned})`,
+          }, { status: 400 });
+        }
+
+        const newWasted = previousWasted + quantityWasted;
+        const totalAccounted = previousConsumed + newWasted + previousReturned;
+        const newStatus = totalAccounted >= matReq.quantityIssued - 0.0001 ? 'fully_consumed' : matReq.status;
+
+        updated = await db.repairMaterialRequest.update({
+          where: { id },
+          data: {
+            wastedQty: newWasted,
+            ...(newStatus !== matReq.status ? { status: newStatus } : {}),
+          },
+        });
+
+        // Audit trail for waste
+        await db.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'material_request_waste',
+            entityType: 'repair_material_request',
+            entityId: id,
+            newValues: JSON.stringify({
+              action: 'waste_material',
+              quantityWasted,
+              previousWasted,
+              newWasted,
+              available,
+              quantityIssued: matReq.quantityIssued,
+              status: newStatus,
+              notes: notes || null,
+            }),
+          },
+        });
+
+        // Notify supervisor when material is wasted
+        if (matReq.workOrder.assignedSupervisorId) {
+          await notifyUser(
+            matReq.workOrder.assignedSupervisorId,
+            'repair_material_request',
+            'Material Wasted',
+            `${quantityWasted} ${matReq.unit} of ${matReq.itemName} wasted for WO ${matReq.workOrder.woNumber}. Total wasted: ${newWasted}/${matReq.quantityIssued}`,
+            'repair_material_request',
+            id,
+            'maintenance-work-orders',
+          );
+        }
+
+        break;
+      }
+
+      // ──────────────────────────────────────────────
+      // RECONCILE — validate consumed + wasted + returned == issued
+      // ──────────────────────────────────────────────
+      case 'reconcile': {
+        const consumed = matReq.consumedQty || 0;
+        const wasted = matReq.wastedQty || 0;
+        const returned = matReq.quantityReturned || 0;
+        const issued = matReq.quantityIssued;
+        const totalAccounted = consumed + wasted + returned;
+        const discrepancy = Math.round((issued - totalAccounted) * 1000) / 1000;
+        const balanced = Math.abs(discrepancy) < 0.001;
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            reconciliation: {
+              materialRequestId: id,
+              itemName: matReq.itemName,
+              issued,
+              consumed,
+              wasted,
+              returned,
+              totalAccounted,
+              discrepancy,
+              balanced,
+              status: balanced ? 'reconciled' : 'unreconciled',
+              workOrderNumber: matReq.workOrder.woNumber,
+            },
+          },
+        });
       }
 
       default:

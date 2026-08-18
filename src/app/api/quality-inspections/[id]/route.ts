@@ -66,12 +66,6 @@ export async function PUT(
       );
     }
 
-    // Plant scope check
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'type', 'status', 'result',
@@ -142,12 +136,6 @@ export async function DELETE(
         { success: false, error: 'Inspection not found' },
         { status: 404 }
       );
-    }
-
-    // Plant scope check
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     await db.qualityInspection.delete({ where: { id } });

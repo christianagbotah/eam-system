@@ -148,12 +148,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    // ── Plant scope validation ──
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-
     const body = await request.json();
     const {
       title,
@@ -180,6 +174,12 @@ export async function POST(request: NextRequest) {
 
     const requestNumber = await generateRequestNumber();
 
+    // ── Plant scope validation ──
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     // Resolve plant ID with plant-scope validation
     let resolvedPlantId = plantId;
     if (resolvedPlantId) {
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Cannot create maintenance request for an inaccessible plant' }, { status: 403 });
       }
     } else {
-      // No explicit plantId — derive from user's primary plant
+      // No explicit plantId — derive from user's accessible plants
       if (plantScope.accessiblePlantIds.length === 1) {
         resolvedPlantId = plantScope.accessiblePlantIds[0];
       } else if (plantScope.accessiblePlantIds.length > 1) {

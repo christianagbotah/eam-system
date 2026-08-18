@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { initiateHandover, resumeAfterHandover } from '@/services/workExecution.service';
 import type { SessionContext } from '@/services/workExecution.service';
@@ -20,8 +20,7 @@ export async function POST(
 
     // Plant scope check (denyAccess + canAccessPlant)
     const wo = await (await import('@/lib/db')).db.workOrder.findUnique({
-      where: { id },
-      select: { id: true, plantId: true, assignedTo: true, teamMembers: { select: { userId: true } } },
+      where: { id }, select: { id: true, plantId: true },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
@@ -30,21 +29,6 @@ export async function POST(
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-
-    // Authorization for initiate handover: permission OR assigned role
-    if (action !== 'resume') {
-      const hasShiftPerm = hasPermission(session, 'shift_handovers.create');
-      const isAssignee = session.userId === wo.assignedTo;
-      const isTeamMember = wo.teamMembers?.some((m) => m.userId === session.userId) ?? false;
-      const isUserAdmin = isAdmin(session);
-
-      if (!hasShiftPerm && !isAssignee && !isTeamMember && !isUserAdmin) {
-        return NextResponse.json(
-          { success: false, error: 'Insufficient permissions to initiate a shift handover' },
-          { status: 403 },
-        );
-      }
     }
 
     const sessionCtx: SessionContext = {

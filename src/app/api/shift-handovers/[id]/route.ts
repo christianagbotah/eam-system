@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin, hasRole } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(
@@ -57,14 +57,6 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Block direct confirmation via PUT — must use the dedicated confirm endpoint
-    if (body.status === 'confirmed') {
-      return NextResponse.json(
-        { success: false, error: 'Use POST /api/shift-handovers/[id]/confirm to confirm a handover' },
-        { status: 403 },
-      );
-    }
-
     const existing = await db.shiftHandover.findUnique({
       where: { id },
       include: { workOrder: { select: { plantId: true } } },
@@ -79,10 +71,49 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const updateData: Record<string, unknown> = {};
-    const allowedFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes', 'status'];
+    const isConfirming = body.status === 'confirmed' || body.action === 'confirm';
+    const isSupervisorOrAdmin = isAdmin(session) || hasRole(session, 'supervisor');
+    const isOverride = isConfirming && existing.receivedById && session.userId !== existing.receivedById;
 
-    for (const field of allowedFields) {
+    // ── Confirmation permission gate ───────────────────────────────────
+    if (isConfirming) {
+      if (isOverride) {
+        // Supervisor/admin override: requires explicit reason
+        if (!isSupervisorOrAdmin) {
+          return NextResponse.json(
+            { success: false, error: 'Only the designated receiver can confirm this handover' },
+            { status: 403 },
+          );
+        }
+        if (!body.overrideReason || typeof body.overrideReason !== 'string' || body.overrideReason.trim().length === 0) {
+          return NextResponse.json(
+            { success: false, error: 'Supervisor override requires an overrideReason' },
+            { status: 400 },
+          );
+        }
+      }
+      // If not an override and there IS a designated receiver, enforce it
+      if (!isOverride && existing.receivedById && session.userId !== existing.receivedById) {
+        return NextResponse.json(
+          { success: false, error: 'Only the designated receiver can confirm this handover' },
+          { status: 403 },
+        );
+      }
+    }
+
+    // ── Immutability: confirmed handovers cannot be edited ─────────────
+    if (existing.status === 'confirmed' && !isSupervisorOrAdmin) {
+      return NextResponse.json(
+        { success: false, error: 'This handover is confirmed and cannot be modified' },
+        { status: 403 },
+      );
+    }
+
+    // ── Build update data (excluding status from generic field set) ────
+    const updateData: Record<string, unknown> = {};
+    const editableFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes'];
+
+    for (const field of editableFields) {
       if (body[field] !== undefined) {
         if (field === 'shiftDate') {
           updateData[field] = body[field] ? new Date(body[field]) : null;
@@ -94,6 +125,13 @@ export async function PUT(
       }
     }
 
+    // ── Handle confirmation separately with full audit ────────────────
+    if (isConfirming) {
+      updateData.status = 'confirmed';
+      // Ensure the receiver is set (use existing if present, else set to current user)
+      updateData.receivedById = existing.receivedById || session.userId;
+    }
+
     const updated = await db.shiftHandover.update({
       where: { id },
       data: updateData,
@@ -103,16 +141,31 @@ export async function PUT(
       },
     });
 
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'shift_handover',
-        entityId: id,
-        oldValues: JSON.stringify({ shiftType: existing.shiftType, status: existing.status }),
-        newValues: JSON.stringify(updateData),
-      },
-    });
+    // ── Audit trail ───────────────────────────────────────────────────
+    if (isOverride) {
+      // Special audit entry for supervisor override
+      await db.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'shift_handover',
+          entityId: id,
+          oldValues: JSON.stringify({ status: existing.status, receivedById: existing.receivedById }),
+          newValues: JSON.stringify({ status: 'confirmed', override: true, overrideReason: body.overrideReason, overrideBy: session.userId }),
+        },
+      });
+    } else {
+      await db.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'shift_handover',
+          entityId: id,
+          oldValues: JSON.stringify({ shiftType: existing.shiftType, status: existing.status }),
+          newValues: JSON.stringify(updateData),
+        },
+      });
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

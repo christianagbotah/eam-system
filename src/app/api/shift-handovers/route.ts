@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       if (!wo) {
         return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
       }
-      // ── Phase 3G: Cross-plant WO handover access denied ──
+      // ── Cross-plant WO handover access denied ──
       if (!plantScope.isSystemWide && wo.plantId) {
         if (plantScope.plantId && wo.plantId !== plantScope.plantId) {
           return NextResponse.json({ success: false, error: 'Cannot create handover for a work order in another plant' }, { status: 403 });

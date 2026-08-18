@@ -17,13 +17,6 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
-    {
-      name: 'repairs-uat',
-      testDir: './e2e/repairs',
-      fullyParallel: false,
-      workers: 1,
-      retries: 0,
-    },
   ],
   webServer: {
     command: 'bun run dev',

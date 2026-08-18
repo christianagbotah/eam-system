@@ -92,7 +92,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Plant scope validation for ALL workflow actions
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, toolReq.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, toolReq.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
@@ -113,13 +113,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve tool requests' }, { status: 403 });
       }
     }
-    // ISSUE action — store keeper / tools shop attendant ONLY
     if (action === 'issue') {
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
           !hasRole(session, 'inventory_manager') &&
           !hasRole(session, 'tools_shop_attendant')) {
-        return NextResponse.json({ success: false, error: 'Only store keeper, inventory manager, or tools shop attendant can issue tools' }, { status: 403 });
+        return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can issue tools' }, { status: 403 });
       }
     }
     // STOREKEEPER_CONFIRM_RETURN — store/tool keeper ONLY

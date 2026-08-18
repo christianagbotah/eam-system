@@ -40,15 +40,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json();
     const { downtimeEnd, reason, category, impactLevel, productionLoss, notes } = body;
 
-    const existing = await db.workOrderDowntime.findUnique({ where: { id }, include: { workOrder: { select: { plantId: true } } } });
+    const existing = await db.workOrderDowntime.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
-
-    // Plant scope check
-    const plantScope = await getPlantScope(request, session);
-    const entityPlantId = existing.plantId || existing.workOrder?.plantId;
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, entityPlantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
 
     // Ownership check: only the creator (or admin/supervisor/manager) can edit downtime records
     if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
@@ -90,15 +83,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;
-    const existing = await db.workOrderDowntime.findUnique({ where: { id }, include: { workOrder: { select: { plantId: true } } } });
+    const existing = await db.workOrderDowntime.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
-
-    // Plant scope check
-    const plantScope = await getPlantScope(request, session);
-    const entityPlantId = existing.plantId || existing.workOrder?.plantId;
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, entityPlantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
 
     // Ownership check: only the creator (or admin/supervisor/manager) can delete downtime records
     if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {

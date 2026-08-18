@@ -36,9 +36,7 @@ export async function GET(request: NextRequest) {
     const baseFilter: Record<string, unknown> = { ...plantFilter };
     if (Object.keys(dateFilter).length > 0) baseFilter.createdAt = dateFilter;
     if (departmentId) baseFilter.departmentId = departmentId;
-    if (plantScope.isSystemWide) {
-      if (plantId) baseFilter.plantId = plantId;
-    } // else: plantFilter already constrains to accessible plants
+    if (plantId && !plantScope.isScoped) baseFilter.plantId = plantId;
     if (moduleFilter === 'repairs') {
       (baseFilter as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
@@ -132,9 +130,7 @@ export async function GET(request: NextRequest) {
     const mrFilter: Record<string, unknown> = { ...plantFilter };
     if (Object.keys(dateFilter).length > 0) mrFilter.createdAt = dateFilter;
     if (departmentId) mrFilter.departmentId = departmentId;
-    if (plantScope.isSystemWide) {
-      if (plantId) mrFilter.plantId = plantId;
-    } // else: plantFilter already constrains to accessible plants
+    if (plantId && !plantScope.isScoped) mrFilter.plantId = plantId;
     const mrs = await db.maintenanceRequest.findMany({
       where: Object.keys(mrFilter).length > 0 ? mrFilter : undefined,
       include: {

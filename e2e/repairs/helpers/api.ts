@@ -133,33 +133,32 @@ export async function lookupToolId(token: string, toolName: string): Promise<str
   return found.id;
 }
 
-const inventoryItemCache: Record<string, string> = {};
+const inventoryCache: Record<string, string> = {};
 
-/** Look up an inventory item's DB ID by its itemCode (e.g. 'UAT-BRG-6205') */
-export async function lookupInventoryItemId(token: string, itemCode: string): Promise<string> {
-  if (inventoryItemCache[itemCode]) return inventoryItemCache[itemCode];
-  const { data } = await apiCall(token, 'GET', '/api/inventory?search=' + encodeURIComponent(itemCode) + '&limit=5');
-  const items = data.data ?? data.items ?? data.results ?? [];
-  const item = items.find((i: any) => i.itemCode === itemCode);
-  if (!item) throw new Error(`Inventory item ${itemCode} not found`);
-  inventoryItemCache[itemCode] = item.id;
-  return item.id;
+/** Look up an inventory item's DB ID by its itemCode or name */
+export async function lookupInventoryItemId(token: string, itemCodeOrName: string): Promise<string> {
+  if (inventoryCache[itemCodeOrName]) return inventoryCache[itemCodeOrName];
+  const { status, data } = await apiCall(token, 'GET', `/api/inventory?search=${encodeURIComponent(itemCodeOrName)}`);
+  if (status !== 200 || !data.success) {
+    throw new Error(`Failed to look up inventory item ${itemCodeOrName}: ${status} ${JSON.stringify(data)}`);
+  }
+  const items = data.data as Array<{ id: string; itemCode: string; name: string; currentStock: number }>;
+  const found = items.find((i) => i.itemCode === itemCodeOrName) || items.find((i) => i.name === itemCodeOrName);
+  if (!found) throw new Error(`Inventory item ${itemCodeOrName} not found`);
+  inventoryCache[itemCodeOrName] = found.id;
+  return found.id;
 }
 
-const toolCodeCache: Record<string, string> = {};
-
-/** Look up a tool's DB ID by its toolCode (e.g. 'UAT-NON-CAL-TOOL') */
-export async function lookupToolIdByCode(token: string, toolCode: string): Promise<string> {
-  if (toolCodeCache[toolCode]) return toolCodeCache[toolCode];
-  const { status, data } = await apiCall(token, 'GET', `/api/tools?search=${encodeURIComponent(toolCode)}`);
+/** Get inventory item details (currentStock, name, etc.) */
+export async function getInventoryItem(token: string, itemCodeOrName: string) {
+  const { status, data } = await apiCall(token, 'GET', `/api/inventory?search=${encodeURIComponent(itemCodeOrName)}`);
   if (status !== 200 || !data.success) {
-    throw new Error(`Failed to look up tool by code ${toolCode}: ${status} ${JSON.stringify(data)}`);
+    throw new Error(`Failed to look up inventory item ${itemCodeOrName}: ${status} ${JSON.stringify(data)}`);
   }
-  const tools = data.data as Array<{ id: string; toolCode: string }>; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const found = tools.find((t) => t.toolCode === toolCode);
-  if (!found) throw new Error(`Tool with code ${toolCode} not found`);
-  toolCodeCache[toolCode] = found.id;
-  return found.id;
+  const items = data.data as Array<{ id: string; itemCode: string; name: string; currentStock: number }>;
+  const found = items.find((i) => i.itemCode === itemCodeOrName) || items.find((i) => i.name === itemCodeOrName);
+  if (!found) throw new Error(`Inventory item ${itemCodeOrName} not found`);
+  return found;
 }
 
 // ── MR operations ────────────────────────────────────────────────────────
@@ -421,41 +420,146 @@ export async function resumeAfterHandoverWO(token: string, woId: string, reason?
   return data.data || data;
 }
 
-/** Confirm a shift handover */
-export async function confirmShiftHandover(token: string, handoverId: string) {
-  const { status, data } = await apiCall(token, 'POST', `/api/shift-handovers/${handoverId}/confirm`, {});
-  if (status < 200 || status >= 300) throw new Error(`Confirm handover failed: ${status} ${JSON.stringify(data)}`);
-  return data.data || data;
-}
-
-/** Upload an attachment to a work order using multipart form data */
-export async function uploadAttachment(
-  token: string,
-  woId: string,
-  fileName: string,
-  fileContent: Buffer,
-  contentType: string,
-) {
-  const formData = new FormData();
-  const blob = new Blob([fileContent], { type: contentType });
-  formData.append('file', blob, fileName);
-
-  const res = await fetch(`${BASE}/api/work-orders/${woId}/attachments`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  });
-  const json = await res.json();
-  return { status: res.status, data: json };
-}
-
 /** Request rework */
 export async function requestReworkWO(token: string, woId: string, reason: string, category?: string) {
   const { status, data } = await apiCall(token, 'POST', `/api/work-orders/${woId}/rework`, { reason, category });
   if (status < 200 || status >= 300) throw new Error(`Rework failed: ${status} ${JSON.stringify(data)}`);
   return data.data || data;
+}
+
+// ── Material request operations ──────────────────────────────────────────
+
+/** Create a material request for a work order */
+export async function createMaterialRequest(
+  token: string,
+  body: {
+    workOrderId: string;
+    itemName: string;
+    quantityRequested: number;
+    unit?: string;
+    urgency?: string;
+    reason: string;
+    itemId?: string;
+  },
+) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', '/api/repairs/material-requests', body,
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material request creation failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Supervisor-approve a material request */
+export async function supervisorApproveMaterial(token: string, materialRequestId: string, approvedQuantity?: number) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+      action: 'supervisor_approve',
+      ...(approvedQuantity !== undefined ? { approvedQuantity } : {}),
+    },
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material supervisor approval failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Storekeeper-approve a material request */
+export async function storekeeperApproveMaterial(token: string, materialRequestId: string, approvedQuantity?: number) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+      action: 'storekeeper_approve',
+      ...(approvedQuantity !== undefined ? { approvedQuantity } : {}),
+    },
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material storekeeper approval failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Issue a material request */
+export async function issueMaterial(token: string, materialRequestId: string, quantityIssued?: number) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+      action: 'issue',
+      ...(quantityIssued !== undefined ? { approvedQuantity: quantityIssued } : {}),
+    },
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material issuance failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Consume material on a material request */
+export async function consumeMaterial(token: string, materialRequestId: string, quantity: number, notes?: string) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+      action: 'consume_material',
+      quantityConsumed: quantity,
+      notes,
+    },
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material consumption failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Record wasted material on a material request */
+export async function wasteMaterial(token: string, materialRequestId: string, quantity: number, notes?: string) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+      action: 'waste_material',
+      quantityWasted: quantity,
+      notes,
+    },
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material waste recording failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Return material on a material request */
+export async function returnMaterial(token: string, materialRequestId: string, quantity: number, notes?: string) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+      action: 'record_return',
+      quantityReturned: quantity,
+      notes,
+    },
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material return failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Reconcile a material request — validates consumed + wasted + returned == issued */
+export async function reconcileMaterial(token: string, materialRequestId: string) {
+  const { status, data: resp } = await apiCall(
+    token, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+      action: 'reconcile',
+    },
+  );
+  if (status < 200 || status >= 300) {
+    throw new Error(`Material reconciliation failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
+}
+
+/** Get material request details */
+export async function getMaterialRequest(token: string, materialRequestId: string) {
+  const { status, data: resp } = await apiCall(
+    token, 'GET', `/api/repairs/material-requests/${materialRequestId}`,
+  );
+  if (status !== 200) {
+    throw new Error(`Material request fetch failed: ${status} ${JSON.stringify(resp)}`);
+  }
+  return resp.data;
 }
 
 // ── Plant-scoped helpers (for cross-plant security testing) ──────────────

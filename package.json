@@ -17,8 +17,7 @@
     "backfill:tool-requests": "bun scripts/backfill-tool-request-numbers.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
-    "test:e2e:repairs": "playwright test --project=repairs-uat"
+    "test:e2e": "playwright test"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

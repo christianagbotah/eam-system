@@ -25,6 +25,7 @@ import {
   lookupPlantId,
   lookupToolId,
   apiCall,
+  expectFailure,
 } from './helpers/api';
 
 test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) => {
@@ -38,9 +39,6 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
   const validToolId = await lookupToolId(plannerToken, 'UAT-CAL-VALID');
   const expiredToolId = await lookupToolId(plannerToken, 'UAT-CAL-EXPIRED');
   const failedToolId = await lookupToolId(plannerToken, 'UAT-CAL-FAILED');
-
-  // WO ID captured in J1 and reused in ALL subsequent steps
-  let woId: string;
 
   // ── J1: Create and start a WO (prerequisite) ──────────────────────────
   await test.step('J1: Create and start WO for calibration tests', async () => {
@@ -63,13 +61,12 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
       workOrderType: 'corrective',
       priority: 'high',
     });
-    woId = wo.id;
-    expect(woId).toBeTruthy();
+    expect(wo.id).toBeTruthy();
 
-    await assignWO(plannerToken, woId, { assignedTo: techUserId });
-    await startWO(techToken, woId);
+    await assignWO(plannerToken, wo.id, { assignedTo: techUserId });
+    await startWO(techToken, wo.id);
 
-    const fetched = await getWO(techToken, woId);
+    const fetched = await getWO(techToken, wo.id);
     expect(fetched.status).toBe('in_progress');
   });
 
@@ -125,6 +122,20 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
   }
 
   /**
+   * Helper: get a WO ID for the current technician (finds an in_progress WO).
+   */
+  async function getInProgressWoId(): Promise<string> {
+    const { status, data } = await apiCall(
+      techToken, 'GET', '/api/work-orders?status=in_progress&limit=1',
+    );
+    expect(status).toBe(200);
+    expect(data.success).toBe(true);
+    const wos = data.data as Array<{ id: string; status: string }>;
+    expect(wos.length).toBeGreaterThanOrEqual(1);
+    return wos[0].id;
+  }
+
+  /**
    * Helper: get tool transactions for a tool.
    */
   async function getToolTransactions(toolId: string) {
@@ -137,6 +148,7 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J2: VALID calibration — tool issues successfully ───────────────────
   await test.step('J2: VALID calibration — tool issues successfully', async () => {
+    const woId = await getInProgressWoId();
     const { trId, itemId } = await createAndApproveToolRequest(validToolId, woId);
 
     // Issue the tool
@@ -176,6 +188,7 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J3: EXPIRED calibration — item blocked with calibration warning ────
   await test.step('J3: EXPIRED calibration — item blocked', async () => {
+    const woId = await getInProgressWoId();
     const { trId, itemId } = await createAndApproveToolRequest(expiredToolId, woId);
 
     // Issue the tool
@@ -199,11 +212,11 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
     );
     expect(blockedWarning).toBeTruthy();
 
-    // Server-state: request status is 'issued' (soft block still transitions)
+    // Server-state: request status remains 'storekeeper_approved' (all items blocked)
     const { data: fetched } = await apiCall(
       techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
     );
-    expect(fetched.data.status).toBe('issued');
+    expect(fetched.data.status).toBe('storekeeper_approved');
 
     // Server-state: the expired item should NOT have been issued
     const blockedItem = fetched.data.items.find((i: any) => i.id === itemId);
@@ -222,6 +235,7 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J4: FAILED calibration — item blocked with calibration warning ─────
   await test.step('J4: FAILED calibration — item blocked', async () => {
+    const woId = await getInProgressWoId();
     const { trId, itemId } = await createAndApproveToolRequest(failedToolId, woId);
 
     // Issue the tool
@@ -249,7 +263,7 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
     const { data: fetched } = await apiCall(
       techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
     );
-    expect(fetched.data.status).toBe('issued');
+    expect(fetched.data.status).toBe('storekeeper_approved');
 
     const blockedItem = fetched.data.items.find((i: any) => i.id === itemId);
     expect(blockedItem).toBeTruthy();
@@ -265,37 +279,26 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
 
   // ── J5: EMERGENCY OVERRIDE — technician cannot bypass calibration ─────
   await test.step('J5: Emergency override — technician cannot bypass calibration', async () => {
+    const woId = await getInProgressWoId();
+
     // Create a tool request for the expired tool and get it approved
     const { trId, itemId } = await createAndApproveToolRequest(expiredToolId, woId);
 
-    // Technician attempts to issue (the 'issue' action has no explicit
-    // permission gate — any authenticated user can call it if status is
-    // storekeeper_approved). However, the calibration check still runs
-    // and blocks the item regardless of caller role.
-    const { status: issueStatus, data: issueData } = await apiCall(
+    // Technician attempts to issue — the 'issue' action is restricted to
+    // storekeeper/inventory roles, so this must return 403.
+    const { status: issueStatus, data: issueData } = await expectFailure(
       techToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
         action: 'issue',
         issuedItems: [{ itemId, quantityIssued: 1 }],
       },
     );
+    expect(issueStatus).toBe(403);
+    expect(issueData.success).toBe(false);
 
-    // Calibration block applies regardless of who triggers the issue
-    expect(issueStatus).toBe(200);
-    expect(issueData.success).toBe(true);
-
-    const warnings = issueData.warnings as string[];
-    expect(warnings).toBeTruthy();
-    const calWarning = warnings.find(
-      (w) => w.toLowerCase().includes('calibration') || w.toLowerCase().includes('blocked'),
-    );
-    expect(calWarning).toBeTruthy();
-
-    // Server-state: item was NOT issued
+    // Server-state: request still in storekeeper_approved (issue was rejected)
     const { data: fetched } = await apiCall(
       techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
     );
-    const item = fetched.data.items.find((i: any) => i.id === itemId);
-    expect(item).toBeTruthy();
-    expect(item.quantityIssued ?? 0).toBe(0);
+    expect(fetched.data.status).toBe('storekeeper_approved');
   });
 });

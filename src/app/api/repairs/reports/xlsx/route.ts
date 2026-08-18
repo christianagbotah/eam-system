@@ -88,21 +88,9 @@ export async function POST(request: NextRequest) {
       ...(rawFilters ?? {}),
     };
 
-    // If plant scope is active, enforce the plant ID filter on the server side (ALWAYS filter when not system-wide)
-    if (!plantScope.isSystemWide) {
-      if (plantScope.plantId) {
-        filters.plantId = plantScope.plantId;
-      } else if (plantScope.accessiblePlantIds.length > 0) {
-        // XLSX report service only supports a single plantId filter;
-        // for multi-plant users without an explicit selection, skip the plant filter
-        // (they'll see all data from their accessible plants via the underlying service)
-      } else {
-        // deny sentinel — user has no plant assignments, block the report
-        return NextResponse.json(
-          { success: false, error: 'No plant access' },
-          { status: 403 },
-        );
-      }
+    // If plant scope is active, enforce the plant ID filter on the server side
+    if (plantScope.isScoped && plantScope.plantId) {
+      filters.plantId = plantScope.plantId;
     }
 
     // ── 6. Generate XLSX ────────────────────────────────────────────────────
