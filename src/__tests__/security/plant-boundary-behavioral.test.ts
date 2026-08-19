@@ -3,6 +3,10 @@
  * Tests actual function logic with in-memory data, not source code string matching.
  */
 import { describe, it, expect } from 'vitest';
+
+// Mock @/lib/db before importing plant-scope
+vi.mock('@/lib/db', () => ({ db: {} }));
+
 import { canAccessPlant, canAccessPlantStrict, type PlantScopeResult } from '@/lib/plant-scope';
 
 // ── Helpers ──────────────────────────────────────────────────────────

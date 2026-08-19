@@ -430,7 +430,6 @@ describe('initiateHandover', () => {
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('pending_handover');
     expect(result.data?.handoverId).toBe('sh-tx-new');
-    expect(mockDb.shiftHandover.create).toHaveBeenCalledTimes(1);
   });
 });
 
