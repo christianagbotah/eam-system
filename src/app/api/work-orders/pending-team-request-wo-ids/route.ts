@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
 /**
  * GET /api/work-orders/pending-team-request-wo-ids
@@ -19,14 +20,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: [] });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
     const pendingReqs = await db.woTeamMemberRequest.findMany({
       where: {
         status: 'pending',
-        // Non-admins only see WOs they planned or assigned
-        ...(isAdmin(session) ? {} : { OR: [
-          { workOrder: { plannerId: session.userId } },
-          { workOrder: { assignedBy: session.userId } },
-        ]}),
+        workOrder: {
+          ...applyPlantScope({}, plantScope),
+          // Non-admins only see WOs they planned or assigned
+          ...(isAdmin(session) ? {} : { OR: [
+            { plannerId: session.userId },
+            { assignedBy: session.userId },
+          ]}),
+        },
       },
       select: {
         workOrderId: true,
