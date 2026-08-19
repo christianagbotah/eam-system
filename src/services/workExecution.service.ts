@@ -863,7 +863,7 @@ export async function enterWaitingState(
 
 /**
  * INITIATE HANDOVER — in_progress → pending_handover
- * Fully atomic: close active timers + state transition + ShiftHandover creation + audit in a single transaction.
+ * Fully atomic: state transition + audit in a single transaction.
  */
 export async function initiateHandover(
   workOrderId: string,
@@ -885,73 +885,23 @@ export async function initiateHandover(
   const auth = checkTeamAuthority(wo, session, 'handover');
   if (!auth.allowed) return { success: false, error: auth.error };
 
-  let createdHandoverId: string | undefined;
-
   // Execute state-changing operations atomically
   await db.$transaction(async (tx) => {
-    // 1. Close any active time logs (open start entries without endTime)
-    await tx.workOrderTimeLog.updateMany({
-      where: { workOrderId, userId: session.userId, action: 'start', endTime: null },
-      data: { endTime: new Date(), pauseReason: options?.reason || 'Shift handover initiated' },
-    });
-
-    // 2. State transition
+    // 1. State transition
     const result = await executeTransition('work_order', workOrderId, 'pending_handover', session, {
       reason: options?.reason,
       tx,
     });
     if (!result.success) throw new Error(result.error);
 
-    // 3. Create ShiftHandover record
-    const tasksSummary = JSON.stringify({
-      workOrderId,
-      title: wo.title,
-      status: 'pending_handover',
-      timeLogsCount: wo.timeLogs?.length ?? 0,
-      materialRequests: wo.repairMaterialRequests?.length ?? 0,
-      toolRequests: wo.repairToolRequests?.length ?? 0,
-    });
-
-    const pendingItems: string[] = [];
-    if (wo.repairMaterialRequests?.some((r) => r.status !== 'completed' && r.status !== 'cancelled')) {
-      pendingItems.push('open_material_requests');
-    }
-    if (wo.repairToolRequests?.some((r) => r.status !== 'returned' && r.status !== 'cancelled')) {
-      pendingItems.push('open_tool_requests');
-    }
-    const pendingIssues = JSON.stringify(pendingItems);
-
-    // Determine shift transitions
-    const fromShift = wo.plannedStart
-      ? new Date(wo.plannedStart).getHours() < 14 ? 'morning' : new Date(wo.plannedStart).getHours() < 22 ? 'afternoon' : 'night'
-      : 'day';
-    const toShift = fromShift === 'morning' ? 'afternoon' : fromShift === 'afternoon' ? 'night' : 'morning';
-
-    const handover = await tx.shiftHandover.create({
-      data: {
-        workOrderId,
-        handedOverById: session.userId,
-        status: 'pending_confirmation',
-        shiftType: 'end_of_shift',
-        shiftDate: new Date(),
-        fromShift,
-        toShift,
-        notes: options?.reason || `Shift handover initiated for WO ${wo.woNumber || workOrderId}`,
-        tasksSummary,
-        pendingIssues,
-        departmentId: wo.departmentId,
-      },
-    });
-    createdHandoverId = handover.id;
-
-    // 4. Audit (include handover ID)
+    // 2. Audit
     await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-      { status: wo.status }, { status: 'pending_handover', handoverId: createdHandoverId }, options?.auditCtx, tx);
+      { status: wo.status }, { status: 'pending_handover' }, options?.auditCtx, tx);
   });
 
   notifyStakeholders(wo, session, 'shift_handover_pending', undefined, options?.reason);
 
-  const result: TransitionResult = { success: true, data: { status: 'pending_handover', handoverId: createdHandoverId } };
+  const result: TransitionResult = { success: true, data: { status: 'pending_handover' } };
 
   if (idempotencyKey) {
     await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'handover', session.userId, result);
@@ -1070,13 +1020,6 @@ export async function submitCompletion(
 
   // Execute in a single transaction
   const txResult = await db.$transaction(async (tx) => {
-    // 0. Close any active time logs for this user on this WO before completion
-    //    (Defect 11: active timer must be stopped before completing)
-    await tx.workOrderTimeLog.updateMany({
-      where: { workOrderId, userId: session.userId, action: 'start', endTime: null },
-      data: { endTime: now, pauseReason: 'Auto-closed on WO completion' },
-    });
-
     // 1. Calculate authoritative costs (server-side only)
     const costs = await calculateAuthoritativeCosts(workOrderId, tx);
     if (!costs) throw new Error('Failed to calculate authoritative costs: work order not found in transaction');

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: generate request number MR-YYYYMM-NNNN
@@ -48,9 +48,6 @@ export async function GET(request: NextRequest) {
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
 
     // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
@@ -174,45 +171,28 @@ export async function POST(request: NextRequest) {
 
     const requestNumber = await generateRequestNumber();
 
-    // ── Plant scope validation ──
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-
-    // Resolve plant ID with plant-scope validation
+    // Get user's primary plant if not provided
     let resolvedPlantId = plantId;
-    if (resolvedPlantId) {
-      // Explicit plantId provided — verify user has access
-      if (!canAccessPlant(plantScope, resolvedPlantId)) {
-        return NextResponse.json({ success: false, error: 'Cannot create maintenance request for an inaccessible plant' }, { status: 403 });
-      }
-    } else {
-      // No explicit plantId — derive from user's accessible plants
-      if (plantScope.accessiblePlantIds.length === 1) {
-        resolvedPlantId = plantScope.accessiblePlantIds[0];
-      } else if (plantScope.accessiblePlantIds.length > 1) {
-        // Multiple plants — try primary
-        const userPlant = await db.userPlant.findFirst({
-          where: { userId: session.userId, isPrimary: true },
-        });
-        resolvedPlantId = userPlant?.plantId ?? null;
-      }
-      // If still null and user has no plants, MR will have no plant (acceptable for non-plant entities)
-    }
-
-    // If assetId provided, validate asset exists in the resolved plant
-    if (assetId && resolvedPlantId) {
-      const asset = await db.asset.findUnique({
-        where: { id: assetId },
-        select: { id: true, plantId: true },
+    if (!resolvedPlantId) {
+      const userPlant = await db.userPlant.findFirst({
+        where: { userId: session.userId, isPrimary: true },
       });
-      if (!asset) {
-        return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
-      }
-      if (asset.plantId !== resolvedPlantId) {
-        return NextResponse.json({ success: false, error: 'Cannot link an asset from a different plant to this maintenance request' }, { status: 403 });
-      }
+      resolvedPlantId = userPlant?.plantId ?? null;
+    }
+    // Fallback: if still null, try any single plant
+    if (!resolvedPlantId && !isAdmin(session)) {
+      const anyPlant = await db.userPlant.findFirst({
+        where: { userId: session.userId },
+        select: { plantId: true },
+      });
+      if (anyPlant) resolvedPlantId = anyPlant.plantId;
+    }
+    // Null-plant guard for operational records
+    if (!resolvedPlantId && !isAdmin(session)) {
+      return NextResponse.json(
+        { success: false, error: 'Plant selection required. You must specify a plant for maintenance requests.' },
+        { status: 400 },
+      );
     }
 
     // Use explicitly provided supervisorId, or auto-detect from department

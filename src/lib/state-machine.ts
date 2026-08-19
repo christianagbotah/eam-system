@@ -214,29 +214,31 @@ export async function seedCanonicalTransitions(
 
 /**
  * Ensure the status_transitions table has the required rows.
- * ALWAYS calls seedCanonicalTransitions() (which uses idempotent upsert) so that
- * partial data from a prior seed is repaired.
- *
- * Returns `{ attempted, succeeded }`:
- *   - `attempted`: whether this call actually ran the check/seed logic
- *   - `succeeded`: whether the table has data after this call (either already had
- *     it, or seeding completed successfully)
+ * If the table is empty (e.g., after a fresh deploy), auto-seed it.
+ * Uses the canonical seedCanonicalTransitions() which is idempotent via upsert.
+ * Returns true if seeding was performed, false if already populated.
  */
-async function ensureTransitionsSeeded(): Promise<{ attempted: boolean; succeeded: boolean }> {
-  // Already checked in a prior call — skip entirely
-  if (_seedAttempted) return { attempted: false, succeeded: false };
-
-  // Mark as attempted BEFORE any work to prevent concurrent duplicate attempts
-  _seedAttempted = true;
+async function ensureTransitionsSeeded(): Promise<boolean> {
+  if (_seedAttempted) return false;
 
   try {
-    console.warn('[state-machine] Running canonical transition seed (idempotent upsert)...');
+    const count = await db.statusTransition.count();
+    if (count > 0) {
+      _seedAttempted = true;
+      return false;
+    }
+
+    console.warn('[state-machine] status_transitions table is empty — auto-seeding default transitions...');
+
     const seeded = await seedCanonicalTransitions();
-    console.warn(`[state-machine] ✅ Seeded ${seeded} status transitions (upsert)`);
-    return { attempted: true, succeeded: true };
+    console.warn(`[state-machine] ✅ Auto-seeded ${seeded} default status transitions`);
+
+    _seedAttempted = true;
+    return true;
   } catch (err) {
-    console.error('[state-machine] ❌ Seed failed:', err);
-    return { attempted: true, succeeded: false };
+    console.error('[state-machine] ❌ Auto-seed failed:', err);
+    _seedAttempted = true; // Don't keep trying
+    return false;
   }
 }
 
@@ -320,12 +322,10 @@ export async function checkTransition(
 
   // If no rule found, try auto-seeding the table (self-healing for fresh deploys)
   if (!rule) {
-    const seedResult = await ensureTransitionsSeeded();
-    if (seedResult.succeeded) {
-      // Seeding happened on the global `db`, so re-query MUST also use `db`
-      // (not the potentially-isolated `tx` client) to avoid transaction
-      // isolation preventing visibility of the newly-seeded rows.
-      rule = await db.statusTransition.findFirst({
+    const seeded = await ensureTransitionsSeeded();
+    if (seeded) {
+      // Retry the lookup after seeding
+      rule = await client.statusTransition.findFirst({
         where: {
           entityType,
           toStatus,
@@ -586,8 +586,7 @@ export async function getAvailableTransitions(
   currentStatus: string | null,
   session: SessionLike,
 ): Promise<AvailableTransition[]> {
-  // Auto-seed if table is empty (ignore result — getAvailableTransitions
-  // always queries `db` directly so there is no transaction-isolation concern)
+  // Auto-seed if table is empty
   await ensureTransitionsSeeded();
 
   const rules = await db.statusTransition.findMany({

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
 // Helper: generate WO number WO-YYYYMM-NNNN (must be called inside a transaction)
@@ -212,34 +212,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
     }
 
-    // Plant scope validation
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-
-    // ── Plant scope: validate body.plantId ──
-    if (body.plantId) {
-      if (!canAccessPlant(plantScope, body.plantId)) {
-        return NextResponse.json({ success: false, error: 'Access denied to the specified plant' }, { status: 403 });
-      }
-    }
-
-    // Resolve plantId (outside transaction — reads user config, no WO data yet)
-    // Must be resolved BEFORE MR validation so MR plant matching can be enforced.
-    let resolvedPlantId = plantId;
-    if (!resolvedPlantId) {
-      // Derive from plant scope: single accessible plant → use it; multiple → try primary userPlant
-      if (plantScope.accessiblePlantIds.length === 1) {
-        resolvedPlantId = plantScope.accessiblePlantIds[0];
-      } else {
-        const userPlant = await db.userPlant.findFirst({
-          where: { userId: session.userId, isPrimary: true },
-        });
-        resolvedPlantId = userPlant?.plantId ?? (plantScope.accessiblePlantIds[0] ?? null);
-      }
-    }
-
     // ── Validate maintenance request if provided ──
     // We validate the MR exists and is in 'approved' status, but we do NOT change
     // the MR status here. The MR → WO conversion (status change to 'converted') must
@@ -248,7 +220,7 @@ export async function POST(request: NextRequest) {
     if (maintenanceRequestId) {
       const mr = await db.maintenanceRequest.findUnique({
         where: { id: maintenanceRequestId },
-        select: { id: true, status: true, workflowStatus: true, workOrderId: true, plantId: true },
+        select: { id: true, status: true, workflowStatus: true, workOrderId: true },
       });
       if (!mr) {
         return NextResponse.json(
@@ -268,146 +240,42 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      // Plant scope check: MR's plant must match the WO's resolved plant
-      if (mr.plantId && resolvedPlantId && mr.plantId !== resolvedPlantId) {
-        return NextResponse.json(
-          { success: false, error: 'Maintenance request plant does not match work order plant' },
-          { status: 400 }
-        );
-      }
     }
 
-    // ── Validate asset plant if assetId provided ──
-    if (assetId) {
-      const asset = await db.asset.findUnique({
-        where: { id: assetId },
-        select: { id: true, plantId: true },
+    // Resolve plantId (outside transaction — reads user config, no WO data yet)
+    let resolvedPlantId = plantId;
+    if (!resolvedPlantId) {
+      const userPlant = await db.userPlant.findFirst({
+        where: { userId: session.userId, isPrimary: true },
       });
-      if (!asset) {
-        return NextResponse.json(
-          { success: false, error: 'Asset not found' },
-          { status: 404 },
-        );
-      }
-      if (resolvedPlantId && asset.plantId !== resolvedPlantId) {
-        return NextResponse.json(
-          { success: false, error: 'Asset does not belong to the resolved plant' },
-          { status: 400 },
-        );
+      resolvedPlantId = userPlant?.plantId ?? null;
+    }
+    // Fallback: if still null, try any single plant the user has access to
+    if (!resolvedPlantId && !isAdmin(session)) {
+      const anyPlant = await db.userPlant.findFirst({
+        where: { userId: session.userId },
+        select: { plantId: true },
+      });
+      if (anyPlant) {
+        resolvedPlantId = anyPlant.plantId;
       }
     }
-
-    // Collect user IDs that need plant access checks
-    const userIdsToCheck: string[] = [];
-    if (assignedTo) userIdsToCheck.push(assignedTo);
-    if (teamLeaderId) userIdsToCheck.push(teamLeaderId);
-    if (assignedSupervisorId) userIdsToCheck.push(assignedSupervisorId);
-    if (teamMembers && Array.isArray(teamMembers)) {
-      for (const member of teamMembers) {
-        if (member.userId) userIdsToCheck.push(member.userId);
-      }
-    }
-
-    if (userIdsToCheck.length > 0 && resolvedPlantId) {
+    // Null-plant guard: operational WOs must have a plant for non-system users
+    if (!resolvedPlantId && !isAdmin(session)) {
       const userPlants = await db.userPlant.findMany({
-        where: { userId: { in: userIdsToCheck }, plantId: resolvedPlantId },
-        select: { userId: true },
+        where: { userId: session.userId },
+        select: { plantId: true },
       });
-      const usersWithAccess = new Set(userPlants.map(up => up.userId));
-      for (const uid of userIdsToCheck) {
-        if (!usersWithAccess.has(uid)) {
-          return NextResponse.json(
-            { success: false, error: `User ${uid} does not have access to the work order plant` },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    // Parts plant check + existence validation
-    const partItemIds = (requiredParts && Array.isArray(requiredParts))
-      ? [...new Set(requiredParts.map((p: any) => p.itemId || p).filter(Boolean))] : [];
-    if (partItemIds.length > 0) {
-      const parts = await db.inventoryItem.findMany({
-        where: { id: { in: partItemIds } },
-        select: { id: true, plantId: true },
-      });
-      if (parts.length !== partItemIds.length) {
+      if (userPlants.length > 1) {
         return NextResponse.json(
-          { success: false, error: 'One or more inventory items not found' },
+          { success: false, error: 'Plant selection required. You have access to multiple plants — specify X-Plant-ID header or plantId in the request body.' },
           { status: 400 },
         );
       }
-      if (resolvedPlantId) {
-        for (const part of parts) {
-          if (part.plantId !== resolvedPlantId) {
-            return NextResponse.json(
-              { success: false, error: `Inventory item ${part.id} does not belong to the work order plant` },
-              { status: 400 }
-            );
-          }
-        }
-      }
-    }
-
-    // Tools plant check + existence validation
-    const toolIds = (requiredTools && Array.isArray(requiredTools))
-      ? [...new Set(requiredTools.map((t: any) => t.toolId || t).filter(Boolean))] : [];
-    if (toolIds.length > 0) {
-      const tools = await db.tool.findMany({
-        where: { id: { in: toolIds } },
-        select: { id: true, plantId: true },
-      });
-      if (tools.length !== toolIds.length) {
-        return NextResponse.json(
-          { success: false, error: 'One or more tools not found' },
-          { status: 400 },
-        );
-      }
-      if (resolvedPlantId) {
-        for (const tool of tools) {
-          if (tool.plantId !== resolvedPlantId) {
-            return NextResponse.json(
-              { success: false, error: `Tool ${tool.id} does not belong to the work order plant` },
-              { status: 400 }
-            );
-          }
-        }
-      }
-    }
-
-    // Components plant check (component must belong to an asset in the same plant) + existence
-    if (componentIds && Array.isArray(componentIds) && componentIds.length > 0) {
-      const uniqueComponentIds = [...new Set(componentIds)];
-      const components = await db.componentRegistry.findMany({
-        where: { id: { in: uniqueComponentIds } },
-        select: { id: true, assetId: true },
-      });
-      if (components.length !== uniqueComponentIds.length) {
-        return NextResponse.json(
-          { success: false, error: 'One or more components not found' },
-          { status: 400 },
-        );
-      }
-      if (resolvedPlantId) {
-        const assetIds = [...new Set(components.map(c => c.assetId).filter(Boolean))];
-        if (assetIds.length > 0) {
-          const assets = await db.asset.findMany({
-            where: { id: { in: assetIds } },
-            select: { id: true, plantId: true },
-          });
-          const assetPlantMap = new Map(assets.map(a => [a.id, a.plantId]));
-          for (const comp of components) {
-            const compPlantId = comp.assetId ? assetPlantMap.get(comp.assetId) : undefined;
-            if (compPlantId && compPlantId !== resolvedPlantId) {
-              return NextResponse.json(
-                { success: false, error: `Component ${comp.id} belongs to an asset in a different plant` },
-                { status: 400 }
-              );
-            }
-          }
-        }
-      }
+      return NextResponse.json(
+        { success: false, error: 'No plant assigned. Contact your administrator to assign a plant.' },
+        { status: 400 },
+      );
     }
 
     // Validate team members if provided
