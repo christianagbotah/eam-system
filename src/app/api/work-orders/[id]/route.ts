@@ -267,6 +267,38 @@ export async function PUT(
       }
     }
 
+    // Assignment plant integrity: verify assigned users have access to WO's plant
+    const assignmentFields = ['assignedTo', 'teamLeaderId', 'assignedSupervisorId'] as const;
+    const usersToValidate = new Set<string>();
+    for (const field of assignmentFields) {
+      if (body[field] !== undefined && body[field] !== null && body[field] !== existing[field]) {
+        usersToValidate.add(body[field] as string);
+      }
+    }
+    if (body.teamMembers && Array.isArray(body.teamMembers)) {
+      for (const m of body.teamMembers) {
+        if (m.userId) usersToValidate.add(m.userId);
+      }
+    }
+    if (usersToValidate.size > 0 && existing.plantId) {
+      const plantAccess = await db.userPlant.findMany({
+        where: {
+          userId: { in: Array.from(usersToValidate) },
+          plantId: existing.plantId,
+        },
+        select: { userId: true },
+      });
+      const usersWithAccess = new Set(plantAccess.map(p => p.userId));
+      for (const userId of usersToValidate) {
+        if (!usersWithAccess.has(userId)) {
+          return NextResponse.json(
+            { success: false, error: `User ${userId} does not have access to plant ${existing.plantId} — cannot be assigned` },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     const updated = await db.workOrder.update({
       where: { id },
       data: updateData,
