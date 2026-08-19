@@ -72,7 +72,12 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes', 'status'];
+    const allowedFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes'];
+
+    // Confirmed immutability: once confirmed, no further updates via PUT
+    if (existing.status === 'confirmed') {
+      return NextResponse.json({ success: false, error: 'Confirmed handover is immutable' }, { status: 400 });
+    }
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -141,6 +146,11 @@ export async function DELETE(
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    // Confirmed handovers cannot be deleted
+    if (existing.status === 'confirmed') {
+      return NextResponse.json({ success: false, error: 'Confirmed handover cannot be deleted' }, { status: 400 });
     }
 
     await db.shiftHandover.delete({ where: { id } });
