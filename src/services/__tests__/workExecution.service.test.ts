@@ -30,6 +30,8 @@ const {
       update: vi.fn(),
     },
     workOrderTimeLog: {
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
       updateMany: vi.fn(),
       create: vi.fn(),
     },
@@ -51,6 +53,7 @@ const {
     },
     shiftHandover: {
       findFirst: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'sh-new' }),
     },
   },
   mockExecuteTransition: vi.fn(),
@@ -168,6 +171,8 @@ function mockTransactionExec() {
       update: mockDb.workOrder.update,
     },
     workOrderTimeLog: {
+      findMany: mockDb.workOrderTimeLog.findMany,
+      update: mockDb.workOrderTimeLog.update,
       updateMany: mockDb.workOrderTimeLog.updateMany,
       create: mockDb.workOrderTimeLog.create,
     },
@@ -189,6 +194,7 @@ function mockTransactionExec() {
     },
     shiftHandover: {
       findFirst: mockDb.shiftHandover.findFirst,
+      create: vi.fn().mockResolvedValue({ id: 'sh-tx-new' }),
     },
     laborRate: {
       findFirst: vi.fn().mockResolvedValue(null),
@@ -414,7 +420,7 @@ describe('initiateHandover', () => {
     expect(result.error).toBe('Work order not found');
   });
 
-  it('should transition to pending_handover', async () => {
+  it('should transition to pending_handover and create ShiftHandover', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({ status: 'in_progress' }));
     mockExecuteTransition.mockResolvedValue({ success: true });
     mockDb.auditLog.create.mockResolvedValue({});
@@ -423,6 +429,8 @@ describe('initiateHandover', () => {
     const result = await initiateHandover('wo-1', techSession);
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('pending_handover');
+    expect(result.data?.handoverId).toBe('sh-tx-new');
+    expect(mockDb.shiftHandover.create).toHaveBeenCalledTimes(1);
   });
 });
 

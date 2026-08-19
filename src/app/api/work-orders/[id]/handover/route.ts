@@ -51,10 +51,20 @@ export async function POST(
       return NextResponse.json({ success: true, data: result.data });
     }
 
-    // Default: initiate handover
+    // Default: initiate handover (atomic: close timers + transition WO + create ShiftHandover + audit)
     const result = await initiateHandover(id, sessionCtx, {
       reason: body.reason,
       idempotencyKey: body.idempotencyKey,
+      shiftType: body.shiftType,
+      shiftDate: body.shiftDate,
+      fromShift: body.fromShift,
+      toShift: body.toShift,
+      receivedById: body.receivedById,
+      tasksSummary: body.tasksSummary,
+      pendingIssues: body.pendingIssues,
+      safetyNotes: body.safetyNotes,
+      equipmentStatus: body.equipmentStatus,
+      notes: body.notes,
     });
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });

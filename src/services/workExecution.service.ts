@@ -70,6 +70,17 @@ export interface HandoverOptions {
   reason?: string;
   auditCtx?: AuditContext;
   idempotencyKey?: string;
+  // ShiftHandover fields — when provided, the record is created atomically
+  shiftType?: string;
+  shiftDate?: string;
+  fromShift?: string;
+  toShift?: string;
+  receivedById?: string;
+  tasksSummary?: unknown;
+  pendingIssues?: unknown;
+  safetyNotes?: string;
+  equipmentStatus?: unknown;
+  notes?: string;
 }
 
 export interface CompletionOptions {
@@ -885,23 +896,72 @@ export async function initiateHandover(
   const auth = checkTeamAuthority(wo, session, 'handover');
   if (!auth.allowed) return { success: false, error: auth.error };
 
+  const now = new Date();
+  let handoverId: string | undefined;
+
   // Execute state-changing operations atomically
+  // ONE transaction: close active timers → transition WO → create ShiftHandover → audit
   await db.$transaction(async (tx) => {
-    // 1. State transition
+    // 0. Close any active time logs for this user on this WO
+    const activeTimers = await tx.workOrderTimeLog.findMany({
+      where: {
+        workOrderId,
+        userId: session.userId,
+        action: { in: ['start', 'resume'] },
+        endTime: null,
+      },
+    });
+    for (const timer of activeTimers) {
+      await tx.workOrderTimeLog.update({
+        where: { id: timer.id },
+        data: { endTime: now, action: 'pause', notes: 'Auto-paused for shift handover' },
+      });
+    }
+
+    // 1. State transition: in_progress → pending_handover
     const result = await executeTransition('work_order', workOrderId, 'pending_handover', session, {
       reason: options?.reason,
       tx,
     });
     if (!result.success) throw new Error(result.error);
 
-    // 2. Audit
+    // 2. Create ShiftHandover record atomically
+    const parsedTasks = options?.tasksSummary
+      ? JSON.stringify(typeof options.tasksSummary === 'string' ? [{ task: options.tasksSummary }] : options.tasksSummary)
+      : JSON.stringify([]);
+    const parsedIssues = options?.pendingIssues
+      ? JSON.stringify(typeof options.pendingIssues === 'string' ? [{ issue: options.pendingIssues }] : options.pendingIssues)
+      : JSON.stringify([]);
+    const parsedEquipment = options?.equipmentStatus
+      ? JSON.stringify(typeof options.equipmentStatus === 'string' ? [{ status: options.equipmentStatus }] : options.equipmentStatus)
+      : null;
+
+    const handover = await tx.shiftHandover.create({
+      data: {
+        shiftDate: options?.shiftDate ? new Date(options.shiftDate) : now,
+        shiftType: (options?.shiftType || 'morning').toLowerCase(),
+        fromShift: options?.fromShift || null,
+        toShift: options?.toShift || null,
+        handedOverById: session.userId,
+        receivedById: options?.receivedById || null,
+        tasksSummary: parsedTasks,
+        pendingIssues: parsedIssues,
+        safetyNotes: options?.safetyNotes || null,
+        equipmentStatus: parsedEquipment,
+        notes: options?.notes || options?.reason || null,
+        workOrderId,
+      },
+    });
+    handoverId = handover.id;
+
+    // 3. Audit
     await createAuditEntry('update', 'work_order', workOrderId, session.userId,
-      { status: wo.status }, { status: 'pending_handover' }, options?.auditCtx, tx);
+      { status: wo.status }, { status: 'pending_handover', handoverId: handover.id }, options?.auditCtx, tx);
   });
 
   notifyStakeholders(wo, session, 'shift_handover_pending', undefined, options?.reason);
 
-  const result: TransitionResult = { success: true, data: { status: 'pending_handover' } };
+  const result: TransitionResult = { success: true, data: { status: 'pending_handover', handoverId } };
 
   if (idempotencyKey) {
     await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'handover', session.userId, result);
