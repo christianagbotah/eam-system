@@ -186,10 +186,10 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
     const { status: tlStatus, data: tlData } = await apiCall(
       plannerToken,
       'GET',
-      `/api/work-orders/${woId}/time-logs`,
+      `/api/work-orders/${woId}/time-logs?includeTeamLogs=true`,
     );
     expect(tlStatus).toBe(200);
-    const logs = (tlData.data || []) as Array<{ userId: string; action: string }>;
+    const logs = (tlData.data?.timeLogs || []) as Array<{ userId: string; action: string }>;
     expect(logs.some((log) => log.userId === incomingUserId && log.action === 'resume')).toBe(true);
 
     const { data: shData } = await apiCall(
