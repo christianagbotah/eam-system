@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin as isAdminCheck } from '@/lib/auth';
 import { executeTransition } from '@/lib/state-machine';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import type { Prisma } from '@prisma/client';
 
 type TeamMemberInput = {
@@ -34,6 +35,11 @@ export async function POST(
 
     const { id } = await params;
     const body: AssignmentBody = await request.json();
+
+    // Plant authorization for caller
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const {
       assignedTo,
       teamLeaderId,

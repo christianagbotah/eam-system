@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { plannerClose, type SessionContext, type AuditContext } from '@/services/workExecution.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -21,6 +22,11 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
 

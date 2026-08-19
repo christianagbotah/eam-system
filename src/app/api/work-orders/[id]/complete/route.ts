@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { submitCompletion, type SessionContext, type AuditContext } from '@/services/workExecution.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 
@@ -21,12 +20,10 @@ export async function POST(
 
     const { id } = await params;
 
-    // Plant scope check (denyAccess + canAccessPlant)
-    const woForScope = await db.workOrder.findUnique({ where: { id }, select: { id: true, plantId: true } });
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, woForScope?.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
 

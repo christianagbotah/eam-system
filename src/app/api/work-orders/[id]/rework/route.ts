@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { requestRework } from '@/services/workExecution.service';
 import type { SessionContext } from '@/services/workExecution.service';
 
@@ -15,20 +15,12 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
-
-    // Plant scope check (denyAccess + canAccessPlant)
-    const wo = await (await import('@/lib/db')).db.workOrder.findUnique({
-      where: { id }, select: { id: true, plantId: true },
-    });
-    if (!wo) {
-      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-    }
-
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
 
     const sessionCtx: SessionContext = {
       userId: session.userId,
