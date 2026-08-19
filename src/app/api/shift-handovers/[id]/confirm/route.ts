@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // POST /api/shift-handovers/[id]/confirm
 export async function POST(
@@ -32,16 +32,16 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
     }
 
-    // Plant scope check
+    // Plant scope check (strict for operational entities)
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, handover.workOrder?.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, handover.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // Status must be pending_confirmation
-    if (handover.status !== 'pending_confirmation') {
+    // Status must be pending (created atomically by initiateHandover)
+    if (handover.status !== 'pending') {
       return NextResponse.json(
-        { success: false, error: `Cannot confirm: current status is '${handover.status}'. Expected 'pending_confirmation'.` },
+        { success: false, error: `Cannot confirm: current status is '${handover.status}'. Expected 'pending'.` },
         { status: 400 },
       );
     }

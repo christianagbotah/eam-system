@@ -111,9 +111,9 @@ describe('Shift handover confirm endpoint', () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  it('requires pending_confirmation status', () => {
+  it('requires pending status', () => {
     const src = readFileSync(path, 'utf8');
-    expect(src).toContain("'pending_confirmation'");
+    expect(src).toContain("'pending'");
   });
 
   it('checks linked WO status is pending_handover', () => {
