@@ -18,7 +18,6 @@ export async function POST(
     const body = await request.json();
     const { overrideReason } = body;
 
-    // Load handover with plant access
     const handover = await db.shiftHandover.findUnique({
       where: { id },
       include: {
@@ -32,13 +31,11 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
     }
 
-    // Plant scope check (strict for operational entities)
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, handover.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // Status must be pending (created atomically by initiateHandover)
     if (handover.status !== 'pending') {
       return NextResponse.json(
         { success: false, error: `Cannot confirm: current status is '${handover.status}'. Expected 'pending'.` },
@@ -46,7 +43,6 @@ export async function POST(
       );
     }
 
-    // Linked WO must be in pending_handover status
     if (handover.workOrder && handover.workOrder.status !== 'pending_handover') {
       return NextResponse.json(
         { success: false, error: `Cannot confirm: linked work order status is '${handover.workOrder.status}'. Expected 'pending_handover'.` },
@@ -55,37 +51,31 @@ export async function POST(
     }
 
     const isDesignatedReceiver = handover.receivedById === session.userId;
-    const isOverrideRole = isAdmin(session) || hasRole(session, 'maintenance_supervisor') || hasRole(session, 'maintenance_manager');
+    const isOverrideRole =
+      isAdmin(session) ||
+      hasRole(session, 'maintenance_supervisor') ||
+      hasRole(session, 'maintenance_manager');
 
     if (!isDesignatedReceiver && !isOverrideRole) {
       return NextResponse.json({ success: false, error: 'Only the designated receiver or maintenance supervisor/manager can confirm' }, { status: 403 });
     }
 
-    // Override requires reason
-    if (!isDesignatedReceiver && isOverrideRole) {
-      if (!overrideReason) {
-        return NextResponse.json({ success: false, error: 'Override confirmation requires a reason' }, { status: 400 });
-      }
+    if (!isDesignatedReceiver && isOverrideRole && !overrideReason?.trim()) {
+      return NextResponse.json({ success: false, error: 'Override confirmation requires a reason' }, { status: 400 });
     }
 
     const now = new Date();
-
+    // Keep the persisted model schema-compatible. Confirmation timestamp and
+    // override details are immutable audit metadata rather than ad-hoc columns.
     const updated = await db.shiftHandover.update({
       where: { id },
-      data: {
-        status: 'confirmed',
-        confirmedAt: now,
-        ...(isOverrideRole && !isDesignatedReceiver
-          ? { overriddenBy: session.userId, overriddenAt: now }
-          : {}),
-      },
+      data: { status: 'confirmed' },
       include: {
         handedOverBy: { select: { id: true, fullName: true, username: true } },
         receivedBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 
-    // Audit trail
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -95,12 +85,21 @@ export async function POST(
         newValues: JSON.stringify({
           status: 'confirmed',
           confirmedAt: now.toISOString(),
+          receivedById: handover.receivedById,
           ...(overrideReason ? { overrideReason } : {}),
+          ...(!isDesignatedReceiver ? { overriddenBy: session.userId } : {}),
         }),
       },
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...updated,
+        confirmedAt: now.toISOString(),
+        ...(!isDesignatedReceiver ? { overriddenBy: session.userId, overrideReason } : {}),
+      },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to confirm shift handover';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
