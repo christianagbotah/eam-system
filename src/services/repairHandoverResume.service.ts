@@ -9,11 +9,8 @@ export interface ResumeConfirmedHandoverOptions {
 
 /**
  * Resume a WO after a confirmed shift handover.
- *
  * Normal path: only the designated receivedById may resume.
- * Manager/admin override requires a reason. On successful normal resume,
- * execution authority is transferred to the receiver while preserving prior
- * team/history records.
+ * Manager/admin override requires a reason and is captured in AuditLog.
  */
 export async function resumeConfirmedHandover(
   workOrderId: string,
@@ -38,7 +35,7 @@ export async function resumeConfirmedHandover(
     await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const handover = await tx.shiftHandover.findFirst({
         where: { workOrderId, status: 'confirmed' },
-        orderBy: [{ confirmedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: { updatedAt: 'desc' },
       });
 
       if (!handover || !handover.receivedById) {
@@ -63,8 +60,6 @@ export async function resumeConfirmedHandover(
       const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, { tx });
       if (!transition.success) throw new Error(transition.error || 'Failed to resume work order');
 
-      // Preserve prior participants, but ensure the incoming receiver is present
-      // in the team history and becomes the current execution lead.
       const existingMember = await tx.workOrderTeamMember.findFirst({
         where: { workOrderId, userId: receiverId },
         select: { id: true },
