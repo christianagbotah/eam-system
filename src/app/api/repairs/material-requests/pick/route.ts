@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeMaterialRequestPlant } from '@/lib/plant-auth-helpers';
 
 // POST /api/repairs/material-requests/pick
 // Moves a material request from storekeeper_approved → picking status
@@ -27,6 +28,10 @@ export async function POST(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ success: false, error: 'Material request ID is required' }, { status: 400 });
     }
+
+    // Plant authorization
+    const plantAuth = await authorizeMaterialRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
     // Fetch the material request with work order info
     const matReq = await db.repairMaterialRequest.findUnique({

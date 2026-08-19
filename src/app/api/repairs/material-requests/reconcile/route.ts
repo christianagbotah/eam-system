@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeMaterialRequestPlant } from '@/lib/plant-auth-helpers';
 
 // POST /api/repairs/material-requests/reconcile
 // Records consumption data for an issued material request
@@ -25,6 +25,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Material request ID is required' }, { status: 400 });
     }
 
+    // Plant authorization
+    const plantAuth = await authorizeMaterialRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     if (consumedQty === undefined || consumedQty === null) {
       return NextResponse.json({ success: false, error: 'consumedQty is required' }, { status: 400 });
     }
@@ -45,7 +49,7 @@ export async function POST(request: NextRequest) {
       include: {
         workOrder: {
           select: {
-            id: true, woNumber: true, title: true, plantId: true,
+            id: true, woNumber: true, title: true,
             assignedSupervisorId: true, plannerId: true, assignedTo: true,
           },
         },
@@ -56,12 +60,6 @@ export async function POST(request: NextRequest) {
 
     if (!matReq) {
       return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
-    }
-
-    // ── Plant scope validation ──
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, matReq.workOrder?.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Validate status — must be issued or picking (allows reconciliation from both)
