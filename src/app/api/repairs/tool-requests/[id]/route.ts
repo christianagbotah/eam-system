@@ -107,6 +107,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve tool requests' }, { status: 403 });
       }
     }
+    // Tool custody actions (issue, confirm_return) MUST be store-controlled roles only.
+    if (action === 'issue' || action === 'confirm_return') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({
+          success: false,
+          error: `Only admin, store keeper, inventory manager, or tools shop attendant can perform '${action}' on tool requests`,
+        }, { status: 403 });
+      }
+    }
 
     const now = new Date();
     let updated: any;
