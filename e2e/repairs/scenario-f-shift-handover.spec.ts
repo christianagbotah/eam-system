@@ -119,7 +119,6 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
 
   await test.step('F4: Wrong user cannot confirm handover', async () => {
     const outgoingToken = await getToken('tech_single');
-
     const { status } = await expectFailure(
       outgoingToken,
       'POST',
@@ -131,7 +130,6 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
 
   await test.step('F5: Designated receiver confirms handover', async () => {
     const incomingToken = await getToken('tech_assistant');
-
     const { status, data } = await apiCall(
       incomingToken,
       'POST',
@@ -163,7 +161,6 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
 
   await test.step('F7: Designated receiver resumes and becomes execution lead', async () => {
     const incomingToken = await getToken('tech_assistant');
-
     const { status, data } = await apiCall(
       incomingToken,
       'POST',
@@ -178,15 +175,16 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
 
   await test.step('F8: Server state proves authority transfer and incoming resume log', async () => {
     const plannerToken = await getToken('planner');
+    const incomingToken = await getToken('tech_assistant');
 
     const fetched = await getWO(plannerToken, woId);
     expect(fetched.status).toBe('in_progress');
     expect(fetched.assignedTo).toBe(incomingUserId);
 
     const { status: tlStatus, data: tlData } = await apiCall(
-      plannerToken,
+      incomingToken,
       'GET',
-      `/api/work-orders/${woId}/time-logs?includeTeamLogs=true`,
+      `/api/work-orders/${woId}/time-logs`,
     );
     expect(tlStatus).toBe(200);
     const logs = (tlData.data?.timeLogs || []) as Array<{ userId: string; action: string }>;
