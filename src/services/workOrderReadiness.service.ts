@@ -59,6 +59,7 @@ type WoReadinessData = {
     quantityIssued: number
     consumedQty: number | null
     wastedQty: number | null
+    quantityReturned: number | null
   }[]
   repairCompletion: {
     id: string
@@ -122,6 +123,7 @@ export async function checkReadiness(
           quantityIssued: true,
           consumedQty: true,
           wastedQty: true,
+          quantityReturned: true,
         },
       },
       repairCompletion: { select: { id: true, reworkCount: true } },
@@ -540,8 +542,13 @@ function checkUnreconciledMaterials(
   const unreconciled = wo.repairMaterialRequests.filter(
     (mr) => {
       if (mr.status !== 'issued' && mr.status !== 'picking') return false
-      const accounted = (mr.consumedQty ?? 0) + (mr.wastedQty ?? 0)
-      return accounted < mr.quantityIssued
+      // Reconciliation invariant: consumedQty + wastedQty + quantityReturned == quantityIssued
+      const consumed = mr.consumedQty ?? 0
+      const wasted = mr.wastedQty ?? 0
+      const returned = mr.quantityReturned ?? 0
+      const total = consumed + wasted + returned
+      // Use small epsilon for floating-point comparison
+      return Math.abs(total - mr.quantityIssued) > 0.001
     },
   )
 
@@ -549,7 +556,7 @@ function checkUnreconciledMaterials(
     out.push({
       code,
       category: 'material',
-      message: `${unreconciled.length} material request(s) have unaccounted issued quantity`,
+      message: `${unreconciled.length} material request(s) have unaccounted issued quantity (consumed + wasted + returned ≠ issued)`,
       severity: 'blocker',
     })
   }
