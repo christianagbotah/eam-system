@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(
@@ -71,11 +71,6 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // ── Confirmed immutability: once confirmed, no further updates ──
-    if (existing.status === 'confirmed') {
-      return NextResponse.json({ success: false, error: 'Confirmed handover is immutable' }, { status: 400 });
-    }
-
     const updateData: Record<string, unknown> = {};
     const allowedFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes', 'status'];
 
@@ -91,16 +86,6 @@ export async function PUT(
       }
     }
 
-    // ── Supervisor/admin override requires reason ──
-    if (body.status === 'confirmed' && !isAdmin(session) && !hasPermission(session, 'shift_handovers.create')) {
-      if (!body.overrideReason) {
-        return NextResponse.json({ success: false, error: 'Supervisor/admin override requires a reason' }, { status: 400 });
-      }
-      updateData.overrideReason = body.overrideReason;
-      updateData.overriddenBy = session.userId;
-      updateData.overriddenAt = new Date();
-    }
-
     const updated = await db.shiftHandover.update({
       where: { id },
       data: updateData,
@@ -110,31 +95,16 @@ export async function PUT(
       },
     });
 
-    // ── Audit trail ───────────────────────────────────────────────────
-    if (isOverride) {
-      // Special audit entry for supervisor override
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'update',
-          entityType: 'shift_handover',
-          entityId: id,
-          oldValues: JSON.stringify({ status: existing.status, receivedById: existing.receivedById }),
-          newValues: JSON.stringify({ status: 'confirmed', override: true, overrideReason: body.overrideReason, overrideBy: session.userId }),
-        },
-      });
-    } else {
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'update',
-          entityType: 'shift_handover',
-          entityId: id,
-          oldValues: JSON.stringify({ shiftType: existing.shiftType, status: existing.status }),
-          newValues: JSON.stringify(updateData),
-        },
-      });
-    }
+    await db.auditLog.create({
+      data: {
+        userId: session.userId,
+        action: 'update',
+        entityType: 'shift_handover',
+        entityId: id,
+        oldValues: JSON.stringify({ shiftType: existing.shiftType, status: existing.status }),
+        newValues: JSON.stringify(updateData),
+      },
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
@@ -171,11 +141,6 @@ export async function DELETE(
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-
-    // Confirmed handovers cannot be deleted
-    if (existing.status === 'confirmed') {
-      return NextResponse.json({ success: false, error: 'Confirmed handover cannot be deleted' }, { status: 400 });
     }
 
     await db.shiftHandover.delete({ where: { id } });
