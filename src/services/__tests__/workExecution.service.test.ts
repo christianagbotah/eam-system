@@ -51,7 +51,6 @@ const {
     },
     shiftHandover: {
       findFirst: vi.fn(),
-      create: vi.fn().mockResolvedValue({ id: 'sh-new-1' }),
     },
   },
   mockExecuteTransition: vi.fn(),
@@ -190,7 +189,6 @@ function mockTransactionExec() {
     },
     shiftHandover: {
       findFirst: mockDb.shiftHandover.findFirst,
-      create: mockDb.shiftHandover.create,
     },
     laborRate: {
       findFirst: vi.fn().mockResolvedValue(null),
