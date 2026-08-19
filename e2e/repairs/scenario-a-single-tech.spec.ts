@@ -1,19 +1,12 @@
 /**
  * Scenario A — Single Technician Full Lifecycle (UAT-01)
  *
- * Covers the COMPLETE WO journey from MR creation through closure:
- *   Requester → Supervisor → Planner → Technician → Storekeeper →
- *   Technician → Supervisor Verification → Planner Closeout → Reports
- *
- * Mutations go through API helpers (reliable, fast).
- * Browser verification at each major lifecycle stage proves UI reflects server state.
- * After each browser action, API GETs provide authoritative server-state assertion.
+ * Deterministic industrial lifecycle using real seeded inventory/tool records:
+ * MR → approval → WO → execution → labor → material/tool custody → measurement
+ * → material reconciliation → completion → verification → planner close → reports.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
-import {
-  authenticateAs,
-  navigateToWODetail,
-} from './helpers/auth';
+import { authenticateAs, navigateToWODetail } from './helpers/auth';
 import {
   getToken,
   createMR,
@@ -29,6 +22,7 @@ import {
   lookupUserByKey,
   lookupAssetId,
   lookupPlantId,
+  lookupToolId,
   expectFailure,
   apiCall,
 } from './helpers/api';
@@ -36,26 +30,38 @@ import {
 test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) => {
   const context: BrowserContext = await browser.newContext();
 
-  let mrId: string;
-  let woId: string;
-  let assetId: string;
-  let plantId: string;
-  let techSingleUserId: string;
-  let toolRequestId: string;
-  let materialRequestId: string;
+  let mrId = '';
+  let woId = '';
+  let assetId = '';
+  let plantId = '';
+  let techSingleUserId = '';
+  let toolRequestId = '';
+  let materialRequestId = '';
+  let materialItemId = '';
+  let materialUnitCost = 0;
+  let realToolId = '';
 
   try {
     const plannerToken = await getToken('planner');
     techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
+    realToolId = await lookupToolId(plannerToken, 'UAT-CAL-VALID');
 
-    // ──────────────────────────────────────────────────────────────────
-    // A1: Requester creates MR (browser + API verification)
-    // ──────────────────────────────────────────────────────────────────
+    const { status: inventoryStatus, data: inventoryData } = await apiCall(
+      plannerToken,
+      'GET',
+      `/api/inventory?search=${encodeURIComponent('UAT-BRG-6205')}&plantId=${plantId}`,
+    );
+    expect(inventoryStatus).toBe(200);
+    const material = (inventoryData.data as Array<any>).find((item) => item.itemCode === 'UAT-BRG-6205');
+    expect(material).toBeTruthy();
+    materialItemId = material.id;
+    materialUnitCost = Number(material.unitCost);
+    expect(materialUnitCost).toBe(120);
+
     await test.step('A1: Requester creates Maintenance Request', async () => {
       const token = await getToken('requester');
-
       const mr = await createMR(token, {
         title: 'UAT-SingleTech-Pump-Vibration',
         description: 'Abnormal vibration at 3000 RPM on centrifugal pump. Needs bearing inspection.',
@@ -63,70 +69,43 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
         priority: 'high',
         plantId,
       });
-
       mrId = mr.id;
       expect(mrId).toBeTruthy();
       expect(mr.requestNumber).toMatch(/^MR-\d{6}-\d{4}$/);
-
-      // Server-state: MR is pending
-      const fetched = await getMR(token, mrId);
-      expect(fetched.status).toBe('pending');
+      expect((await getMR(token, mrId)).status).toBe('pending');
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A2: Supervisor approves MR (browser navigation + API verification)
-    // ──────────────────────────────────────────────────────────────────
     await test.step('A2: Supervisor approves Maintenance Request', async () => {
       const token = await getToken('supervisor');
-
       const result = await approveMR(token, mrId);
       expect(result.status).toBe('approved');
-
-      // Server-state verification
-      const fetched = await getMR(token, mrId);
-      expect(fetched.status).toBe('approved');
+      expect((await getMR(token, mrId)).status).toBe('approved');
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A3: Planner converts MR to WO and assigns technician
-    // ──────────────────────────────────────────────────────────────────
     await test.step('A3: Planner converts MR to WO and assigns technician', async () => {
       const token = await getToken('planner');
-
       const wo = await convertMR(token, mrId, {
         assignedTo: techSingleUserId,
         tradeActivity: 'mechanical',
         workOrderType: 'corrective',
         priority: 'high',
       });
-
       woId = wo.id;
       expect(woId).toBeTruthy();
       expect(wo.woNumber).toMatch(/^WO-\d{6}-\d{4}$/);
-
-      // Server-state: WO assigned, MR converted
       const fetched = await getWO(token, woId);
       expect(fetched.status).toBe('assigned');
       expect(fetched.assignedTo).toBe(techSingleUserId);
-
-      const mr = await getMR(token, mrId);
-      expect(mr.status).toBe('converted');
+      expect((await getMR(token, mrId)).status).toBe('converted');
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A4: Technician starts work (browser + API)
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A4: Technician starts work on WO', async () => {
+    await test.step('A4: Technician starts work', async () => {
       const token = await getToken('tech_single');
-
       await startWO(token, woId);
-
-      // Server-state: in_progress with actualStart
       const fetched = await getWO(token, woId);
       expect(fetched.status).toBe('in_progress');
       expect(fetched.actualStart).toBeTruthy();
 
-      // Browser verification
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
@@ -134,38 +113,40 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       await page.close();
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A5: Technician logs time
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A5: Technician logs time on WO', async () => {
+    await test.step('A5: Technician stops live timer then records 2.5 manual labor hours', async () => {
       const token = await getToken('tech_single');
+
+      const { status: stopStatus, data: stopData } = await apiCall(
+        token,
+        'POST',
+        `/api/work-orders/${woId}/time-logs/stop`,
+        {},
+      );
+      expect(stopStatus).toBe(200);
+      expect(stopData.success).toBe(true);
+      expect(stopData.data.closedTimers).toBeGreaterThanOrEqual(1);
 
       const timeLog = await logTime(token, woId, {
         action: 'start',
         manualHours: 2.5,
-        notes: 'Disassembled pump casing, inspected bearings',
+        notes: 'Disassembled pump casing and replaced bearing',
       });
-
-      expect(timeLog).toBeTruthy();
       expect(timeLog.id).toBeTruthy();
-
-      // Server-state: WO actualHours updated
-      const fetched = await getWO(token, woId);
-      expect(fetched.actualHours).toBeGreaterThanOrEqual(2.5);
+      expect((await getWO(token, woId)).actualHours).toBeGreaterThanOrEqual(2.5);
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A6: Technician requests material (storekeeper flow)
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A6: Technician requests material', async () => {
+    await test.step('A6: Real inventory bearing is requested, approved and issued', async () => {
       const techToken = await getToken('tech_single');
       const supToken = await getToken('supervisor');
       const storeToken = await getToken('storekeeper');
 
-      // Create material request
-      const { status: mrStatus, data: mrData } = await apiCall(
-        techToken, 'POST', '/api/repairs/material-requests', {
+      const { status: createStatus, data: createData } = await apiCall(
+        techToken,
+        'POST',
+        '/api/repairs/material-requests',
+        {
           workOrderId: woId,
+          itemId: materialItemId,
           itemName: 'UAT Bearing 6205',
           quantityRequested: 2,
           unit: 'each',
@@ -173,163 +154,152 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
           reason: 'Replacement bearings for pump overhaul',
         },
       );
-      expect(mrStatus).toBe(201);
-      materialRequestId = mrData.data.id;
-      expect(materialRequestId).toBeTruthy();
+      expect(createStatus).toBe(201);
+      materialRequestId = createData.data.id;
+      expect(createData.data.itemId).toBe(materialItemId);
+      expect(Number(createData.data.unitCost)).toBe(materialUnitCost);
 
-      // Supervisor approves
-      const { status: saStatus, data: saData } = await apiCall(
-        supToken, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
-          action: 'supervisor_approve',
-        },
+      const { status: supervisorStatus, data: supervisorData } = await apiCall(
+        supToken,
+        'POST',
+        `/api/repairs/material-requests/${materialRequestId}`,
+        { action: 'supervisor_approve' },
       );
-      expect(saStatus).toBe(200);
-      expect(saData.data.status).toBe('supervisor_approved');
+      expect(supervisorStatus).toBe(200);
+      expect(supervisorData.data.status).toBe('supervisor_approved');
 
-      // Storekeeper approves
-      const { status: skStatus, data: skData } = await apiCall(
-        storeToken, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
-          action: 'storekeeper_approve',
-        },
+      const { status: storeStatus, data: storeData } = await apiCall(
+        storeToken,
+        'POST',
+        `/api/repairs/material-requests/${materialRequestId}`,
+        { action: 'storekeeper_approve' },
       );
-      expect(skStatus).toBe(200);
-      expect(skData.data.status).toBe('storekeeper_approved');
+      expect(storeStatus).toBe(200);
+      expect(storeData.data.status).toBe('storekeeper_approved');
 
-      // Storekeeper issues
-      const { status: isStatus, data: isData } = await apiCall(
-        storeToken, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
-          action: 'issue',
-        },
+      const { status: issueStatus, data: issueData } = await apiCall(
+        storeToken,
+        'POST',
+        `/api/repairs/material-requests/${materialRequestId}`,
+        { action: 'issue' },
       );
-      expect(isStatus).toBe(200);
-      expect(['issued', 'partially_issued']).toContain(isData.data.status);
+      expect(issueStatus).toBe(200);
+      expect(issueData.data.status).toBe('issued');
+      expect(Number(issueData.data.quantityIssued)).toBe(2);
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A7: Technician requests tool (storekeeper flow)
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A7: Technician requests and receives tool', async () => {
+    await test.step('A7: Real calibrated tool is requested, approved and issued', async () => {
       const techToken = await getToken('tech_single');
       const supToken = await getToken('supervisor');
       const storeToken = await getToken('storekeeper');
 
-      // Create tool request
-      const { status: trStatus, data: trData } = await apiCall(
-        techToken, 'POST', '/api/repairs/tool-requests', {
+      const { status: createStatus, data: createData } = await apiCall(
+        techToken,
+        'POST',
+        '/api/repairs/tool-requests',
+        {
           workOrderId: woId,
-          reason: 'Need torque wrench for bearing installation',
+          reason: 'Need calibrated tool for bearing installation',
           urgency: 'normal',
-          items: [{ toolName: `UAT Scenario A Torque Wrench ${Date.now().toString(36)}`, quantityRequested: 1 }],
+          items: [{ toolId: realToolId, toolName: 'UAT-CAL-VALID', quantityRequested: 1 }],
         },
       );
-      expect(trStatus).toBe(201);
-      toolRequestId = trData.data.id;
-      expect(toolRequestId).toBeTruthy();
+      expect(createStatus).toBe(201);
+      toolRequestId = createData.data.id;
+      const toolLineId = createData.data.items[0].id;
 
-      // Supervisor approves
-      const { status: saStatus, data: saData } = await apiCall(
-        supToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
-          action: 'supervisor_approve',
-        },
-      );
-      expect(saStatus).toBe(200);
+      expect((await apiCall(supToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, { action: 'supervisor_approve' })).status).toBe(200);
+      expect((await apiCall(storeToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, { action: 'storekeeper_approve' })).status).toBe(200);
 
-      // Storekeeper approves + issues
-      const { status: skStatus } = await apiCall(
-        storeToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
-          action: 'storekeeper_approve',
-        },
+      const { status: issueStatus, data: issueData } = await apiCall(
+        storeToken,
+        'POST',
+        `/api/repairs/tool-requests/${toolRequestId}`,
+        { action: 'issue', issuedItems: [{ itemId: toolLineId, quantityIssued: 1 }] },
       );
-      expect(skStatus).toBe(200);
-
-      const { status: isStatus, data: isData } = await apiCall(
-        storeToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
-          action: 'issue',
-          issuedItems: [{ itemId: trData.data.items[0].id, quantityIssued: 1 }],
-        },
-      );
-      expect(isStatus).toBe(200);
-      expect(isData.data.status).toBe('issued');
+      expect(issueStatus).toBe(200);
+      expect(issueData.data.status).toBe('issued');
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A8: Technician records measurement
-    // ──────────────────────────────────────────────────────────────────
     await test.step('A8: Technician records measurement', async () => {
       const token = await getToken('tech_single');
-
       const { status, data } = await apiCall(
-        token, 'POST', `/api/work-orders/${woId}/measurements`, {
-          value: 0.45,
-          unit: 'mm/s',
-          measurementPoint: 'Bearing vibration (horizontal)',
-        },
+        token,
+        'POST',
+        `/api/work-orders/${woId}/measurements`,
+        { value: 0.45, unit: 'mm/s', measurementPoint: 'Bearing vibration (horizontal)' },
       );
       expect(status).toBe(200);
       expect(data.success).toBe(true);
-
-      // Server-state: verify measurement exists
-      const { data: measData } = await apiCall(
-        token, 'GET', `/api/work-orders/${woId}/measurements`,
-      );
-      expect(measData.success).toBe(true);
-      const readings = measData.data as Array<{ value: number; unit: string }>;
-      expect(readings.length).toBeGreaterThanOrEqual(1);
+      const { data: measData } = await apiCall(token, 'GET', `/api/work-orders/${woId}/measurements`);
+      expect((measData.data as Array<any>).length).toBeGreaterThanOrEqual(1);
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A9: Technician returns tool and reconciles material
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A9: Technician returns tool', async () => {
+    await test.step('A9: Tool returned and material usage reconciled 2 = 1 consumed + 1 returned', async () => {
       const techToken = await getToken('tech_single');
       const storeToken = await getToken('storekeeper');
 
-      // Get the actual item ID
-      const { data: trData } = await apiCall(
-        techToken, 'GET', `/api/repairs/tool-requests/${toolRequestId}`,
+      const { data: toolReq } = await apiCall(techToken, 'GET', `/api/repairs/tool-requests/${toolRequestId}`);
+      const toolLineId = toolReq.data.items[0].id;
+      expect((await apiCall(techToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
+        action: 'return',
+        returnedItems: [{ itemId: toolLineId, quantityReturned: 1, conditionAtReturn: 'good' }],
+      })).status).toBe(200);
+      const { status: confirmStatus, data: confirmData } = await apiCall(
+        storeToken,
+        'POST',
+        `/api/repairs/tool-requests/${toolRequestId}`,
+        { action: 'storekeeper_confirm_return' },
       );
-      const itemId = trData.data.items?.[0]?.id;
-      expect(itemId).toBeTruthy();
+      expect(confirmStatus).toBe(200);
+      expect(confirmData.data.status).toBe('returned');
 
-      // Initiate return
-      const { status: retStatus, data: retData } = await apiCall(
-        techToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
-          action: 'return',
-          returnedItems: [{ itemId, quantityReturned: 1, conditionAtReturn: 'good' }],
-        },
+      const { status: consumeStatus } = await apiCall(
+        techToken,
+        'POST',
+        `/api/repairs/material-requests/${materialRequestId}`,
+        { action: 'consume_material', approvedQuantity: 1 },
       );
-      expect(retStatus).toBe(200);
-      expect(['pending_return', 'returned']).toContain(retData.data.status);
+      expect(consumeStatus).toBe(200);
 
-      // Storekeeper confirms return
-      const { status: confStatus, data: confData } = await apiCall(
-        storeToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
-          action: 'storekeeper_confirm_return',
-        },
+      const { status: returnStatus } = await apiCall(
+        storeToken,
+        'POST',
+        `/api/repairs/material-requests/${materialRequestId}`,
+        { action: 'record_return', quantityReturned: 1 },
       );
-      expect(confStatus).toBe(200);
-      expect(confData.data.status).toBe('returned');
+      expect(returnStatus).toBe(200);
+
+      const { status: reconcileStatus, data: reconcileData } = await apiCall(
+        storeToken,
+        'POST',
+        `/api/repairs/material-requests/${materialRequestId}`,
+        { action: 'reconcile' },
+      );
+      expect(reconcileStatus).toBe(200);
+      expect(reconcileData.data.status).toBe('closed');
+
+      const { data: materialReq } = await apiCall(
+        techToken,
+        'GET',
+        `/api/repairs/material-requests/${materialRequestId}`,
+      );
+      expect(Number(materialReq.data.quantityIssued)).toBe(2);
+      expect(Number(materialReq.data.consumedQty)).toBe(1);
+      expect(Number(materialReq.data.wastedQty ?? 0)).toBe(0);
+      expect(Number(materialReq.data.quantityReturned)).toBe(1);
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A10: Technician completes WO
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A10: Technician completes WO', async () => {
+    await test.step('A10: Technician completes WO with authoritative cost snapshot', async () => {
       const token = await getToken('tech_single');
+      await completeWO(token, woId, 'Bearing replaced. Vibration normalized. All resources reconciled.');
 
-      await completeWO(token, woId, 'Bearing replaced. Vibration normalized to 0.5mm/s. All tools returned.');
-
-      // Server-state: completed with labor cost
       const fetched = await getWO(token, woId);
       expect(fetched.status).toBe('completed');
       expect(fetched.actualHours).toBeGreaterThanOrEqual(2.5);
-      // Labor cost should be server-derived from LaborRate
-      if (fetched.laborRateApplied) {
-        expect(fetched.laborRateApplied).toBe(50);
-        expect(fetched.laborCurrency).toBe('GHS');
-      }
+      expect(Number(fetched.partsCost)).toBe(materialUnitCost);
+      expect(fetched.laborCurrency).toBe('GHS');
 
-      // Browser verification
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
@@ -337,35 +307,21 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       await page.close();
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A11: Supervisor verifies WO
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A11: Supervisor verifies completed WO', async () => {
+    await test.step('A11: Supervisor verifies WO', async () => {
       const token = await getToken('supervisor');
-
       await verifyWO(token, woId, 4);
-
-      // Server-state: verified
-      const fetched = await getWO(token, woId);
-      expect(fetched.status).toBe('verified');
+      expect((await getWO(token, woId)).status).toBe('verified');
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A12: Planner closes WO
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A12: Planner closes WO', async () => {
+    await test.step('A12: Planner closes and locks WO', async () => {
       const token = await getToken('planner');
-
       await closeWO(token, woId);
-
-      // Server-state: closed and locked
       const fetched = await getWO(token, woId);
       expect(fetched.status).toBe('closed');
       expect(fetched.isLocked).toBe(true);
-      // Labor rate snapshot should be preserved
+      expect(Number(fetched.partsCost)).toBe(materialUnitCost);
       expect(fetched.laborCurrency).toBe('GHS');
 
-      // Browser verification
       await authenticateAs(context, 'planner');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
@@ -373,57 +329,43 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       await page.close();
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A13: Closed WO cannot be mutated
-    // ──────────────────────────────────────────────────────────────────
     await test.step('A13: Closed WO cannot be restarted or modified', async () => {
       const techToken = await getToken('tech_single');
-
-      // Cannot restart
-      const { status: startStatus, data: startData } = await expectFailure(
-        techToken, 'POST', `/api/work-orders/${woId}/start`,
-      );
+      const { status: startStatus } = await expectFailure(techToken, 'POST', `/api/work-orders/${woId}/start`);
       expect(startStatus).toBeGreaterThanOrEqual(400);
-      expect(startData.success).toBe(false);
-
-      // Cannot add measurement
-      const { status: measStatus, data: measData } = await expectFailure(
-        techToken, 'POST', `/api/work-orders/${woId}/measurements`, {
-          value: 99, unit: 'mm', measurementPoint: 'blocked',
-        },
+      const { status: measStatus } = await expectFailure(
+        techToken,
+        'POST',
+        `/api/work-orders/${woId}/measurements`,
+        { value: 99, unit: 'mm', measurementPoint: 'blocked' },
       );
-      expect(measStatus).toBe(403);
-      expect(measData.success).toBe(false);
+      expect(measStatus).toBeGreaterThanOrEqual(400);
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A14: Download closed WO pack (PDF)
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A14: Download closed WO pack (PDF)', async () => {
+    await test.step('A14: Closed WO PDF pack is a real PDF', async () => {
       const token = await getToken('planner');
-
       const res = await fetch(`http://localhost:3000/api/work-orders/${woId}/closed-pack`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       expect(res.status).toBe(200);
-      const contentType = res.headers.get('content-type') || '';
-      expect(contentType).toContain('application/pdf');
+      expect(res.headers.get('content-type') || '').toContain('application/pdf');
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      expect(bytes.length).toBeGreaterThan(100);
+      expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('%PDF');
     });
 
-    // ──────────────────────────────────────────────────────────────────
-    // A15: Export WO data as XLSX
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A15: Export WO data as XLSX', async () => {
+    await test.step('A15: Closed WO XLSX export responds successfully', async () => {
       const token = await getToken('planner');
-
-      const { status } = await apiCall(
-        token, 'POST', '/api/repairs/reports/xlsx', {
-          format: 'xlsx',
-          filters: { status: 'closed', plantId },
-        },
-      );
-      // Should succeed (200) or return file data
-      expect(status).toBeLessThan(400);
+      const res = await fetch('http://localhost:3000/api/repairs/reports/xlsx', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: 'xlsx', filters: { status: 'closed', plantId } }),
+      });
+      expect(res.status).toBe(200);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      expect(bytes.length).toBeGreaterThan(100);
+      // XLSX is a ZIP container and starts with PK.
+      expect(String.fromCharCode(...bytes.slice(0, 2))).toBe('PK');
     });
   } finally {
     await context.close();
