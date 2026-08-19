@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { notifyUser } from '@/lib/notifications';
 import { createAuditLog } from '@/lib/audit';
 import { executeTransition } from '@/lib/state-machine';
@@ -13,6 +14,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { workOrderId } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, workOrderId);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const completion = await db.repairCompletion.findUnique({
       where: { workOrderId },
       include: {

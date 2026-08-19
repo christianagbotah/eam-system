@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // GET /api/repairs/spare-part-returns/[id]
 export async function GET(
@@ -38,6 +39,13 @@ export async function GET(
 
     if (!sparePartReturn) {
       return NextResponse.json({ success: false, error: 'Spare part return not found' }, { status: 404 });
+    }
+
+    // Plant scope validation via linked WO
+    const plantScope = await getPlantScope(request, session);
+    const plantId = sparePartReturn.workOrder?.plantId;
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: sparePartReturn });

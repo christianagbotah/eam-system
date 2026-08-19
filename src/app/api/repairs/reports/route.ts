@@ -32,13 +32,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const effectivePlantId = plantScope.isSystemWide
-      ? (searchParams.get('plantId') || undefined)
-      : plantScope.plantId
-        ? plantScope.plantId
-        : plantScope.accessiblePlantIds.length === 1
-          ? plantScope.accessiblePlantIds[0]
-          : undefined;
+    const plantId = plantScope.isScoped && plantScope.plantId ? plantScope.plantId : (searchParams.get('plantId') || undefined);
     const from = searchParams.get('from') ? new Date(searchParams.get('from')!) : undefined;
     const to = searchParams.get('to') ? new Date(searchParams.get('to')!) : undefined;
     const priority = searchParams.get('priority') || undefined;
@@ -52,12 +46,12 @@ export async function GET(request: NextRequest) {
 
     let result: NextResponse;
     switch (type) {
-      case 'lifecycle': result = await handleLifecycleReport(effectivePlantId, from, to, priority, department, dateFilter); break;
-      case 'execution': result = await handleExecutionReport(effectivePlantId, from, to, priority, assignee, dateFilter); break;
-      case 'technician_performance': result = await handleTechnicianPerformanceReport(effectivePlantId, from, to, department, dateFilter); break;
-      case 'materials': result = await handleMaterialsReport(effectivePlantId, from, to, dateFilter); break;
-      case 'downtime': result = await handleDowntimeReport(effectivePlantId, from, to, dateFilter); break;
-      case 'tools': result = await handleToolsReport(effectivePlantId, from, to, dateFilter); break;
+      case 'lifecycle': result = await handleLifecycleReport(plantId, from, to, priority, department, dateFilter); break;
+      case 'execution': result = await handleExecutionReport(plantId, from, to, priority, assignee, dateFilter); break;
+      case 'technician_performance': result = await handleTechnicianPerformanceReport(plantId, from, to, department, dateFilter); break;
+      case 'materials': result = await handleMaterialsReport(plantId, from, to, dateFilter); break;
+      case 'downtime': result = await handleDowntimeReport(plantId, from, to, dateFilter); break;
+      case 'tools': result = await handleToolsReport(plantId, from, to, dateFilter); break;
       default:
         return NextResponse.json({ success: false, error: 'Unknown report type' }, { status: 400 });
     }
@@ -66,7 +60,7 @@ export async function GET(request: NextRequest) {
     if (format === 'pdf') {
       const jsonBody = await result.json();
       if (jsonBody.success && jsonBody.data) {
-        const pdfBuffer = await generateReportPDF(buildRepairPdfParams(type, jsonBody.data, session.fullName || session.userId, from, to, effectivePlantId, priority, department));
+        const pdfBuffer = await generateReportPDF(buildRepairPdfParams(type, jsonBody.data, session.fullName || session.userId, from, to, plantId, priority, department));
         const filename = `repair-${type}-report.pdf`;
         return new NextResponse(pdfBuffer, {
           headers: {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
 // Helper: generate auto-number DTR-YYYYMM-NNNN
 async function generateReportNumber(): Promise<string> {
@@ -31,6 +32,9 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: true, data: [], total: 0 });
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || undefined;
     const workOrderId = searchParams.get('workOrderId') || undefined;
@@ -44,21 +48,22 @@ export async function GET(request: NextRequest) {
 
     // Stats mode
     if (stats) {
+      const plantFilter = applyPlantScope({}, plantScope);
       const [total, byStatus, bySeverity, byType] = await Promise.all([
-        db.damagedToolReport.count({ where: { plantId: plantId || undefined } }),
+        db.damagedToolReport.count({ where: { plantId: plantId || undefined, ...plantFilter } }),
         db.damagedToolReport.groupBy({
           by: ['status'],
-          where: { plantId: plantId || undefined },
+          where: { plantId: plantId || undefined, ...plantFilter },
           _count: { id: true },
         }),
         db.damagedToolReport.groupBy({
           by: ['damageSeverity'],
-          where: { plantId: plantId || undefined },
+          where: { plantId: plantId || undefined, ...plantFilter },
           _count: { id: true },
         }),
         db.damagedToolReport.groupBy({
           by: ['damageType'],
-          where: { plantId: plantId || undefined },
+          where: { plantId: plantId || undefined, ...plantFilter },
           _count: { id: true },
         }),
       ]);
@@ -73,15 +78,15 @@ export async function GET(request: NextRequest) {
       for (const g of byType) typeCounts[g.damageType] = g._count.id;
 
       const pendingAssessment = await db.damagedToolReport.count({
-        where: { status: 'reported', plantId: plantId || undefined },
+        where: { status: 'reported', plantId: plantId || undefined, ...plantFilter },
       });
 
       const inRepair = await db.damagedToolReport.count({
-        where: { status: 'repair_in_progress', plantId: plantId || undefined },
+        where: { status: 'repair_in_progress', plantId: plantId || undefined, ...plantFilter },
       });
 
       const totalRepairCost = await db.damagedToolReport.aggregate({
-        where: { plantId: plantId || undefined, actualRepairCost: { not: null } },
+        where: { plantId: plantId || undefined, actualRepairCost: { not: null }, ...plantFilter },
         _sum: { actualRepairCost: true },
       });
 
@@ -106,6 +111,8 @@ export async function GET(request: NextRequest) {
     if (plantId) where.plantId = plantId;
     if (toolId) where.toolId = toolId;
     if (damageType) where.damageType = damageType;
+    // Apply plant scope filter
+    Object.assign(where, applyPlantScope({}, plantScope));
     if (search) {
       where.OR = [
         { reportNumber: { contains: search } },

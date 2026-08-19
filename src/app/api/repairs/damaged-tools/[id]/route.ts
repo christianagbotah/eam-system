@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // GET /api/repairs/damaged-tools/[id]
 export async function GET(
@@ -18,6 +19,7 @@ export async function GET(
     const report = await db.damagedToolReport.findUnique({
       where: { id },
       include: {
+        workOrder: { select: { id: true, plantId: true } },
         tool: {
           select: {
             id: true, toolCode: true, name: true, category: true, status: true,
@@ -45,6 +47,13 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Damaged tool report not found' }, { status: 404 });
     }
 
+    // Plant scope validation
+    const plantScope = await getPlantScope(request, session);
+    const reportPlantId = report.workOrder?.plantId;
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, reportPlantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     return NextResponse.json({ success: true, data: report });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch damaged tool report';
@@ -64,9 +73,18 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.damagedToolReport.findUnique({ where: { id } });
+    const existing = await db.damagedToolReport.findUnique({
+      where: { id },
+      include: { workOrder: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Damaged tool report not found' }, { status: 404 });
+    }
+
+    // Plant scope validation
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const terminalStatuses = ['repaired', 'written_off', 'replaced'];
