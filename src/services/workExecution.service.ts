@@ -1009,6 +1009,38 @@ export async function resumeAfterHandover(
       );
     }
 
+    // 1b. Normal path: session.userId MUST be the receivedById (the incoming shift worker)
+    //     Override: supervisor/manager/admin can resume with reason + audit trail
+    const isSupervisor = session.roles.some(r => ['maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'admin'].includes(r));
+    if (session.userId !== confirmedHandover.receivedById && !isSupervisor) {
+      throw new Error(
+        'Cannot resume work: only the designated receiver of the shift handover can resume work. ' +
+        `Expected: ${confirmedHandover.receivedById}, Got: ${session.userId}`,
+      );
+    }
+    if (session.userId !== confirmedHandover.receivedById && isSupervisor && !options?.reason) {
+      throw new Error(
+        'Supervisor override for resume-after-handover requires a reason to be provided.',
+      );
+    }
+    // Audit supervisor override
+    if (session.userId !== confirmedHandover.receivedById && isSupervisor) {
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'resume_after_handover_override',
+          entityType: 'work_order',
+          entityId: workOrderId,
+          newValues: JSON.stringify({
+            handoverId: confirmedHandover.id,
+            receivedById: confirmedHandover.receivedById,
+            overridingUserId: session.userId,
+            reason: options?.reason,
+          }),
+        },
+      });
+    }
+
     // 2. State transition
     const result = await executeTransition('work_order', workOrderId, 'in_progress', session, {
       tx,

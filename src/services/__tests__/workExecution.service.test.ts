@@ -456,9 +456,9 @@ describe('resumeAfterHandover', () => {
     );
   });
 
-  it('should succeed when confirmed handover exists', async () => {
+  it('should succeed when confirmed handover receivedById matches session user', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({ status: 'pending_handover' }));
-    mockDb.shiftHandover.findFirst.mockResolvedValue({ id: 'sh-1', status: 'confirmed' });
+    mockDb.shiftHandover.findFirst.mockResolvedValue({ id: 'sh-1', status: 'confirmed', receivedById: 'tech-1' });
     mockExecuteTransition.mockResolvedValue({ success: true });
     mockDb.workOrderTimeLog.create.mockResolvedValue({});
     mockDb.auditLog.create.mockResolvedValue({});
@@ -467,6 +467,16 @@ describe('resumeAfterHandover', () => {
     const result = await resumeAfterHandover('wo-1', techSession);
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('in_progress');
+  });
+
+  it('should throw when receivedById does not match session user', async () => {
+    mockFetchEnrichedWO(makeEnrichedWO({ status: 'pending_handover' }));
+    mockDb.shiftHandover.findFirst.mockResolvedValue({ id: 'sh-1', status: 'confirmed', receivedById: 'other-user' });
+    mockTransactionExec();
+
+    await expect(resumeAfterHandover('wo-1', techSession)).rejects.toThrow(
+      'only the designated receiver',
+    );
   });
 });
 
