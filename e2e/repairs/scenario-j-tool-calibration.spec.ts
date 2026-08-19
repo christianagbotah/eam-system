@@ -283,10 +283,9 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
     // Create a tool request for the expired tool and get it approved
     const { trId, itemId } = await createAndApproveToolRequest(expiredToolId, woId);
 
-    // Technician attempts to issue (the 'issue' action has no explicit
-    // permission gate — any authenticated user can call it if status is
-    // storekeeper_approved). However, the calibration check still runs
-    // and blocks the item regardless of caller role.
+    // Technician attempts to issue — MUST be rejected at the role gate (403)
+    // because only store-controlled roles (store_keeper, inventory_manager,
+    // tools_shop_attendant, admin) can perform the 'issue' action.
     const { status: issueStatus, data: issueData } = await apiCall(
       techToken, 'POST', `/api/repairs/tool-requests/${trId}`, {
         action: 'issue',
@@ -294,18 +293,12 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async ({ browser }) 
       },
     );
 
-    // Calibration block applies regardless of who triggers the issue
-    expect(issueStatus).toBe(200);
-    expect(issueData.success).toBe(true);
+    // Role gate blocks the technician BEFORE calibration check even runs
+    expect(issueStatus).toBe(403);
+    expect(issueData.success).toBe(false);
+    expect(issueData.error).toContain('store keeper');
 
-    const warnings = issueData.warnings as string[];
-    expect(warnings).toBeTruthy();
-    const calWarning = warnings.find(
-      (w) => w.toLowerCase().includes('calibration') || w.toLowerCase().includes('blocked'),
-    );
-    expect(calWarning).toBeTruthy();
-
-    // Server-state: item was NOT issued
+    // Server-state: request was NOT issued — status still storekeeper_approved
     const { data: fetched } = await apiCall(
       techToken, 'GET', `/api/repairs/tool-requests/${trId}`,
     );
