@@ -1,23 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { authorizeMaintenanceRequestPlant } from '@/lib/plant-auth-helpers';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: check if user can edit/delete a pending request (must be requester or admin)
-async function canModifyPendingRequest(id: string, session: any, request: NextRequest) {
+async function canModifyPendingRequest(id: string, session: any) {
   const existing = await db.maintenanceRequest.findUnique({ where: { id } });
   if (!existing) return { error: 'Maintenance request not found', status: 404 };
   if (existing.status !== 'pending') return { error: 'Can only modify requests with status "pending"', status: 400 };
   if (existing.requestedBy !== session.userId && !isAdmin(session)) {
     return { error: 'Only the requester can modify this request', status: 403 };
-  }
-  // Plant scope validation
-  if (!isAdmin(session)) {
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
-      return { error: 'Access denied', status: 403 };
-    }
   }
   return { mr: existing };
 }
@@ -78,7 +72,7 @@ export async function GET(
     // IDOR protection: ensure user has access to this MR's plant
     if (!isAdmin(session)) {
       const plantScope = await getPlantScope(request, session);
-      if (plantScope.denyAccess || !canAccessPlant(plantScope, mr.plantId)) {
+      if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, mr.plantId)) {
         // Check if user has access to the MR's plant via their userPlant records
         const hasPlantAccess = await db.userPlant.findFirst({
           where: { userId: session.userId, plantId: mr.plantId },
@@ -114,6 +108,11 @@ export async function PUT(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeMaintenanceRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
 
     const existing = await db.maintenanceRequest.findUnique({ where: { id } });
@@ -122,14 +121,6 @@ export async function PUT(
         { success: false, error: 'Maintenance request not found' },
         { status: 404 }
       );
-    }
-
-    // Plant scope validation
-    if (!isAdmin(session)) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
-        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-      }
     }
 
     // If request is pending, only the requester (or admin/supervisor with update) can edit it
@@ -162,19 +153,11 @@ export async function PUT(
       );
     }
 
-    // Protect plantId and assetId from modification on existing requests
-    if (body.plantId !== undefined || body.assetId !== undefined) {
-      return NextResponse.json(
-        { success: false, error: 'Cannot change plantId or assetId on an existing maintenance request' },
-        { status: 400 }
-      );
-    }
-
     // Build update data (only allow certain fields)
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'priority', 'category',
-      'assetName', 'location', 'departmentId', 'machineDownStatus',
+      'assetId', 'assetName', 'location', 'departmentId', 'plantId', 'machineDownStatus',
       'estimatedHours', 'slaHours', 'plannedStart', 'plannedEnd', 'notes',
     ];
 
@@ -255,8 +238,12 @@ export async function DELETE(
 
     const { id } = await params;
 
+    // Plant authorization
+    const plantAuth = await authorizeMaintenanceRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     // Check: only pending requests, and only by requester or admin
-    const check = await canModifyPendingRequest(id, session, request);
+    const check = await canModifyPendingRequest(id, session);
     if ('error' in check) {
       return NextResponse.json({ success: false, error: check.error }, { status: check.status });
     }
