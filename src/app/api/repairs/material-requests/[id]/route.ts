@@ -192,6 +192,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve material requests' }, { status: 403 });
       }
     }
+    // Material custody actions (issue, record_return, consume_material, waste_material, reconcile)
+    // MUST be performed by store-controlled roles only.
+    if (action === 'issue' || action === 'record_return' || action === 'consume_material' || action === 'waste_material' || action === 'reconcile') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({
+          success: false,
+          error: `Only admin, store keeper, inventory manager, or tools shop attendant can perform '${action}' on material requests`,
+        }, { status: 403 });
+      }
+    }
 
     const now = new Date();
     let updated: any;
@@ -700,6 +713,140 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           id,
           `material-requests?id=${id}`,
         );
+        break;
+      }
+
+      // ──────────────────────────────────────────────
+      // CONSUME MATERIAL — record quantity actually consumed
+      // ──────────────────────────────────────────────
+      case 'consume_material': {
+        if (matReq.status !== 'issued' && matReq.status !== 'partially_returned') {
+          return NextResponse.json({ success: false, error: `Cannot consume: current status is ${matReq.status}` }, { status: 400 });
+        }
+        const consumeQty = approvedQuantity ?? quantityApproved ?? 0;
+        if (consumeQty <= 0) {
+          return NextResponse.json({ success: false, error: 'Consume quantity must be greater than 0' }, { status: 400 });
+        }
+        const currentConsumed = matReq.consumedQty ?? 0;
+        const currentWasted = matReq.wastedQty ?? 0;
+        const currentReturned = matReq.quantityReturned ?? 0;
+        const newConsumed = currentConsumed + consumeQty;
+
+        // Reconciliation invariant: consumedQty + wastedQty + quantityReturned <= quantityIssued
+        if (newConsumed + currentWasted + currentReturned > matReq.quantityIssued) {
+          return NextResponse.json({
+            success: false,
+            error: `Reconciliation invariant violated: consumed(${newConsumed}) + wasted(${currentWasted}) + returned(${currentReturned}) = ${newConsumed + currentWasted + currentReturned} would exceed issued(${matReq.quantityIssued})`,
+          }, { status: 400 });
+        }
+
+        updated = await db.repairMaterialRequest.update({
+          where: { id },
+          data: { consumedQty: newConsumed },
+        });
+
+        await db.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'material_request_consume',
+            entityType: 'repair_material_request',
+            entityId: id,
+            newValues: JSON.stringify({
+              action: 'consume_material',
+              consumeQty,
+              previousConsumed: currentConsumed,
+              newConsumed,
+              reconciliation: { consumed: newConsumed, wasted: currentWasted, returned: currentReturned, issued: matReq.quantityIssued },
+            }),
+          },
+        });
+        break;
+      }
+
+      // ──────────────────────────────────────────────
+      // WASTE MATERIAL — record quantity wasted/discarded
+      // ──────────────────────────────────────────────
+      case 'waste_material': {
+        if (matReq.status !== 'issued' && matReq.status !== 'partially_returned') {
+          return NextResponse.json({ success: false, error: `Cannot record waste: current status is ${matReq.status}` }, { status: 400 });
+        }
+        const wasteQty = approvedQuantity ?? quantityApproved ?? 0;
+        if (wasteQty <= 0) {
+          return NextResponse.json({ success: false, error: 'Waste quantity must be greater than 0' }, { status: 400 });
+        }
+        const currentConsumed = matReq.consumedQty ?? 0;
+        const currentWasted = matReq.wastedQty ?? 0;
+        const currentReturned = matReq.quantityReturned ?? 0;
+        const newWasted = currentWasted + wasteQty;
+
+        // Reconciliation invariant: consumedQty + wastedQty + quantityReturned <= quantityIssued
+        if (currentConsumed + newWasted + currentReturned > matReq.quantityIssued) {
+          return NextResponse.json({
+            success: false,
+            error: `Reconciliation invariant violated: consumed(${currentConsumed}) + wasted(${newWasted}) + returned(${currentReturned}) = ${currentConsumed + newWasted + currentReturned} would exceed issued(${matReq.quantityIssued})`,
+          }, { status: 400 });
+        }
+
+        updated = await db.repairMaterialRequest.update({
+          where: { id },
+          data: { wastedQty: newWasted },
+        });
+
+        await db.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'material_request_waste',
+            entityType: 'repair_material_request',
+            entityId: id,
+            newValues: JSON.stringify({
+              action: 'waste_material',
+              wasteQty,
+              previousWasted: currentWasted,
+              newWasted,
+              reconciliation: { consumed: currentConsumed, wasted: newWasted, returned: currentReturned, issued: matReq.quantityIssued },
+            }),
+          },
+        });
+        break;
+      }
+
+      // ──────────────────────────────────────────────
+      // RECONCILE — validate and close material accounting
+      // ──────────────────────────────────────────────
+      case 'reconcile': {
+        if (matReq.status !== 'issued' && matReq.status !== 'partially_returned') {
+          return NextResponse.json({ success: false, error: `Cannot reconcile: current status is ${matReq.status}` }, { status: 400 });
+        }
+        const consumed = matReq.consumedQty ?? 0;
+        const wasted = matReq.wastedQty ?? 0;
+        const returned = matReq.quantityReturned ?? 0;
+        const total = consumed + wasted + returned;
+
+        if (Math.abs(total - matReq.quantityIssued) > 0.001) {
+          return NextResponse.json({
+            success: false,
+            error: `Reconciliation failed: consumed(${consumed}) + wasted(${wasted}) + returned(${returned}) = ${total} ≠ issued(${matReq.quantityIssued}). Difference: ${matReq.quantityIssued - total}`,
+          }, { status: 400 });
+        }
+
+        updated = await db.repairMaterialRequest.update({
+          where: { id },
+          data: { status: 'closed' },
+        });
+
+        await db.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'material_request_reconcile',
+            entityType: 'repair_material_request',
+            entityId: id,
+            newValues: JSON.stringify({
+              action: 'reconcile',
+              status: 'closed',
+              reconciliation: { consumed, wasted, returned, issued: matReq.quantityIssued },
+            }),
+          },
+        });
         break;
       }
 
