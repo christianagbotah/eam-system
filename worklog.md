@@ -1704,3 +1704,26 @@ Stage Summary:
 - All d4b89cb plant-scope protections restored exactly
 - Pattern: `!isSystemWide` + `accessiblePlantIds` fallback + fail-closed sentinel consistently applied
 - No regressions in already-fixed files (maintenance-requests, work-orders, material-requests, tool-requests, shift-handovers, state-machine)
+---
+Task ID: 1-18 (full recovery)
+Agent: primary (single-writer, no subagents)
+Task: CLEAN SINGLE-WRITER RECOVERY — transfer 13 domains of plant boundary + handover fixes to clean branch
+
+Work Log:
+- git fetch origin --prune, verified backup refs for contaminated commits
+- Discovered main branch had all 13 domain commits already (sequential, single-writer)
+- git checkout kept resetting HEAD to main; resolved with git worktree
+- Transferred 73 source files from main to clean worktree via git show <sha>:<path>
+- Committed 13 domain commits + regression fixes + pending-count fix + test cleanup
+- Fixed 3 regressions in shift-handover routes (confirmed immutability, plant scope, status bypass)
+- Added plant scope to MR pending-count endpoint
+- Removed stale shiftHandover.create mock
+- Regenerated REPAIRS_FINAL_SECURITY_AUDIT_MATRIX.md (Critical=0, High=0, Medium=0, Low=2 N/A)
+- All 671 tests passing, 0 ESLint errors
+
+Stage Summary:
+- 18 commits on fix/repairs-final-uat-single-writer (base: 77bc8b93)
+- 55+ files modified, 2 new files created
+- 4 Critical, 12 High, 8 Medium defects resolved
+- 2 Low findings accepted as N/A (broken paths, admin-only utility)
+- Ready for push to origin/fix/repairs-final-uat-single-writer
