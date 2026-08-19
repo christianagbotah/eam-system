@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 export async function GET(
   request: NextRequest,
@@ -127,7 +128,7 @@ export async function GET(
 
     // IDOR protection: ensure user has access to this work order's plant
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
@@ -181,6 +182,10 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    // Plant authorization using central helper
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const existing = await db.workOrder.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
@@ -207,16 +212,31 @@ export async function PUT(
 
     // Build update data
     const updateData: Record<string, unknown> = {};
+    // Cost fields are NEVER client-editable — computed from time logs and material usage
+    const immutableCostFields = [
+      'totalCost', 'laborCost', 'partsCost', 'contractorCost',
+      'laborRateApplied', 'laborCurrency', 'plantId',
+    ];
+
     const allowedFields = [
       'title', 'description', 'type', 'priority',
-      'assetId', 'assetName', 'departmentId', 'plantId',
+      'assetId', 'assetName', 'departmentId',
       'estimatedHours', 'plannedStart', 'plannedEnd',
-      'totalCost', 'laborCost', 'partsCost', 'contractorCost',
       'failureDescription', 'causeDescription', 'actionDescription',
       'tradeActivity', 'technicalDescription', 'safetyNotes', 'ppeRequired',
       'notes', 'assignedTo', 'teamLeaderId',
       'assignmentType', 'assignedSupervisorId',
     ];
+
+    // Reject any attempt to set cost or plant fields
+    for (const field of immutableCostFields) {
+      if (body[field] !== undefined) {
+        return NextResponse.json(
+          { success: false, error: `Field '${field}' is not client-editable` },
+          { status: 400 },
+        );
+      }
+    }
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -231,6 +251,20 @@ export async function PUT(
     // Map deliveryDateRequired → plannedEnd (there is no separate deliveryDateRequired column)
     if (body.deliveryDateRequired !== undefined) {
       updateData['plannedEnd'] = body.deliveryDateRequired ? new Date(body.deliveryDateRequired) : null;
+    }
+
+    // Cross-plant mutation guard: if changing assetId, verify asset belongs to same plant
+    if (body.assetId !== undefined && body.assetId !== existing.assetId) {
+      const asset = await db.asset.findUnique({
+        where: { id: body.assetId },
+        select: { id: true, plantId: true },
+      });
+      if (asset && asset.plantId !== existing.plantId) {
+        return NextResponse.json(
+          { success: false, error: 'Cannot assign an asset from a different plant' },
+          { status: 400 },
+        );
+      }
     }
 
     const updated = await db.workOrder.update({
