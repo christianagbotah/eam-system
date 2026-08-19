@@ -17,6 +17,11 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
+    {
+      name: 'repairs-uat',
+      testMatch: /repairs\/.*\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
   webServer: {
     command: 'bun run dev',
