@@ -122,6 +122,27 @@ export function canAccessPlant(
 }
 
 /**
+ * Strict plant access check for operational entities that MUST have a plant.
+ *
+ * Unlike canAccessPlant (which returns true for null entityPlantId),
+ * this function returns false for null entityPlantId unless the user is
+ * system-wide (admin/plant_manager).
+ *
+ * Use this for Repairs operational records (WO, MR, Material Request,
+ * Tool Request) where plantId=null represents a data integrity issue,
+ * not a "no plant scoping needed" situation.
+ */
+export function canAccessPlantStrict(
+  plantScope: PlantScopeResult,
+  entityPlantId: string | null | undefined,
+): boolean {
+  if (plantScope.isSystemWide) return true;
+  if (!entityPlantId) return false; // operational entity MUST have a plant
+  if (plantScope.denyAccess) return false;
+  return plantScope.accessiblePlantIds.includes(entityPlantId);
+}
+
+/**
  * Returns a Prisma-compatible where clause fragment for plant filtering.
  *
  * - When `denyAccess` is true, returns a never-matching filter.
