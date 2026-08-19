@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 /**
  * POST /api/work-orders/[id]/team-members
@@ -23,6 +24,11 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
     const { userId, role } = body;
 

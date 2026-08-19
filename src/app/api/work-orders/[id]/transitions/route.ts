@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getAvailableTransitions } from '@/lib/state-machine';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 export async function GET(
   request: NextRequest,
@@ -14,6 +15,9 @@ export async function GET(
     }
 
     const { id } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     const wo = await db.workOrder.findUnique({ where: { id }, select: { status: true } });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 const VALID_ACTIONS = ['start', 'pause', 'resume', 'complete'];
 const VALID_ACTIVITY_TYPES = ['maintenance', 'travel', 'inspection', 'testing', 'standby', 'other'];
@@ -49,6 +50,11 @@ export async function GET(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const { searchParams } = new URL(request.url);
     const includeTeamLogs = searchParams.get('includeTeamLogs') === 'true';
 
@@ -168,6 +174,11 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
     const {
       action,

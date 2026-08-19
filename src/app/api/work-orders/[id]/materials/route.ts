@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
 
@@ -16,6 +17,10 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
     if (!hasAnyPermission(session, ['work_orders.update'])) {
       // Even without explicit permission, allow if the user is a team member or assignee

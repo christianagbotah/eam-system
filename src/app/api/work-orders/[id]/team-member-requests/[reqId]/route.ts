@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 /**
  * PUT /api/work-orders/[id]/team-member-requests/[reqId]
@@ -21,6 +22,9 @@ export async function PUT(
     }
 
     const { id, reqId } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
     const { action, reviewNotes, assignUserId } = body; // action: "approve" | "reject", assignUserId: technician to assign when approving trade request
 
@@ -297,6 +301,8 @@ export async function DELETE(
     }
 
     const { id, reqId } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
 
     const teamRequest = await db.woTeamMemberRequest.findUnique({
       where: { id: reqId },

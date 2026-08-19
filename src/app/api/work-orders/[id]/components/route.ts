@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 // GET /api/work-orders/[id]/components — Get components linked to a WO
 export async function GET(
@@ -14,6 +15,10 @@ export async function GET(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
     const components = await db.workOrderComponent.findMany({
       where: { workOrderId: id },
