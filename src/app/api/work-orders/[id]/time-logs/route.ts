@@ -412,6 +412,9 @@ export async function POST(
 
     // ── Create time log entry ──
     let timeLog;
+    // When manualHours is provided, this is a manual time entry (not an active timer).
+    // Set endTime so the readiness check (ACTIVE_TIMERS) does not block completion.
+    const isManualEntry = logDuration !== null && action === 'start';
     try {
       timeLog = await db.workOrderTimeLog.create({
         data: {
@@ -423,8 +426,8 @@ export async function POST(
           timestamp: now,
           loggedById: effectiveLoggedById,
           isTeamLog: effectiveIsTeamLog,
-          startTime: startTime || (action === 'start' ? now : null),
-          endTime: endTime || (action === 'pause' ? now : (action === 'complete' ? now : null)),
+          startTime: startTime || now,
+          endTime: endTime || (isManualEntry ? new Date(now.getTime() + (logDuration! * 3600 * 1000)) : (action === 'pause' ? now : (action === 'complete' ? now : null))),
           activityType: activityType || 'maintenance',
           breakMinutes: safeBreak,
           pauseReason: (action === 'pause') ? (pauseReason || null) : null,
