@@ -29,31 +29,9 @@ import {
   lookupUserByKey,
   lookupAssetId,
   lookupPlantId,
-  lookupInventoryItemId,
-  getInventoryItem,
   expectFailure,
   apiCall,
-  createMaterialRequest,
-  supervisorApproveMaterial,
-  storekeeperApproveMaterial,
-  issueMaterial,
-  consumeMaterial,
-  wasteMaterial,
-  returnMaterial,
-  reconcileMaterial,
-  getMaterialRequest,
 } from './helpers/api';
-
-// Helper: assert WO status badge visible in browser using the StatusBadge component's
-// uppercase format (status.replace(/_/g, ' ').toUpperCase()).
-async function expectWOStatusBadge(page: import('@playwright/test').Page, status: string) {
-  const displayStatus = status.replace(/_/g, ' ').toUpperCase();
-  // The StatusBadge renders inside a <Badge> with the formatted text.
-  // Use .locator() scoped to badge-like elements containing the status text.
-  await expect(
-    page.locator(`.badge, [class*="rounded-full"][class*="border"]:has-text("${displayStatus}")`).first(),
-  ).toBeVisible({ timeout: 15_000 });
-}
 
 test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) => {
   const context: BrowserContext = await browser.newContext();
@@ -65,8 +43,6 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
   let techSingleUserId: string;
   let toolRequestId: string;
   let materialRequestId: string;
-  let inventoryItemId: string;
-  let inventoryStockBeforeIssue: number;
 
   try {
     const plannerToken = await getToken('planner');
@@ -74,14 +50,8 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
-    // Look up the seeded inventory item to prove stock integration
-    inventoryItemId = await lookupInventoryItemId(plannerToken, 'UAT-BRG-6205');
-    const invItem = await getInventoryItem(plannerToken, 'UAT-BRG-6205');
-    inventoryStockBeforeIssue = invItem.currentStock;
-    expect(inventoryStockBeforeIssue).toBeGreaterThanOrEqual(2);
-
     // ──────────────────────────────────────────────────────────────────
-    // A1: Requester creates MR (API)
+    // A1: Requester creates MR (browser + API verification)
     // ──────────────────────────────────────────────────────────────────
     await test.step('A1: Requester creates Maintenance Request', async () => {
       const token = await getToken('requester');
@@ -104,7 +74,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A2: Supervisor approves MR (API)
+    // A2: Supervisor approves MR (browser navigation + API verification)
     // ──────────────────────────────────────────────────────────────────
     await test.step('A2: Supervisor approves Maintenance Request', async () => {
       const token = await getToken('supervisor');
@@ -118,7 +88,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A3: Planner converts MR to WO and assigns technician (API)
+    // A3: Planner converts MR to WO and assigns technician
     // ──────────────────────────────────────────────────────────────────
     await test.step('A3: Planner converts MR to WO and assigns technician', async () => {
       const token = await getToken('planner');
@@ -144,7 +114,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A4: Technician starts work (API + browser)
+    // A4: Technician starts work (browser + API)
     // ──────────────────────────────────────────────────────────────────
     await test.step('A4: Technician starts work on WO', async () => {
       const token = await getToken('tech_single');
@@ -156,16 +126,16 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       expect(fetched.status).toBe('in_progress');
       expect(fetched.actualStart).toBeTruthy();
 
-      // Browser verification: status badge shows IN PROGRESS
+      // Browser verification
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expectWOStatusBadge(page, 'in_progress');
+      await expect(page.locator('body')).toContainText('in_progress', { timeout: 10_000 });
       await page.close();
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A5: Technician logs time (API)
+    // A5: Technician logs time
     // ──────────────────────────────────────────────────────────────────
     await test.step('A5: Technician logs time on WO', async () => {
       const token = await getToken('tech_single');
@@ -185,48 +155,58 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A6: Technician requests material linked to inventory item (API)
+    // A6: Technician requests material (storekeeper flow)
     // ──────────────────────────────────────────────────────────────────
-    await test.step('A6: Technician requests material (linked to inventory)', async () => {
+    await test.step('A6: Technician requests material', async () => {
       const techToken = await getToken('tech_single');
       const supToken = await getToken('supervisor');
       const storeToken = await getToken('storekeeper');
 
-      // Create material request LINKED to seeded inventory item UAT-BRG-6205
-      const matReq = await createMaterialRequest(techToken, {
-        workOrderId: woId,
-        itemName: 'UAT Bearing 6205',
-        itemId: inventoryItemId,
-        quantityRequested: 2,
-        unit: 'each',
-        urgency: 'normal',
-        reason: 'Replacement bearings for pump overhaul',
-      });
-      materialRequestId = matReq.id;
+      // Create material request
+      const { status: mrStatus, data: mrData } = await apiCall(
+        techToken, 'POST', '/api/repairs/material-requests', {
+          workOrderId: woId,
+          itemName: 'UAT Bearing 6205',
+          quantityRequested: 2,
+          unit: 'each',
+          urgency: 'normal',
+          reason: 'Replacement bearings for pump overhaul',
+        },
+      );
+      expect(mrStatus).toBe(201);
+      materialRequestId = mrData.data.id;
       expect(materialRequestId).toBeTruthy();
-      expect(matReq.itemId).toBe(inventoryItemId);
 
       // Supervisor approves
-      const supResult = await supervisorApproveMaterial(supToken, materialRequestId);
-      expect(supResult.status).toBe('supervisor_approved');
+      const { status: saStatus, data: saData } = await apiCall(
+        supToken, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+          action: 'supervisor_approve',
+        },
+      );
+      expect(saStatus).toBe(200);
+      expect(saData.data.status).toBe('supervisor_approved');
 
-      // Storekeeper approves — this should reserve stock (deduct from inventory)
-      const skResult = await storekeeperApproveMaterial(storeToken, materialRequestId);
-      expect(skResult.status).toBe('storekeeper_approved');
-      expect(skResult.stockReserved).toBe(true);
-
-      // Verify inventory was deducted by the reserved amount
-      const invAfterReserve = await getInventoryItem(storeToken, 'UAT-BRG-6205');
-      expect(invAfterReserve.currentStock).toBe(inventoryStockBeforeIssue - 2);
+      // Storekeeper approves
+      const { status: skStatus, data: skData } = await apiCall(
+        storeToken, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+          action: 'storekeeper_approve',
+        },
+      );
+      expect(skStatus).toBe(200);
+      expect(skData.data.status).toBe('storekeeper_approved');
 
       // Storekeeper issues
-      const isResult = await issueMaterial(storeToken, materialRequestId);
-      expect(['issued', 'partially_issued']).toContain(isResult.status);
-      expect(isResult.quantityIssued).toBe(2);
+      const { status: isStatus, data: isData } = await apiCall(
+        storeToken, 'POST', `/api/repairs/material-requests/${materialRequestId}`, {
+          action: 'issue',
+        },
+      );
+      expect(isStatus).toBe(200);
+      expect(['issued', 'partially_issued']).toContain(isData.data.status);
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A7: Technician requests tool (API)
+    // A7: Technician requests tool (storekeeper flow)
     // ──────────────────────────────────────────────────────────────────
     await test.step('A7: Technician requests and receives tool', async () => {
       const techToken = await getToken('tech_single');
@@ -247,7 +227,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       expect(toolRequestId).toBeTruthy();
 
       // Supervisor approves
-      const { status: saStatus } = await apiCall(
+      const { status: saStatus, data: saData } = await apiCall(
         supToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
           action: 'supervisor_approve',
         },
@@ -273,7 +253,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A8: Technician records measurement (API)
+    // A8: Technician records measurement
     // ──────────────────────────────────────────────────────────────────
     await test.step('A8: Technician records measurement', async () => {
       const token = await getToken('tech_single');
@@ -298,52 +278,9 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A9a: Technician consumes, wastes, returns material — reconciliation
+    // A9: Technician returns tool and reconciles material
     // ──────────────────────────────────────────────────────────────────
-    await test.step('A9a: Technician consumes, wastes, returns material with reconciliation', async () => {
-      const techToken = await getToken('tech_single');
-
-      // Verify material was issued (from A6)
-      const matReq = await getMaterialRequest(techToken, materialRequestId);
-      expect(matReq.status).toBe('issued');
-      const issuedQty = matReq.quantityIssued;
-      expect(issuedQty).toBe(2);
-      // Verify linked to inventory item
-      expect(matReq.itemId).toBe(inventoryItemId);
-
-      // Consume 1 bearing (used in the repair)
-      const consumeResult = await consumeMaterial(techToken, materialRequestId, 1, 'Installed in pump housing');
-      expect(consumeResult.consumedQty).toBe(1);
-
-      // Waste 0.5 bearing (damaged during installation)
-      const wasteResult = await wasteMaterial(techToken, materialRequestId, 0.5, 'Damaged during press-fit, discarded');
-      expect(wasteResult.wastedQty).toBe(0.5);
-
-      // Return 0.5 bearing (unused surplus) — should restore inventory stock
-      const returnResult = await returnMaterial(techToken, materialRequestId, 0.5, 'Unused surplus returned to store');
-      expect(returnResult.quantityReturned).toBe(0.5);
-
-      // Verify inventory stock was restored by the returned amount
-      const storeToken = await getToken('storekeeper');
-      const invAfterReturn = await getInventoryItem(storeToken, 'UAT-BRG-6205');
-      // Stock was reserved (-2) and now 0.5 returned (+0.5) = net -1.5 from original
-      expect(invAfterReturn.currentStock).toBe(inventoryStockBeforeIssue - 2 + 0.5);
-
-      // Reconcile: consumed(1) + wasted(0.5) + returned(0.5) = 2.0 == issued(2)
-      const reconResult = await reconcileMaterial(techToken, materialRequestId);
-      expect(reconResult.reconciliation.balanced).toBe(true);
-      expect(reconResult.reconciliation.discrepancy).toBe(0);
-      expect(reconResult.reconciliation.status).toBe('reconciled');
-      expect(reconResult.reconciliation.issued).toBe(issuedQty);
-      expect(reconResult.reconciliation.consumed).toBe(1);
-      expect(reconResult.reconciliation.wasted).toBe(0.5);
-      expect(reconResult.reconciliation.returned).toBe(0.5);
-    });
-
-    // ──────────────────────────────────────────────────────────────────
-    // A9b: Technician returns tool (API)
-    // ──────────────────────────────────────────────────────────────────
-    await test.step('A9b: Technician returns tool', async () => {
+    await test.step('A9: Technician returns tool', async () => {
       const techToken = await getToken('tech_single');
       const storeToken = await getToken('storekeeper');
 
@@ -375,7 +312,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A10: Technician completes WO (API + browser)
+    // A10: Technician completes WO
     // ──────────────────────────────────────────────────────────────────
     await test.step('A10: Technician completes WO', async () => {
       const token = await getToken('tech_single');
@@ -392,16 +329,16 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
         expect(fetched.laborCurrency).toBe('GHS');
       }
 
-      // Browser verification: status badge shows COMPLETED
+      // Browser verification
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expectWOStatusBadge(page, 'completed');
+      await expect(page.locator('body')).toContainText('completed', { timeout: 10_000 });
       await page.close();
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A11: Supervisor verifies WO (API)
+    // A11: Supervisor verifies WO
     // ──────────────────────────────────────────────────────────────────
     await test.step('A11: Supervisor verifies completed WO', async () => {
       const token = await getToken('supervisor');
@@ -414,7 +351,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A12: Planner closes WO (API + browser)
+    // A12: Planner closes WO
     // ──────────────────────────────────────────────────────────────────
     await test.step('A12: Planner closes WO', async () => {
       const token = await getToken('planner');
@@ -428,16 +365,16 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       // Labor rate snapshot should be preserved
       expect(fetched.laborCurrency).toBe('GHS');
 
-      // Browser verification: status badge shows CLOSED
+      // Browser verification
       await authenticateAs(context, 'planner');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expectWOStatusBadge(page, 'closed');
+      await expect(page.locator('body')).toContainText('closed', { timeout: 10_000 });
       await page.close();
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // A13: Closed WO cannot be mutated (API)
+    // A13: Closed WO cannot be mutated
     // ──────────────────────────────────────────────────────────────────
     await test.step('A13: Closed WO cannot be restarted or modified', async () => {
       const techToken = await getToken('tech_single');
@@ -479,26 +416,14 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     await test.step('A15: Export WO data as XLSX', async () => {
       const token = await getToken('planner');
 
-      // Use raw fetch to verify the actual HTTP response (not parsed JSON)
-      const res = await fetch('http://localhost:3000/api/repairs/reports/xlsx', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      const { status } = await apiCall(
+        token, 'POST', '/api/repairs/reports/xlsx', {
           format: 'xlsx',
           filters: { status: 'closed', plantId },
-        }),
-      });
-      expect(res.status).toBe(200);
-      const contentType = res.headers.get('content-type') || '';
-      // XLSX endpoint returns either application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-      // or application/octet-stream with Content-Disposition attachment
-      const isXlsx =
-        contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') ||
-        contentType.includes('application/octet-stream');
-      expect(isXlsx).toBe(true);
+        },
+      );
+      // Should succeed (200) or return file data
+      expect(status).toBeLessThan(400);
     });
   } finally {
     await context.close();

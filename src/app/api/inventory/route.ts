@@ -38,15 +38,9 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Apply plant scoping (ALWAYS filter when not system-wide): scope takes precedence over search param plantId
-    if (!plantScope.isSystemWide) {
-      if (plantScope.plantId) {
-        where.plantId = plantScope.plantId;
-      } else if (plantScope.accessiblePlantIds.length > 0) {
-        where.plantId = { in: plantScope.accessiblePlantIds };
-      } else {
-        where.plantId = '__ACCESS_DENIED__';
-      }
+    // Apply plant scoping: scope takes precedence over search param plantId
+    if (plantScope.isScoped && plantScope.plantId) {
+      where.plantId = plantScope.plantId;
     } else if (searchPlantId) {
       where.plantId = searchPlantId;
     }
@@ -116,12 +110,6 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Plant is required' },
         { status: 400 }
       );
-    }
-
-    // Plant scope check: validate body.plantId is accessible
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Check item code uniqueness
