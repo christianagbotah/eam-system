@@ -47,6 +47,73 @@ interface UatUserDef {
   primaryTrade?: string;
 }
 
+type TransitionSeed = {
+  fromStatus: string | null;
+  toStatus: string;
+  allowedRoleSlugs: string;
+  requiresReason: boolean;
+};
+
+/**
+ * Prisma compound unique inputs do not accept null members even though
+ * StatusTransition.fromStatus is intentionally nullable (null = initial state).
+ * Preserve NULL semantics by using findFirst + update/create for initial
+ * transitions and the compound-key upsert for normal transitions.
+ */
+async function upsertStatusTransition(
+  entityType: 'work_order' | 'maintenance_request',
+  transition: TransitionSeed,
+  sortOrder: number,
+) {
+  const update = {
+    allowedRoleSlugs: transition.allowedRoleSlugs,
+    requiresReason: transition.requiresReason,
+    sortOrder,
+  };
+
+  if (transition.fromStatus === null) {
+    const existing = await db.statusTransition.findFirst({
+      where: {
+        entityType,
+        fromStatus: null,
+        toStatus: transition.toStatus,
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await db.statusTransition.update({ where: { id: existing.id }, data: update });
+    } else {
+      await db.statusTransition.create({
+        data: {
+          entityType,
+          fromStatus: null,
+          toStatus: transition.toStatus,
+          ...update,
+        },
+      });
+    }
+    return;
+  }
+
+  await db.statusTransition.upsert({
+    where: {
+      entityType_fromStatus_toStatus: {
+        entityType,
+        fromStatus: transition.fromStatus,
+        toStatus: transition.toStatus,
+      },
+    },
+    update,
+    create: {
+      entityType,
+      fromStatus: transition.fromStatus,
+      toStatus: transition.toStatus,
+      ...update,
+    },
+  });
+}
+
 const UAT_USERS: UatUserDef[] = [
   { username: 'uat_requester', fullName: 'UAT Requester', email: 'uat_requester@test.com', roleSlugs: ['requester'], plantCodes: ['PLANT-A', 'PLANT-B'], isPrimaryPlant: 'PLANT-A' },
   { username: 'uat_supervisor', fullName: 'UAT Supervisor', email: 'uat_supervisor@test.com', roleSlugs: ['maintenance_supervisor'], plantCodes: ['PLANT-A', 'PLANT-B'], isPrimaryPlant: 'PLANT-A' },
@@ -121,20 +188,10 @@ async function main() {
   });
 
   for (let i = 0; i < DEFAULT_WO_TRANSITIONS.length; i++) {
-    const t = DEFAULT_WO_TRANSITIONS[i];
-    await db.statusTransition.upsert({
-      where: { entityType_fromStatus_toStatus: { entityType: 'work_order', fromStatus: t.fromStatus, toStatus: t.toStatus } },
-      update: { allowedRoleSlugs: t.allowedRoleSlugs, requiresReason: t.requiresReason, sortOrder: i },
-      create: { entityType: 'work_order', fromStatus: t.fromStatus, toStatus: t.toStatus, allowedRoleSlugs: t.allowedRoleSlugs, requiresReason: t.requiresReason, sortOrder: i },
-    });
+    await upsertStatusTransition('work_order', DEFAULT_WO_TRANSITIONS[i], i);
   }
   for (let i = 0; i < DEFAULT_MR_TRANSITIONS.length; i++) {
-    const t = DEFAULT_MR_TRANSITIONS[i];
-    await db.statusTransition.upsert({
-      where: { entityType_fromStatus_toStatus: { entityType: 'maintenance_request', fromStatus: t.fromStatus, toStatus: t.toStatus } },
-      update: { allowedRoleSlugs: t.allowedRoleSlugs, requiresReason: t.requiresReason, sortOrder: i },
-      create: { entityType: 'maintenance_request', fromStatus: t.fromStatus, toStatus: t.toStatus, allowedRoleSlugs: t.allowedRoleSlugs, requiresReason: t.requiresReason, sortOrder: i },
-    });
+    await upsertStatusTransition('maintenance_request', DEFAULT_MR_TRANSITIONS[i], i);
   }
 
   const woA1 = await db.workOrder.upsert({
