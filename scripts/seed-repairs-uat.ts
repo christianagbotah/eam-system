@@ -116,6 +116,7 @@ async function main() {
     create: {
       name: 'UAT Test Pump', assetTag: 'UAT-PUMP-001', description: 'Centrifugal pump for UAT testing', categoryId: assetCategory.id,
       plantId: plantA.id, condition: 'fair', status: 'operational', criticality: 'high', location: 'Workshop Bay 1', building: 'Building A',
+      specification: '{}', createdById: userIds['uat_planner'],
     },
   });
 
