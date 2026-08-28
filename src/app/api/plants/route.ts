@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
-    if (!session || !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const plants = await db.plant.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(isAdmin(session)
+          ? {}
+          : {
+              plantAccess: {
+                some: { userId: session.userId },
+              },
+            }),
+      },
       include: {
         _count: {
           select: { departments: true },
@@ -43,7 +52,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check code uniqueness
     const existing = await db.plant.findUnique({ where: { code } });
     if (existing) {
       return NextResponse.json(
