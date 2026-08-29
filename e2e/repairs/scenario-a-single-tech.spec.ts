@@ -27,6 +27,8 @@ import {
   apiCall,
 } from './helpers/api';
 
+const BASE = (process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+
 test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) => {
   const context: BrowserContext = await browser.newContext();
 
@@ -344,7 +346,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
 
     await test.step('A14: Closed WO PDF pack is a real PDF', async () => {
       const token = await getToken('planner');
-      const res = await fetch(`http://localhost:3000/api/work-orders/${woId}/closed-pack`, {
+      const res = await fetch(`${BASE}/api/work-orders/${woId}/closed-pack`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       expect(res.status).toBe(200);
@@ -356,7 +358,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
 
     await test.step('A15: Closed WO XLSX export responds successfully', async () => {
       const token = await getToken('planner');
-      const res = await fetch('http://localhost:3000/api/repairs/reports/xlsx', {
+      const res = await fetch(`${BASE}/api/repairs/reports/xlsx`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ format: 'xlsx', filters: { status: 'closed', plantId } }),
@@ -364,7 +366,6 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       expect(res.status).toBe(200);
       const bytes = new Uint8Array(await res.arrayBuffer());
       expect(bytes.length).toBeGreaterThan(100);
-      // XLSX is a ZIP container and starts with PK.
       expect(String.fromCharCode(...bytes.slice(0, 2))).toBe('PK');
     });
   } finally {
