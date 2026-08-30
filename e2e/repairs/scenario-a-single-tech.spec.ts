@@ -9,7 +9,6 @@ import { test, expect, type BrowserContext } from '@playwright/test';
 import { authenticateAs, navigateToWODetail } from './helpers/auth';
 import {
   getToken,
-  createMR,
   approveMR,
   convertMR,
   startWO,
@@ -37,6 +36,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
   let assetId = '';
   let plantId = '';
   let techSingleUserId = '';
+  let supervisorUserId = '';
   let toolRequestId = '';
   let materialRequestId = '';
   let materialItemId = '';
@@ -46,6 +46,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
   try {
     const plannerToken = await getToken('planner');
     techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
     realToolId = await lookupToolId(plannerToken, 'UAT-CAL-VALID');
@@ -64,16 +65,21 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
 
     await test.step('A1: Requester creates Maintenance Request', async () => {
       const token = await getToken('requester');
-      const mr = await createMR(token, {
+      const { status, data } = await apiCall(token, 'POST', '/api/maintenance-requests', {
         title: 'UAT-SingleTech-Pump-Vibration',
         description: 'Abnormal vibration at 3000 RPM on centrifugal pump. Needs bearing inspection.',
         assetId,
         priority: 'high',
         plantId,
+        supervisorId: supervisorUserId,
       });
+      expect(status).toBe(201);
+      expect(data.success).toBe(true);
+      const mr = data.data;
       mrId = mr.id;
       expect(mrId).toBeTruthy();
       expect(mr.requestNumber).toMatch(/^MR-\d{6}-\d{4}$/);
+      expect(mr.supervisorId).toBe(supervisorUserId);
       expect((await getMR(token, mrId)).status).toBe('pending');
     });
 
@@ -117,7 +123,6 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
 
     await test.step('A5: Technician stops live timer then records 2.5 manual labor hours', async () => {
       const token = await getToken('tech_single');
-
       const { status: stopStatus, data: stopData } = await apiCall(
         token,
         'POST',
@@ -247,6 +252,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
         action: 'return',
         returnedItems: [{ itemId: toolLineId, quantityReturned: 1, conditionAtReturn: 'good' }],
       })).status).toBe(200);
+
       const { status: confirmStatus, data: confirmData } = await apiCall(
         storeToken,
         'POST',
