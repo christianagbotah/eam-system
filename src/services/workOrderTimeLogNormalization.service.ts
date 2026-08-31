@@ -4,6 +4,7 @@ export interface TimeLogNormalizationResult {
   normalizedCount: number;
   durationBackfilledCount: number;
   normalizedLogIds: string[];
+  laborHours: number;
 }
 
 type PlannedTimeLogUpdate = {
@@ -30,6 +31,8 @@ type PlannedTimeLogUpdate = {
  *   duration/end time; readiness checks must continue to block completion.
  * - Other actions (pause/complete/etc.) get startTime normalized only so legacy
  *   rows remain sortable, but they do not contribute synthetic labor hours.
+ * - `laborHours` is the sum of duration-bearing start/resume execution sessions,
+ *   keeping labor effort distinct from total WO elapsed/calendar time.
  */
 export async function normalizeWorkOrderTimeLogs(
   workOrderId: string,
@@ -49,6 +52,7 @@ export async function normalizeWorkOrderTimeLogs(
 
   const plannedUpdates: PlannedTimeLogUpdate[] = [];
   let durationBackfilledCount = 0;
+  let laborHours = 0;
 
   for (const log of logs) {
     const normalizedStart = log.startTime ?? log.timestamp;
@@ -59,12 +63,19 @@ export async function normalizeWorkOrderTimeLogs(
     }
 
     const isExecutionSession = log.action === 'start' || log.action === 'resume';
-    if (isExecutionSession && log.duration == null && log.endTime) {
+    let effectiveDuration = log.duration;
+
+    if (isExecutionSession && effectiveDuration == null && log.endTime) {
       const elapsedHours =
         (log.endTime.getTime() - normalizedStart.getTime()) / (1000 * 60 * 60);
       const breakHours = (log.breakMinutes ?? 0) / 60;
-      data.duration = Math.round(Math.max(0, elapsedHours - breakHours) * 100) / 100;
+      effectiveDuration = Math.round(Math.max(0, elapsedHours - breakHours) * 100) / 100;
+      data.duration = effectiveDuration;
       durationBackfilledCount++;
+    }
+
+    if (isExecutionSession && effectiveDuration != null && effectiveDuration > 0) {
+      laborHours += effectiveDuration;
     }
 
     if (Object.keys(data).length > 0) {
@@ -87,5 +98,6 @@ export async function normalizeWorkOrderTimeLogs(
     normalizedCount: plannedUpdates.length,
     durationBackfilledCount,
     normalizedLogIds: plannedUpdates.map((update) => update.id),
+    laborHours: Math.round(laborHours * 100) / 100,
   };
 }
