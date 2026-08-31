@@ -33,7 +33,7 @@ import {
 // ── Shared assertion helpers ────────────────────────────────────────────
 
 /** Assert GET on a cross-plant resource returns 403 or 404 */
-async function assertGetBlocked(token: string, path: string, step: () => void) {
+async function assertGetBlocked(token: string, path: string) {
   const { status, data } = await expectFailure(token, 'GET', path);
   expect([403, 404]).toContain(status);
   expect(data.success).toBe(false);
@@ -124,7 +124,7 @@ test('UAT-09: Scenario H — Cross-Plant Security Isolation', async () => {
   // ──────────────────────────────────────────────────────────────────────
   await test.step('H1: Plant A technician blocked on all Plant B operations', async () => {
     // GET WO detail
-    await assertGetBlocked(techAToken, `/api/work-orders/${plantBWoId}`, () => {});
+    await assertGetBlocked(techAToken, `/api/work-orders/${plantBWoId}`);
 
     // GET capabilities
     const capRes = await expectFailure(techAToken, 'GET', `/api/work-orders/${plantBWoId}/capabilities`);
@@ -219,7 +219,7 @@ test('UAT-09: Scenario H — Cross-Plant Security Isolation', async () => {
     // ── GET operations ──
 
     // GET WO detail — must return 403 (plant isolation)
-    await assertGetBlocked(supervisorAToken, `/api/work-orders/${plantBWoId}`, () => {});
+    await assertGetBlocked(supervisorAToken, `/api/work-orders/${plantBWoId}`);
 
     // GET capabilities
     const capRes = await expectFailure(supervisorAToken, 'GET', `/api/work-orders/${plantBWoId}/capabilities`);
@@ -315,7 +315,7 @@ test('UAT-09: Scenario H — Cross-Plant Security Isolation', async () => {
     // ── GET operations ──
 
     // GET WO detail — must return 403 (plant isolation)
-    await assertGetBlocked(plannerAToken, `/api/work-orders/${plantBWoId}`, () => {});
+    await assertGetBlocked(plannerAToken, `/api/work-orders/${plantBWoId}`);
 
     // GET capabilities
     const capRes = await expectFailure(plannerAToken, 'GET', `/api/work-orders/${plantBWoId}/capabilities`);
