@@ -6,7 +6,7 @@
  * → material reconciliation → completion → verification → planner close → reports.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
-import { authenticateAs, navigateToWODetail } from './helpers/auth';
+import { authenticateAs, navigateToWODetail, expectWODetailStatus } from './helpers/auth';
 import {
   getToken,
   approveMR,
@@ -117,7 +117,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('in_progress', { timeout: 10_000 });
+      await expectWODetailStatus(page, 'in_progress');
       await page.close();
     });
 
@@ -311,7 +311,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('completed', { timeout: 10_000 });
+      await expectWODetailStatus(page, 'completed');
       await page.close();
     });
 
@@ -333,7 +333,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       await authenticateAs(context, 'planner');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('closed', { timeout: 10_000 });
+      await expectWODetailStatus(page, 'closed');
       await page.close();
     });
 
