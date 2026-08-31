@@ -35,6 +35,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
   let woId = '';
   let assetId = '';
   let plantId = '';
+  let componentId = '';
   let techSingleUserId = '';
   let supervisorUserId = '';
   let toolRequestId = '';
@@ -50,6 +51,19 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
     realToolId = await lookupToolId(plannerToken, 'UAT-CAL-VALID');
+
+    const { status: componentLookupStatus, data: componentLookupData } = await apiCall(
+      plannerToken,
+      'GET',
+      `/api/component-registry?assetId=${encodeURIComponent(assetId)}&search=${encodeURIComponent('UAT-PUMP-BRG-DE')}`,
+    );
+    expect(componentLookupStatus).toBe(200);
+    expect(componentLookupData.success).toBe(true);
+    const pumpComponent = (componentLookupData.data as Array<any>).find(
+      (component) => component.componentCode === 'UAT-PUMP-BRG-DE',
+    );
+    expect(pumpComponent).toBeTruthy();
+    componentId = pumpComponent.id;
 
     const { status: inventoryStatus, data: inventoryData } = await apiCall(
       plannerToken,
@@ -90,7 +104,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       expect((await getMR(token, mrId)).status).toBe('approved');
     });
 
-    await test.step('A3: Planner converts MR to WO and assigns technician', async () => {
+    await test.step('A3: Planner converts MR to WO, assigns technician, and links component', async () => {
       const token = await getToken('planner');
       const wo = await convertMR(token, mrId, {
         assignedTo: techSingleUserId,
@@ -105,6 +119,18 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       expect(fetched.status).toBe('assigned');
       expect(fetched.assignedTo).toBe(techSingleUserId);
       expect((await getMR(token, mrId)).status).toBe('converted');
+
+      const { status: componentLinkStatus, data: componentLinkData } = await apiCall(
+        token,
+        'PUT',
+        `/api/work-orders/${woId}/components`,
+        { componentIds: [componentId] },
+      );
+      expect(componentLinkStatus).toBe(200);
+      expect(componentLinkData.success).toBe(true);
+      expect(componentLinkData.data).toHaveLength(1);
+      expect(componentLinkData.data[0].componentRegistryId).toBe(componentId);
+      expect(componentLinkData.data[0].componentRegistry?.componentCode).toBe('UAT-PUMP-BRG-DE');
     });
 
     await test.step('A4: Technician starts work', async () => {
@@ -228,18 +254,38 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       expect(issueData.data.status).toBe('issued');
     });
 
-    await test.step('A8: Technician records measurement', async () => {
+    await test.step('A8: Technician records component condition measurement', async () => {
       const token = await getToken('tech_single');
       const { status, data } = await apiCall(
         token,
         'POST',
         `/api/work-orders/${woId}/measurements`,
-        { value: 0.45, unit: 'mm/s', measurementPoint: 'Bearing vibration (horizontal)' },
+        {
+          componentId,
+          parameterKey: 'vibration',
+          value: 0.45,
+          unit: 'mm/s',
+          acceptableMax: 4.5,
+        },
       );
-      expect(status).toBe(200);
+      expect(status).toBe(201);
       expect(data.success).toBe(true);
-      const { data: measData } = await apiCall(token, 'GET', `/api/work-orders/${woId}/measurements`);
-      expect((measData.data as Array<any>).length).toBeGreaterThanOrEqual(1);
+      expect(data.data.componentId).toBe(componentId);
+      expect(data.data.parameterKey).toBe('vibration');
+      expect(Number(data.data.value)).toBe(0.45);
+      expect(data.data.isAlarm).toBe(false);
+
+      const { status: readStatus, data: measData } = await apiCall(
+        token,
+        'GET',
+        `/api/work-orders/${woId}/measurements?componentId=${encodeURIComponent(componentId)}`,
+      );
+      expect(readStatus).toBe(200);
+      expect(measData.success).toBe(true);
+      const reading = (measData.data as Array<any>).find((entry) => entry.id === data.data.id);
+      expect(reading).toBeTruthy();
+      expect(reading.componentId).toBe(componentId);
+      expect(reading.parameterKey).toBe('vibration');
     });
 
     await test.step('A9: Tool returned and material usage reconciled 2 = 1 consumed + 1 returned', async () => {
@@ -345,7 +391,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
         techToken,
         'POST',
         `/api/work-orders/${woId}/measurements`,
-        { value: 99, unit: 'mm', measurementPoint: 'blocked' },
+        { componentId, parameterKey: 'vibration', value: 99, unit: 'mm/s' },
       );
       expect(measStatus).toBeGreaterThanOrEqual(400);
     });
