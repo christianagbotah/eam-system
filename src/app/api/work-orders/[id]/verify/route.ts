@@ -38,13 +38,14 @@ export async function POST(
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
+      // requestRework() owns the rework counter transactionally. Keep the
+      // completion-review status aligned here without incrementing it twice.
       await db.repairCompletion.updateMany({
         where: { workOrderId: id },
         data: {
           supervisorStatus: 'rework_requested',
           reworkReason: body.reason || null,
           supervisorReviewNotes: body.notes || null,
-          reworkCount: { increment: 1 },
         },
       });
 
