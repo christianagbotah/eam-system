@@ -50,9 +50,9 @@ export async function POST(
       }, { status });
     }
 
-    // The execution service currently also tracks calendar elapsed time from
-    // actualStart. For cost/accounting purposes actualHours must remain labor
-    // effort from canonical time logs, not wall-clock WO elapsed time.
+    // The execution service also tracks calendar elapsed time from actualStart.
+    // For cost/accounting purposes actualHours must remain labor effort from
+    // canonical time logs, not wall-clock WO elapsed time.
     await db.workOrder.update({
       where: { id },
       data: { actualHours: normalizedTime.laborHours },
@@ -60,6 +60,71 @@ export async function POST(
     if (result.data) {
       result.data.actualHours = normalizedTime.laborHours;
     }
+
+    // Materialize the canonical completion report required by the supervisor
+    // verification gate. All totals are derived from the server-side WO cost
+    // snapshot produced by submitCompletion; client-submitted totals are ignored.
+    const completedSnapshot = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        actualHours: true,
+        laborCost: true,
+        partsCost: true,
+        contractorCost: true,
+        totalCost: true,
+        failureDescription: true,
+        causeDescription: true,
+        actionDescription: true,
+        workOrderDowntimes: { select: { durationMinutes: true } },
+      },
+    });
+
+    if (!completedSnapshot) {
+      throw new Error('Completed work order could not be reloaded for completion report');
+    }
+
+    const totalDowntimeMinutes = completedSnapshot.workOrderDowntimes.reduce(
+      (sum, downtime) => sum + (downtime.durationMinutes ?? 0),
+      0,
+    );
+    const totalToolCost = Math.max(
+      0,
+      Math.round(
+        (completedSnapshot.totalCost
+          - completedSnapshot.laborCost
+          - completedSnapshot.partsCost
+          - completedSnapshot.contractorCost) * 100,
+      ) / 100,
+    );
+
+    await db.repairCompletion.upsert({
+      where: { workOrderId: id },
+      create: {
+        workOrderId: id,
+        completionNotes: body.notes || null,
+        findings: body.failureDescription || completedSnapshot.failureDescription || null,
+        rootCause: body.causeDescription || completedSnapshot.causeDescription || null,
+        correctiveAction: body.actionDescription || completedSnapshot.actionDescription || null,
+        totalLaborHours: completedSnapshot.actualHours ?? normalizedTime.laborHours,
+        totalMaterialCost: completedSnapshot.partsCost,
+        totalToolCost,
+        totalDowntimeMinutes,
+        supervisorStatus: 'pending_review',
+        plannerStatus: 'pending_closure',
+      },
+      update: {
+        completionNotes: body.notes || undefined,
+        findings: body.failureDescription || completedSnapshot.failureDescription || undefined,
+        rootCause: body.causeDescription || completedSnapshot.causeDescription || undefined,
+        correctiveAction: body.actionDescription || completedSnapshot.actionDescription || undefined,
+        totalLaborHours: completedSnapshot.actualHours ?? normalizedTime.laborHours,
+        totalMaterialCost: completedSnapshot.partsCost,
+        totalToolCost,
+        totalDowntimeMinutes,
+        supervisorStatus: 'pending_review',
+        plannerStatus: 'pending_closure',
+      },
+    });
 
     return NextResponse.json({ success: true, data: result.data });
   } catch (error: unknown) {
