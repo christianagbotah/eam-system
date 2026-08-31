@@ -27,7 +27,6 @@ import {
   convertMR,
   startWO,
   lookupUserByKey,
-  lookupAssetId,
   lookupPlantId,
 } from './helpers/api';
 
@@ -82,13 +81,13 @@ test('UAT-09: Scenario H — Cross-Plant Security Isolation', async () => {
 
     plantBPlantId = await lookupPlantId(plannerToken, 'PLANT-B');
     plantBTechUserId = await lookupUserByKey(plannerToken, 'plant_b_user');
-    const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
 
-    // Create MR in Plant B
+    // This security scenario is about WO plant isolation, not asset validation.
+    // Create the Plant B MR without an asset so the fixture cannot accidentally
+    // depend on a Plant A asset and obscure the isolation checks below.
     const mr = await createMR(requesterToken, {
       title: 'UAT-PlantB-CrossPlant-Security-Test',
       description: 'WO in Plant B for cross-plant security isolation testing.',
-      assetId,
       priority: 'medium',
       plantId: plantBPlantId,
     });
@@ -125,7 +124,7 @@ test('UAT-09: Scenario H — Cross-Plant Security Isolation', async () => {
   // ──────────────────────────────────────────────────────────────────────
   await test.step('H1: Plant A technician blocked on all Plant B operations', async () => {
     // GET WO detail
-    await assertGetBlocked(techAToken, `/api/work-orders/${plantBWoId}`);
+    await assertGetBlocked(techAToken, `/api/work-orders/${plantBWoId}`, () => {});
 
     // GET capabilities
     const capRes = await expectFailure(techAToken, 'GET', `/api/work-orders/${plantBWoId}/capabilities`);
@@ -220,7 +219,7 @@ test('UAT-09: Scenario H — Cross-Plant Security Isolation', async () => {
     // ── GET operations ──
 
     // GET WO detail — must return 403 (plant isolation)
-    await assertGetBlocked(supervisorAToken, `/api/work-orders/${plantBWoId}`);
+    await assertGetBlocked(supervisorAToken, `/api/work-orders/${plantBWoId}`, () => {});
 
     // GET capabilities
     const capRes = await expectFailure(supervisorAToken, 'GET', `/api/work-orders/${plantBWoId}/capabilities`);
@@ -316,7 +315,7 @@ test('UAT-09: Scenario H — Cross-Plant Security Isolation', async () => {
     // ── GET operations ──
 
     // GET WO detail — must return 403 (plant isolation)
-    await assertGetBlocked(plannerAToken, `/api/work-orders/${plantBWoId}`);
+    await assertGetBlocked(plannerAToken, `/api/work-orders/${plantBWoId}`, () => {});
 
     // GET capabilities
     const capRes = await expectFailure(plannerAToken, 'GET', `/api/work-orders/${plantBWoId}/capabilities`);
