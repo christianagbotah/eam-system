@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { supervisorVerify, requestRework, type SessionContext, type AuditContext } from '@/services/workExecution.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
@@ -36,6 +37,17 @@ export async function POST(
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
+
+      await db.repairCompletion.updateMany({
+        where: { workOrderId: id },
+        data: {
+          supervisorStatus: 'rework_requested',
+          reworkReason: body.reason || null,
+          supervisorReviewNotes: body.notes || null,
+          reworkCount: { increment: 1 },
+        },
+      });
+
       return NextResponse.json({ success: true, data: result.data });
     }
 
@@ -55,6 +67,16 @@ export async function POST(
         ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
       }, { status });
     }
+
+    await db.repairCompletion.updateMany({
+      where: { workOrderId: id },
+      data: {
+        supervisorStatus: 'approved',
+        supervisorApprovedById: session.userId,
+        supervisorApprovedAt: new Date(),
+        supervisorReviewNotes: body.notes || null,
+      },
+    });
 
     return NextResponse.json({ success: true, data: result.data });
   } catch (error: unknown) {
