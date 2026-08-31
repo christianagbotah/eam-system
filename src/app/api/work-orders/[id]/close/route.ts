@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { plannerClose, type SessionContext, type AuditContext } from '@/services/workExecution.service';
 import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
@@ -54,6 +55,16 @@ export async function POST(
         ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
       }, { status });
     }
+
+    await db.repairCompletion.updateMany({
+      where: { workOrderId: id },
+      data: {
+        plannerStatus: 'closed',
+        plannerClosedById: session.userId,
+        plannerClosedAt: new Date(),
+        closureNotes: body.notes || null,
+      },
+    });
 
     return NextResponse.json({ success: true, data: result.data });
   } catch (error: unknown) {
