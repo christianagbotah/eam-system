@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { submitCompletion, type SessionContext, type AuditContext } from '@/services/workExecution.service';
@@ -27,7 +28,7 @@ export async function POST(
 
     // Normalize legacy/mixed time-log rows before the authoritative cost snapshot.
     // This never closes active timers; readiness checks still block those normally.
-    await normalizeWorkOrderTimeLogs(id);
+    const normalizedTime = await normalizeWorkOrderTimeLogs(id);
 
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
@@ -47,6 +48,17 @@ export async function POST(
         error: result.error,
         ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
       }, { status });
+    }
+
+    // The execution service currently also tracks calendar elapsed time from
+    // actualStart. For cost/accounting purposes actualHours must remain labor
+    // effort from canonical time logs, not wall-clock WO elapsed time.
+    await db.workOrder.update({
+      where: { id },
+      data: { actualHours: normalizedTime.laborHours },
+    });
+    if (result.data) {
+      result.data.actualHours = normalizedTime.laborHours;
     }
 
     return NextResponse.json({ success: true, data: result.data });
