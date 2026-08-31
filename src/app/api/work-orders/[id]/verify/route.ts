@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { requestRework, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import {
+  requestRepairRework,
+  type ReworkSessionContext,
+  type ReworkAuditContext,
+} from '@/services/workOrderRework.service';
 import {
   verifyRepairWorkOrder,
   type VerificationSessionContext,
@@ -32,27 +35,21 @@ export async function POST(
     const auditCtx = extractAuditContext(request);
 
     if (body.action === 'rework') {
-      const result = await requestRework(id, session as SessionContext, {
-        reason: body.reason,
-        category: body.category,
-        evidence: body.evidence,
-        auditCtx: auditCtx as AuditContext,
-      });
+      const result = await requestRepairRework(
+        id,
+        session as ReworkSessionContext,
+        {
+          reason: body.reason,
+          category: body.category,
+          evidence: body.evidence,
+          notes: body.notes,
+          auditCtx: auditCtx as ReworkAuditContext,
+        },
+      );
 
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
-
-      // requestRework() owns the rework counter transactionally. Keep only the
-      // review-state metadata aligned here; never increment the counter twice.
-      await db.repairCompletion.updateMany({
-        where: { workOrderId: id },
-        data: {
-          supervisorStatus: 'rework_requested',
-          reworkReason: body.reason || null,
-          supervisorReviewNotes: body.notes || null,
-        },
-      });
 
       return NextResponse.json({ success: true, data: result.data });
     }
