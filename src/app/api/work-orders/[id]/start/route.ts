@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { startWork, type SessionContext, type AuditContext } from '@/services/workExecution.service';
@@ -19,10 +20,46 @@ export async function POST(
     }
 
     const { id } = await params;
-
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
+
+    // A technician may only own one live execution timer at a time. Enforce
+    // this at the canonical WO start boundary, not only in the time-log API.
+    if (!isAdmin(session)) {
+      const activeSession = await db.workOrderTimeLog.findFirst({
+        where: {
+          userId: session.userId,
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+        },
+        orderBy: { timestamp: 'desc' },
+        include: { workOrder: { select: { id: true, woNumber: true } } },
+      });
+
+      if (activeSession) {
+        if (activeSession.workOrderId === id) {
+          return NextResponse.json({
+            success: false,
+            error: 'You already have an active work session on this work order',
+            conflict: {
+              workOrderId: id,
+              woNumber: activeSession.workOrder?.woNumber,
+              startedAt: (activeSession.startTime || activeSession.timestamp).toISOString(),
+            },
+          }, { status: 409 });
+        }
+
+        return NextResponse.json({
+          success: false,
+          error: `You already have an active work session on WO #${activeSession.workOrder?.woNumber || 'unknown'}. Stop or hand over that session before starting another work order.`,
+          conflict: {
+            workOrderId: activeSession.workOrderId,
+            woNumber: activeSession.workOrder?.woNumber,
+            startedAt: (activeSession.startTime || activeSession.timestamp).toISOString(),
+          },
+        }, { status: 409 });
+      }
+    }
 
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
