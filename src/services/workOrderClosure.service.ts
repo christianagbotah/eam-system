@@ -70,11 +70,11 @@ export async function closeRepairWorkOrder(
         isLocked: true,
         assetId: true,
         actualStart: true,
-        downtimeMinutes: true,
         plannerId: true,
         assignedTo: true,
         teamLeaderId: true,
         maintenanceRequest: { select: { requestedBy: true } },
+        workOrderDowntimes: { select: { durationMinutes: true } },
         workOrderComponents: {
           select: {
             componentRegistryId: true,
@@ -132,6 +132,10 @@ export async function closeRepairWorkOrder(
       }
     }
 
+    const downtimeMinutes = Math.round(
+      wo.workOrderDowntimes.reduce((sum, downtime) => sum + (downtime.durationMinutes || 0), 0),
+    );
+
     const transition = await executeTransition('work_order', workOrderId, 'closed', session, {
       extraData: {
         actualHours: costs.laborHours,
@@ -171,7 +175,6 @@ export async function closeRepairWorkOrder(
     }
 
     if (failureMode && failureComponentId) {
-      const finalCost = costs.totalActualCost;
       await tx.failureRecord.upsert({
         where: { id: `wo-${workOrderId}` },
         update: {
@@ -181,8 +184,8 @@ export async function closeRepairWorkOrder(
           failureCause: options.failureCause?.trim() || null,
           correctiveAction: options.correctiveAction?.trim() || null,
           resolvedAt: closedAt,
-          repairCost: finalCost,
-          downtimeMinutes: wo.downtimeMinutes ?? 0,
+          repairCost: costs.totalActualCost,
+          downtimeMinutes,
           rootCause: options.failureCause?.trim() || null,
           preventiveAction: options.pmRecommendation?.trim() || null,
           reportedById: session.userId,
@@ -197,8 +200,8 @@ export async function closeRepairWorkOrder(
           correctiveAction: options.correctiveAction?.trim() || null,
           detectedAt: wo.actualStart || closedAt,
           resolvedAt: closedAt,
-          repairCost: finalCost,
-          downtimeMinutes: wo.downtimeMinutes ?? 0,
+          repairCost: costs.totalActualCost,
+          downtimeMinutes,
           reportedById: session.userId,
           rootCause: options.failureCause?.trim() || null,
           preventiveAction: options.pmRecommendation?.trim() || null,
