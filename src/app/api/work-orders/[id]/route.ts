@@ -87,7 +87,7 @@ export async function GET(
       workOrderComponents: {
         include: {
           componentRegistry: {
-            select: { id: true, name: true, componentCode: true, componentType: true, criticality: true, healthScore: true, condition: true },
+            select: { id: true, name: true, componentCode: true, componentType: true, criticality: true, healthScore: true, lifecycleStatus: true },
           },
         },
         orderBy: { createdAt: 'asc' as const },
