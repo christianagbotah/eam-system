@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { supervisorVerify, requestRework, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import { requestRework, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import {
+  verifyRepairWorkOrder,
+  type VerificationSessionContext,
+  type VerificationAuditContext,
+} from '@/services/workOrderVerification.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
@@ -38,8 +43,8 @@ export async function POST(
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
 
-      // requestRework() owns the rework counter transactionally. Keep the
-      // completion-review status aligned here without incrementing it twice.
+      // requestRework() owns the rework counter transactionally. Keep only the
+      // review-state metadata aligned here; never increment the counter twice.
       await db.repairCompletion.updateMany({
         where: { workOrderId: id },
         data: {
@@ -52,32 +57,27 @@ export async function POST(
       return NextResponse.json({ success: true, data: result.data });
     }
 
-    // Verify path
-    const result = await supervisorVerify(id, session as SessionContext, {
-      notes: body.notes,
-      qualityRating: body.qualityRating,
-      checklistPassed: body.checklistPassed,
-      auditCtx: auditCtx as AuditContext,
-    });
+    const result = await verifyRepairWorkOrder(
+      id,
+      session as VerificationSessionContext,
+      {
+        notes: body.notes,
+        qualityRating: body.qualityRating,
+        checklistPassed: body.checklistPassed,
+        auditCtx: auditCtx as VerificationAuditContext,
+      },
+    );
 
     if (!result.success) {
       const status = result.readiness ? 422 : 400;
       return NextResponse.json({
         success: false,
         error: result.error,
-        ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
+        ...(result.readiness
+          ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings }
+          : {}),
       }, { status });
     }
-
-    await db.repairCompletion.updateMany({
-      where: { workOrderId: id },
-      data: {
-        supervisorStatus: 'approved',
-        supervisorApprovedById: session.userId,
-        supervisorApprovedAt: new Date(),
-        supervisorReviewNotes: body.notes || null,
-      },
-    });
 
     return NextResponse.json({ success: true, data: result.data });
   } catch (error: unknown) {
