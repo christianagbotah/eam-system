@@ -6,6 +6,14 @@ export interface TimeLogNormalizationResult {
   normalizedLogIds: string[];
 }
 
+type PlannedTimeLogUpdate = {
+  id: string;
+  data: {
+    startTime?: Date;
+    duration?: number;
+  };
+};
+
 /**
  * Normalize legacy/mixed WO time-log rows before authoritative cost calculation.
  *
@@ -39,13 +47,12 @@ export async function normalizeWorkOrderTimeLogs(
     },
   });
 
-  const updates: Array<ReturnType<typeof db.workOrderTimeLog.update>> = [];
-  const normalizedLogIds: string[] = [];
+  const plannedUpdates: PlannedTimeLogUpdate[] = [];
   let durationBackfilledCount = 0;
 
   for (const log of logs) {
     const normalizedStart = log.startTime ?? log.timestamp;
-    const data: { startTime?: Date; duration?: number } = {};
+    const data: PlannedTimeLogUpdate['data'] = {};
 
     if (!log.startTime) {
       data.startTime = normalizedStart;
@@ -61,23 +68,24 @@ export async function normalizeWorkOrderTimeLogs(
     }
 
     if (Object.keys(data).length > 0) {
-      normalizedLogIds.push(log.id);
-      updates.push(
-        db.workOrderTimeLog.update({
-          where: { id: log.id },
-          data,
-        }),
-      );
+      plannedUpdates.push({ id: log.id, data });
     }
   }
 
-  if (updates.length > 0) {
-    await db.$transaction(updates);
+  if (plannedUpdates.length > 0) {
+    await db.$transaction(async (tx) => {
+      for (const update of plannedUpdates) {
+        await tx.workOrderTimeLog.update({
+          where: { id: update.id },
+          data: update.data,
+        });
+      }
+    });
   }
 
   return {
-    normalizedCount: normalizedLogIds.length,
+    normalizedCount: plannedUpdates.length,
     durationBackfilledCount,
-    normalizedLogIds,
+    normalizedLogIds: plannedUpdates.map((update) => update.id),
   };
 }
