@@ -8,6 +8,7 @@ import { test, expect, type BrowserContext } from '@playwright/test';
 import {
   authenticateAs,
   navigateToWODetail,
+  expectWODetailStatus,
 } from './helpers/auth';
 import {
   getToken,
@@ -74,8 +75,6 @@ test('UAT-05: Scenario E — Rework Flow', async ({ browser }) => {
       fetched = await getWO(techToken, woId);
       expect(fetched.status).toBe('in_progress');
 
-      // startWO opens a live timer. Close it before recording a separate manual
-      // labor entry so the test cannot double-count overlapping execution time.
       const stopped = await apiCall(techToken, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
       expect(stopped.status).toBe(200);
       expect(stopped.data.success).toBe(true);
@@ -96,7 +95,7 @@ test('UAT-05: Scenario E — Rework Flow', async ({ browser }) => {
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('completed', { timeout: 10_000 });
+      await expectWODetailStatus(page, 'completed');
       await page.close();
     });
 
@@ -111,7 +110,7 @@ test('UAT-05: Scenario E — Rework Flow', async ({ browser }) => {
       await authenticateAs(context, 'supervisor');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('in_progress', { timeout: 10_000 });
+      await expectWODetailStatus(page, 'in_progress');
       await page.close();
     });
 
@@ -154,7 +153,7 @@ test('UAT-05: Scenario E — Rework Flow', async ({ browser }) => {
       await authenticateAs(context, 'planner');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('closed', { timeout: 10_000 });
+      await expectWODetailStatus(page, 'closed');
       await page.close();
     });
   } finally {
