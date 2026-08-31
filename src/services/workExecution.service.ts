@@ -411,6 +411,7 @@ export async function calculateAuthoritativeCosts(
           userId: true,
           action: true,
           duration: true,
+          timestamp: true,
           startTime: true,
           endTime: true,
           breakMinutes: true,
@@ -435,42 +436,29 @@ export async function calculateAuthoritativeCosts(
   // ── 1. Labor hours from time logs ──
   let laborHours = 0;
 
-  // Strategy: prefer explicit `duration` field when set, else calculate from startTime/endTime.
-  // Only consider actionable log entries (start, resume, complete) paired with their
-  // corresponding end times. We iterate in chronological order.
+  // Strategy: prefer each row's explicit duration. For legacy closed execution
+  // sessions without duration, derive elapsed hours from start/end. Both forms
+  // may legitimately exist on the same WO, so they must be summed together.
   const sortedLogs = [...wo.timeLogs].sort(
     (a, b) => (a.startTime?.getTime() ?? a.timestamp.getTime()) - (b.startTime?.getTime() ?? b.timestamp.getTime()),
   );
 
-  // For logs with explicit duration, sum those directly (in hours)
   let durationSum = 0;
-  let durationCount = 0;
-
-  // For logs without duration but with start/end, calculate
   let calculatedHours = 0;
-  let calculatedCount = 0;
 
   for (const log of sortedLogs) {
     if (log.action === 'start' || log.action === 'resume') {
-      // Prefer explicit duration
       if (log.duration != null && log.duration > 0) {
         durationSum += log.duration;
-        durationCount++;
       } else if (log.startTime && log.endTime) {
         const elapsed = (log.endTime.getTime() - log.startTime.getTime()) / (1000 * 60 * 60);
         const breakDeduction = (log.breakMinutes ?? 0) / 60;
         calculatedHours += Math.max(0, elapsed - breakDeduction);
-        calculatedCount++;
       }
     }
   }
 
-  // Use duration sum if we have any; fall back to calculated
-  if (durationCount > 0) {
-    laborHours = Math.round(durationSum * 100) / 100;
-  } else {
-    laborHours = Math.round(calculatedHours * 100) / 100;
-  }
+  laborHours = Math.round((durationSum + calculatedHours) * 100) / 100;
 
   if (laborHours === 0 && wo.timeLogs.length > 0) {
     warnings.push('Labor hours resolved to 0 despite time log entries — check for missing duration/start/end data');
@@ -1103,19 +1091,13 @@ export async function submitCompletion(
 
   const now = new Date();
 
-  // Calculate actual hours from actualStart
-  let actualHours = wo.actualHours;
-  if (wo.actualStart) {
-    const hours = (now.getTime() - new Date(wo.actualStart).getTime()) / (1000 * 60 * 60);
-    actualHours = Math.round(hours * 100) / 100;
-  }
-
   // Execute in a single transaction
   const txResult = await db.$transaction(async (tx) => {
     // 1. Calculate authoritative costs (server-side only)
     const costs = await calculateAuthoritativeCosts(workOrderId, tx);
     if (!costs) throw new Error('Failed to calculate authoritative costs: work order not found in transaction');
 
+    const actualHours = costs.laborHours;
     const laborCost = costs.actualLaborCost;
     const partsCost = costs.actualMaterialCost;
     const contractorCost = costs.actualContractorCost;
@@ -1133,8 +1115,8 @@ export async function submitCompletion(
         partsCost,
         contractorCost,
         totalCost,
-        appliedLaborRate: costs.appliedLaborRate,
-        appliedLaborCurrency: costs.appliedLaborCurrency,
+        laborRateApplied: costs.appliedLaborRate,
+        laborCurrency: costs.appliedLaborCurrency,
       },
       tx,
     });
@@ -1186,7 +1168,7 @@ export async function submitCompletion(
       }
     }
 
-    return { costs, result };
+    return { costs, result, actualHours };
   });
 
   // Notify after transactional success (non-blocking)
@@ -1197,7 +1179,7 @@ export async function submitCompletion(
     data: {
       status: 'completed',
       actualEnd: now,
-      actualHours,
+      actualHours: txResult.actualHours,
       totalCost: txResult.costs.totalActualCost,
       ...(txResult.costs.incompleteLaborRate ? { costWarnings: txResult.costs.warnings } : {}),
     },
@@ -1383,6 +1365,7 @@ export async function plannerClose(
       await tx.workOrder.update({
         where: { id: workOrderId },
         data: {
+          actualHours: costs.laborHours,
           laborCost: costs.actualLaborCost,
           partsCost: costs.actualMaterialCost,
           contractorCost: costs.actualContractorCost,
