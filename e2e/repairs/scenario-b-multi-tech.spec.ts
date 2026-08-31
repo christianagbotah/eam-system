@@ -16,6 +16,7 @@ import {
   approveMR,
   convertMR,
   startWO,
+  logTime,
   completeWO,
   verifyWO,
   closeWO,
@@ -112,25 +113,34 @@ test('UAT-02: Scenario B — Multi-Tech Team Flow', async ({ browser }) => {
       expect(data.success).toBe(false);
     });
 
-    await test.step('B4: Team leader completes the WO', async () => {
+    await test.step('B4: Team leader completes the WO with deterministic labor', async () => {
       const token = await getToken('tech_leader');
 
-      // Starting the WO creates a live execution timer. Completion readiness
-      // correctly requires that timer to be stopped explicitly first.
       const stopped = await apiCall(token, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
       expect(stopped.status).toBe(200);
       expect(stopped.data.success).toBe(true);
+
+      // Closing a zero-cost WO is intentionally blocked. Record deterministic
+      // labor effort so B tests team governance rather than incomplete costing.
+      const labor = await logTime(token, woId, {
+        action: 'start',
+        manualHours: 1,
+        notes: 'Motor overhaul and final functional test',
+      });
+      expect(labor.id).toBeTruthy();
 
       const result = await completeWO(token, woId, 'Motor rewound and tested. All connections verified.');
       expect(result).toBeTruthy();
 
       const fetched = await getWO(token, woId);
       expect(fetched.status).toBe('completed');
+      expect(Number(fetched.actualHours)).toBeGreaterThanOrEqual(1);
+      expect(Number(fetched.totalCost)).toBeGreaterThan(0);
 
       await authenticateAs(context, 'tech_leader');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('completed', { timeout: 10_000 });
+      await expect(page.locator('body')).toContainText('COMPLETED', { timeout: 10_000 });
       await page.close();
     });
 
