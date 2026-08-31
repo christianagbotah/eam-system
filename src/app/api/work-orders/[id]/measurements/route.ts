@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 export async function POST(
   request: NextRequest,
@@ -11,10 +11,6 @@ export async function POST(
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
-
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
@@ -31,7 +27,6 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'unit is required' }, { status: 400 });
     }
 
-    // Fetch WO with its components
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
@@ -39,6 +34,8 @@ export async function POST(
         status: true,
         isLocked: true,
         plantId: true,
+        assignedTo: true,
+        teamMembers: { select: { userId: true, accessLevel: true } },
         workOrderComponents: { select: { componentRegistryId: true } },
       },
     });
@@ -46,13 +43,27 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Plant scope check (IDOR protection)
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // Closed/locked WO immutability guard
+    const isAssignedTechnician = wo.assignedTo === session.userId;
+    const isExecutionTeamMember = wo.teamMembers.some(
+      (member) => member.userId === session.userId && member.accessLevel !== 'read_only',
+    );
+    const hasExecutionPermission =
+      hasPermission(session, 'work_orders.update') ||
+      hasPermission(session, 'work_orders.start') ||
+      hasPermission(session, 'work_orders.complete');
+
+    if (!isAdmin(session) && (!(isAssignedTechnician || isExecutionTeamMember) || !hasExecutionPermission)) {
+      return NextResponse.json(
+        { success: false, error: 'Only an assigned execution actor can record measurements for this work order' },
+        { status: 403 },
+      );
+    }
+
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is locked and cannot be modified' }, { status: 409 });
     }
@@ -60,7 +71,6 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order is closed and cannot be modified' }, { status: 409 });
     }
 
-    // Resolve componentId
     let resolvedComponentId = componentId;
     if (!resolvedComponentId) {
       if (wo.workOrderComponents.length > 0) {
@@ -68,21 +78,19 @@ export async function POST(
       } else {
         return NextResponse.json(
           { success: false, error: 'No components linked to this work order. Provide a componentId.' },
-          { status: 400 }
+          { status: 400 },
         );
       }
     } else {
-      // Validate the componentId belongs to this WO
-      const match = wo.workOrderComponents.find(c => c.componentRegistryId === resolvedComponentId);
+      const match = wo.workOrderComponents.find((component) => component.componentRegistryId === resolvedComponentId);
       if (!match) {
         return NextResponse.json(
           { success: false, error: 'componentId does not belong to this work order' },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
 
-    // Determine alarm status
     let isAlarm = false;
     const minThreshold = acceptableMin ?? null;
     const maxThreshold = acceptableMax ?? null;
@@ -125,40 +133,50 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const componentIdFilter = searchParams.get('componentId') || undefined;
 
-    // Plant scope check for GET (read-only — still enforce plant isolation)
-    const woForGet = await db.workOrder.findUnique({
+    const wo = await db.workOrder.findUnique({
       where: { id },
-      select: { id: true, plantId: true },
+      select: {
+        id: true,
+        plantId: true,
+        assignedTo: true,
+        maintenanceRequest: { select: { requestedBy: true } },
+        teamMembers: { select: { userId: true } },
+        workOrderComponents: { select: { componentRegistryId: true } },
+      },
     });
+    if (!wo) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, woForGet?.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // Get all component IDs for this WO
-    const woComponents = await db.workOrderComponent.findMany({
-      where: { workOrderId: id },
-      select: { componentRegistryId: true },
-    });
+    const canViewAll =
+      isAdmin(session) ||
+      hasPermission(session, 'work_orders.view') ||
+      hasPermission(session, 'work_orders.view_all');
+    const isOwn =
+      wo.assignedTo === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId) ||
+      wo.maintenanceRequest?.requestedBy === session.userId;
 
-    if (woComponents.length === 0) {
+    if (!canViewAll && !(hasPermission(session, 'work_orders.view_own') && isOwn)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const componentIds = wo.workOrderComponents.map((component) => component.componentRegistryId);
+    if (componentIds.length === 0) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    const componentIds = woComponents.map(c => c.componentRegistryId);
-
-    if (componentIdFilter) {
-      if (!componentIds.includes(componentIdFilter)) {
-        return NextResponse.json({ success: false, error: 'componentId does not belong to this work order' }, { status: 400 });
-      }
+    if (componentIdFilter && !componentIds.includes(componentIdFilter)) {
+      return NextResponse.json({ success: false, error: 'componentId does not belong to this work order' }, { status: 400 });
     }
 
     const readings = await db.componentConditionReading.findMany({
