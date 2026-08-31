@@ -55,7 +55,8 @@ async function loginViaApi(user: UatUser, baseURL: string): Promise<string> {
 
 /**
  * Inject auth state into the browser context so the SPA is already logged in.
- * Sets localStorage items that the Zustand auth store reads on mount.
+ * The auth store will read eam_token on mount and populate the remaining user,
+ * role, permission and plant state through /api/auth/me.
  */
 export async function authenticateAs(
   context: BrowserContext,
@@ -140,13 +141,21 @@ export async function navigateToWOList(page: Page): Promise<void> {
 /** Navigate to a specific work order detail by ID */
 export async function navigateToWODetail(page: Page, woId: string): Promise<void> {
   await page.goto(`/#/wo-detail?id=${woId}`);
-  // Wait for either the status badge or the WO identifier to appear.
-  // Locator.or() avoids mixing CSS and text-selector syntax in one selector string.
-  const loadedMarker = page
-    .locator('[data-testid="wo-status"]')
-    .or(page.getByText(woId, { exact: false }))
-    .first();
-  await expect(loadedMarker).toBeVisible({ timeout: 15_000 });
+
+  // The wo-detail hash route renders the normal Work Orders page and opens a
+  // shadcn Sheet containing WODetailPage. The UI displays woNumber (WO-...)
+  // rather than the raw database UUID, so wait for the real sheet/header.
+  const detailSheet = page.getByRole('dialog').first();
+  await expect(detailSheet).toBeVisible({ timeout: 15_000 });
+  await expect(detailSheet.getByText(/^WO-[A-Z0-9-]+$/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(detailSheet).not.toContainText('Work order not found');
+}
+
+/** Assert the human-visible WO status rendered by StatusBadge */
+export async function expectWODetailStatus(page: Page, status: string): Promise<void> {
+  const expectedLabel = status.replace(/_/g, ' ').toUpperCase();
+  const detailSheet = page.getByRole('dialog').first();
+  await expect(detailSheet.getByText(expectedLabel, { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 }
 
 /** Navigate to the repairs dashboard */
