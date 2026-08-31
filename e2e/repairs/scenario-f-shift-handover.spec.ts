@@ -197,5 +197,12 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
     );
     expect(shData.data.status).toBe('confirmed');
     expect(shData.data.receivedById).toBe(incomingUserId);
+
+    // F validates an ongoing handover lifecycle rather than completion. Close
+    // the receiver's live timer after proving the resume so later scenarios
+    // do not inherit an unrelated active-session conflict.
+    const stopped = await apiCall(incomingToken, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
+    expect(stopped.status).toBe(200);
+    expect(stopped.data.success).toBe(true);
   });
 });
