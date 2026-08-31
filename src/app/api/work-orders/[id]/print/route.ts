@@ -16,8 +16,12 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
-    // Permission gate: require WO view/export or admin
-    if (!hasAnyPermission(session, ['work_orders.view', 'work_orders.export', 'reports.export', 'reports.view']) && !isAdmin(session)) {
+    const hasBroadAccess =
+      isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.view', 'work_orders.view_all', 'work_orders.export', 'reports.export', 'reports.view']);
+    const hasOwnAccess = hasAnyPermission(session, ['work_orders.view_own']);
+
+    if (!hasBroadAccess && !hasOwnAccess) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -97,6 +101,17 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
+    // `work_orders.view_own` is deliberately scoped to execution ownership.
+    // It must never become a broad WO export permission.
+    if (!hasBroadAccess) {
+      const isAssigned = wo.assignedTo === session.userId;
+      const isTeamLeader = wo.teamLeaderId === session.userId;
+      const isTeamMember = wo.teamMembers.some((member) => member.userId === session.userId);
+      if (!isAssigned && !isTeamLeader && !isTeamMember) {
+        return NextResponse.json({ success: false, error: 'You do not have access to print this work order' }, { status: 403 });
+      }
+    }
+
     // ── Fetch Asset separately (no Prisma relation) ──
     let asset = null;
     let assetCategory = null;
@@ -116,9 +131,9 @@ export async function GET(
     // ── Fetch InventoryItems for materials ──
     const materialItemIds = wo.materials
       .map((m) => m.itemId)
-      .filter((id): id is string => !!id);
+      .filter((itemId): itemId is string => !!itemId);
 
-    let inventoryItemMap: Record<string, {
+    const inventoryItemMap: Record<string, {
       itemCode: string | null;
       unitOfMeasure: string;
       supplier: string | null;
@@ -229,7 +244,7 @@ export async function GET(
             phone: '',
             email: '',
             website: '',
-            currency: 'USD',
+            currency: 'GHS',
           },
     };
 
