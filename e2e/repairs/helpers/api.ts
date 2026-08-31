@@ -158,9 +158,23 @@ export async function lookupToolId(token: string, toolName: string): Promise<str
 
 export async function createMR(
   token: string,
-  data: { title: string; description: string; assetId: string; priority: string; plantId: string },
+  data: {
+    title: string;
+    description: string;
+    assetId?: string;
+    priority: string;
+    plantId: string;
+    supervisorId?: string;
+  },
 ) {
-  const { status, data: resp } = await apiCall(token, 'POST', '/api/maintenance-requests', data);
+  // UAT requests model a real approval assignment explicitly instead of relying
+  // on a test-only production fallback. The production endpoint still validates
+  // the supervisor role, active status, and plant membership.
+  const supervisorId = data.supervisorId ?? await lookupUserByKey(token, 'supervisor');
+  const { status, data: resp } = await apiCall(token, 'POST', '/api/maintenance-requests', {
+    ...data,
+    supervisorId,
+  });
   if (status < 200 || status >= 300) throw new Error(`MR creation failed: ${status} ${JSON.stringify(resp)}`);
   return resp.data;
 }
