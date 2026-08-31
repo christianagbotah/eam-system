@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { submitCompletion, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 
 export async function POST(
@@ -23,6 +24,10 @@ export async function POST(
     // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
+
+    // Normalize legacy/mixed time-log rows before the authoritative cost snapshot.
+    // This never closes active timers; readiness checks still block those normally.
+    await normalizeWorkOrderTimeLogs(id);
 
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
