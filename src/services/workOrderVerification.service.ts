@@ -1,0 +1,162 @@
+import { db } from '@/lib/db';
+import { executeTransition } from '@/lib/state-machine';
+import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderReadiness.service';
+import { sendRepairNotification } from '@/lib/repair-notifications';
+import { buildAuditData } from '@/lib/audit-helpers';
+
+export interface VerificationSessionContext {
+  userId: string;
+  fullName?: string;
+  roles: string[];
+  permissions: string[];
+}
+
+export interface VerificationAuditContext {
+  ipAddress?: string;
+  userAgent?: string;
+  sessionId?: string;
+  plantId?: string;
+  departmentId?: string;
+}
+
+export interface VerifyRepairOptions {
+  notes?: string;
+  qualityRating?: number;
+  checklistPassed?: boolean;
+  auditCtx?: VerificationAuditContext;
+}
+
+export type VerifyRepairResult = {
+  success: boolean;
+  data?: { status: 'verified' };
+  error?: string;
+  readiness?: ReadinessCheckResult;
+};
+
+/**
+ * Canonical supervisor verification for a completed repair WO.
+ *
+ * WorkOrder deliberately has no verifiedBy/qualityRating columns. Verification
+ * evidence belongs to RepairCompletion + comments/audit history, while the WO
+ * state machine owns only the status transition to `verified`.
+ */
+export async function verifyRepairWorkOrder(
+  workOrderId: string,
+  session: VerificationSessionContext,
+  options: VerifyRepairOptions,
+): Promise<VerifyRepairResult> {
+  const verifiedAt = new Date();
+
+  const outcome = await db.$transaction(async (tx) => {
+    const wo = await tx.workOrder.findUnique({
+      where: { id: workOrderId },
+      select: {
+        id: true,
+        woNumber: true,
+        title: true,
+        status: true,
+        plannerId: true,
+        assignedTo: true,
+        teamLeaderId: true,
+      },
+    });
+    if (!wo) return { success: false as const, error: 'Work order not found' };
+
+    const readiness = await checkReadiness(workOrderId, 'verify', tx);
+    if (!readiness.ready) {
+      return {
+        success: false as const,
+        error: 'Work order is not ready for verification',
+        readiness,
+      };
+    }
+
+    const completion = await tx.repairCompletion.findUnique({
+      where: { workOrderId },
+      select: { id: true },
+    });
+    if (!completion) {
+      return {
+        success: false as const,
+        error: 'No completion report has been submitted for this work order',
+        readiness,
+      };
+    }
+
+    // No extraData here: verifiedBy/qualityRating are NOT WorkOrder columns.
+    const transition = await executeTransition('work_order', workOrderId, 'verified', session, { tx });
+    if (!transition.success) throw new Error(transition.error);
+
+    const ratingText = options.qualityRating != null
+      ? `Quality Rating: ${options.qualityRating}/5`
+      : null;
+    const reviewNotes = [options.notes?.trim() || null, ratingText]
+      .filter((value): value is string => Boolean(value))
+      .join(' | ') || null;
+
+    await tx.repairCompletion.update({
+      where: { workOrderId },
+      data: {
+        supervisorStatus: 'approved',
+        supervisorApprovedById: session.userId,
+        supervisorApprovedAt: verifiedAt,
+        supervisorReviewNotes: reviewNotes,
+      },
+    });
+
+    const commentContent = reviewNotes
+      ? `[Verification] ${reviewNotes}`
+      : `[Verification] Verified by ${session.fullName || 'supervisor'}`;
+    await tx.workOrderComment.create({
+      data: { workOrderId, userId: session.userId, content: commentContent },
+    });
+
+    await tx.auditLog.create({
+      data: buildAuditData(
+        'update',
+        'work_order',
+        workOrderId,
+        session.userId,
+        { status: wo.status },
+        {
+          status: 'verified',
+          supervisorApprovedById: session.userId,
+          supervisorApprovedAt: verifiedAt.toISOString(),
+          qualityRating: options.qualityRating ?? null,
+          checklistPassed: options.checklistPassed ?? null,
+        },
+        options.auditCtx,
+      ),
+    });
+
+    return {
+      success: true as const,
+      data: { status: 'verified' as const },
+      notify: {
+        woNumber: wo.woNumber,
+        woId: wo.id,
+        plannerId: wo.plannerId,
+        assignedTo: wo.assignedTo,
+        teamLeaderId: wo.teamLeaderId,
+      },
+    };
+  });
+
+  if (!outcome.success) return outcome;
+
+  const recipients = new Set(
+    [outcome.notify.plannerId, outcome.notify.assignedTo, outcome.notify.teamLeaderId]
+      .filter((userId): userId is string => Boolean(userId) && userId !== session.userId),
+  );
+  for (const userId of recipients) {
+    sendRepairNotification({
+      userId,
+      event: 'supervisor_verified',
+      woNumber: outcome.notify.woNumber,
+      woId: outcome.notify.woId,
+      title: session.fullName || 'Maintenance supervisor',
+    });
+  }
+
+  return { success: true, data: outcome.data };
+}
