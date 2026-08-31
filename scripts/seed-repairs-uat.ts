@@ -229,6 +229,29 @@ async function main() {
     },
   });
 
+  const pumpBearingComponent = await db.componentRegistry.upsert({
+    where: { componentCode: 'UAT-PUMP-BRG-DE' },
+    update: {
+      name: 'UAT Pump Drive-End Bearing',
+      assetId: asset.id,
+      componentType: 'component',
+      criticality: 'high',
+      lifecycleStatus: 'operational',
+      healthScore: 95,
+    },
+    create: {
+      componentCode: 'UAT-PUMP-BRG-DE',
+      name: 'UAT Pump Drive-End Bearing',
+      description: 'Drive-end bearing used for Repairs UAT condition measurements',
+      assetId: asset.id,
+      componentType: 'component',
+      criticality: 'high',
+      lifecycleStatus: 'operational',
+      healthScore: 95,
+      specification: '{}',
+    },
+  });
+
   for (let i = 0; i < DEFAULT_WO_TRANSITIONS.length; i++) {
     await upsertStatusTransition('work_order', DEFAULT_WO_TRANSITIONS[i], i);
   }
@@ -269,6 +292,21 @@ async function main() {
       tradeActivity: 'mechanical', estimatedHours: 8,
       failureDescription: 'Motor running hot, high current draw',
       safetyNotes: 'Electrical isolation required',
+    },
+  });
+
+  await db.workOrderComponent.upsert({
+    where: {
+      workOrderId_componentRegistryId: {
+        workOrderId: woA1.id,
+        componentRegistryId: pumpBearingComponent.id,
+      },
+    },
+    update: { notes: 'UAT baseline condition-measurement component' },
+    create: {
+      workOrderId: woA1.id,
+      componentRegistryId: pumpBearingComponent.id,
+      notes: 'UAT baseline condition-measurement component',
     },
   });
 
@@ -378,6 +416,7 @@ async function main() {
   console.log(`   Plants: ${plantA.name}, ${plantB.name}`);
   console.log(`   Users: ${Object.keys(userIds).length}`);
   console.log(`   Asset: ${asset.assetTag}`);
+  console.log(`   Component: ${pumpBearingComponent.componentCode}`);
   console.log(`   WOs: ${woA1.woNumber}, ${woA2.woNumber}`);
   console.log(`   MR: ${mrUat.requestNumber}`);
   console.log('   Labor Rate: GHS 50/hr normal, 75/hr OT');
