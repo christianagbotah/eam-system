@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { plannerClose, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
@@ -26,6 +27,10 @@ export async function POST(
     // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
+
+    // Planner close recalculates authoritative costs. Normalize timestamp-only
+    // legacy rows (including the completion marker) before that calculation.
+    await normalizeWorkOrderTimeLogs(id);
 
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
