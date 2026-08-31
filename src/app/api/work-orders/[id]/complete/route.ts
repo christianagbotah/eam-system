@@ -22,7 +22,6 @@ export async function POST(
 
     const { id } = await params;
 
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
@@ -50,9 +49,7 @@ export async function POST(
       }, { status });
     }
 
-    // The execution service also tracks calendar elapsed time from actualStart.
-    // For cost/accounting purposes actualHours must remain labor effort from
-    // canonical time logs, not wall-clock WO elapsed time.
+    // actualHours is labor effort, not wall-clock elapsed WO time.
     await db.workOrder.update({
       where: { id },
       data: { actualHours: normalizedTime.laborHours },
@@ -61,9 +58,8 @@ export async function POST(
       result.data.actualHours = normalizedTime.laborHours;
     }
 
-    // Materialize the canonical completion report required by the supervisor
-    // verification gate. All totals are derived from the server-side WO cost
-    // snapshot produced by submitCompletion; client-submitted totals are ignored.
+    // Materialize the completion report required by supervisor verification.
+    // Cost/hour totals come only from the authoritative server-side snapshot.
     const completedSnapshot = await db.workOrder.findUnique({
       where: { id },
       select: {
@@ -122,7 +118,13 @@ export async function POST(
         totalToolCost,
         totalDowntimeMinutes,
         supervisorStatus: 'pending_review',
+        supervisorApprovedById: null,
+        supervisorApprovedAt: null,
+        supervisorReviewNotes: null,
         plannerStatus: 'pending_closure',
+        plannerClosedById: null,
+        plannerClosedAt: null,
+        closureNotes: null,
       },
     });
 
