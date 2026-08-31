@@ -76,6 +76,8 @@ export async function POST(
         await tx.workOrderTimeLog.update({
           where: { id: log.id },
           data: {
+            // Canonicalize legacy execution-service rows that only populated timestamp.
+            startTime: log.startTime || log.timestamp,
             endTime: now,
             duration,
             notes: log.notes ? `${log.notes} | Timer stopped` : 'Timer stopped',
