@@ -39,7 +39,6 @@ export async function GET(
         assignedSupervisor: { select: { id: true, fullName: true } },
         assigner: { select: { id: true, fullName: true } },
         planner: { select: { id: true, fullName: true } },
-        plant: { select: { id: true, name: true, code: true, location: true, city: true, country: true } },
         maintenanceRequest: {
           select: {
             id: true, requestNumber: true, title: true, description: true,
@@ -155,6 +154,16 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not in your plant scope' }, { status: 403 });
     }
 
+    // WorkOrder stores plantId as a scalar and has no Prisma plant relation.
+    // Resolve the plant explicitly so the Closed WO Pack receives the expected
+    // descriptive plant shape without inventing a schema relation.
+    const plant: ClosedWOPackData['plant'] = wo.plantId
+      ? await db.plant.findUnique({
+          where: { id: wo.plantId },
+          select: { name: true, code: true, location: true, city: true, country: true },
+        })
+      : null;
+
     // ── Fetch Asset separately ──
     let asset: Record<string, unknown> | null = null;
     if (wo.assetId) {
@@ -219,7 +228,7 @@ export async function GET(
       supervisor: wo.assignedSupervisor ? { fullName: wo.assignedSupervisor.fullName } : null,
       planner: wo.planner ? { fullName: wo.planner.fullName } : null,
       assigner: wo.assigner ? { fullName: wo.assigner.fullName } : null,
-      plant: wo.plant,
+      plant,
       asset,
       components: wo.workOrderComponents.map((wc) => ({
         ...wc,
