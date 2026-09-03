@@ -93,7 +93,7 @@ export async function GET(
         },
         teamMemberRequests: {
           include: {
-            requestedBy: { select: { id: true, fullName: true } },
+            requestedByUser: { select: { id: true, fullName: true } },
             requestedUser: { select: { id: true, fullName: true } },
           },
           orderBy: { createdAt: 'asc' as const },
@@ -254,7 +254,10 @@ export async function GET(
       failureRecords: wo.failureRecords,
       repairCompletion: wo.repairCompletion,
       shiftHandovers: wo.shiftHandovers,
-      assistanceRequests: wo.teamMemberRequests,
+      assistanceRequests: wo.teamMemberRequests.map(({ requestedByUser, ...request }) => ({
+        ...request,
+        requestedBy: requestedByUser,
+      })),
       attachments,
       statusHistory: wo.statusHistory,
       workInstructionExecutions: wiExecutions,
