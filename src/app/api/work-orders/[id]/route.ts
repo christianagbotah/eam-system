@@ -16,7 +16,6 @@ export async function GET(
 
     const { id } = await params;
 
-    // Base include — always available
     const baseInclude = {
       assignee: { select: { id: true, fullName: true, username: true, department: true } },
       teamLeader: { select: { id: true, fullName: true, username: true } },
@@ -94,7 +93,6 @@ export async function GET(
       },
     } as const;
 
-    // Try full query with teamMemberRequests; fall back to base if table doesn't exist yet
     let wo = await db.workOrder.findUnique({
       where: { id },
       include: {
@@ -111,7 +109,6 @@ export async function GET(
     }).catch(() => null);
 
     if (!wo) {
-      // Fallback: try without teamMemberRequests (table may not exist yet on VPS)
       wo = await db.workOrder.findUnique({
         where: { id },
         include: baseInclude,
@@ -125,16 +122,13 @@ export async function GET(
       );
     }
 
-    // IDOR protection: ensure user has access to this work order's plant
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // Permission-based access control: enforce view_own restriction
     const hasViewAll = hasPermission(session, 'work_orders.view') || hasPermission(session, 'work_orders.view_all') || isAdmin(session);
     if (!hasViewAll) {
-      // User only has view_own — check if they are assigned or a team member
       const isAssignee = wo.assignedTo === session.userId;
       const isTeamMember = wo.teamMembers?.some((m: { userId: string }) => m.userId === session.userId);
       const isRequester = wo.maintenanceRequest?.requester?.id === session.userId;
@@ -143,7 +137,6 @@ export async function GET(
       }
     }
 
-    // Ensure relations arrays exist even if tables weren't queried
     if (!wo.teamMemberRequests) {
       (wo as Record<string, unknown>).teamMemberRequests = [];
     }
@@ -181,7 +174,6 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Plant authorization using central helper
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
@@ -193,7 +185,6 @@ export async function PUT(
       );
     }
 
-    // Don't allow updates on locked WOs — permanent lock, no exceptions (not even admin)
     if (existing.isLocked) {
       return NextResponse.json(
         { success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' },
@@ -201,7 +192,6 @@ export async function PUT(
       );
     }
 
-    // Don't allow edits once supervisor has verified the work (awaiting planner closure)
     if (existing.status === 'verified' || existing.status === 'closed') {
       return NextResponse.json(
         { success: false, error: 'Work order has been reviewed and cannot be edited. Status: ' + existing.status + '. Contact supervisor or planner if changes are needed.' },
@@ -209,9 +199,7 @@ export async function PUT(
       );
     }
 
-    // Build update data
     const updateData: Record<string, unknown> = {};
-    // Cost fields are NEVER client-editable — computed from time logs and material usage
     const immutableCostFields = [
       'totalCost', 'laborCost', 'partsCost', 'contractorCost',
       'laborRateApplied', 'laborCurrency', 'plantId',
@@ -227,7 +215,6 @@ export async function PUT(
       'assignmentType', 'assignedSupervisorId',
     ];
 
-    // Reject any attempt to set cost or plant fields
     for (const field of immutableCostFields) {
       if (body[field] !== undefined) {
         return NextResponse.json(
@@ -247,26 +234,28 @@ export async function PUT(
       }
     }
 
-    // Map deliveryDateRequired → plannedEnd (there is no separate deliveryDateRequired column)
     if (body.deliveryDateRequired !== undefined) {
       updateData['plannedEnd'] = body.deliveryDateRequired ? new Date(body.deliveryDateRequired) : null;
     }
 
-    // Cross-plant mutation guard: if changing assetId, verify asset belongs to same plant
     if (body.assetId !== undefined && body.assetId !== existing.assetId) {
-      const asset = await db.asset.findUnique({
-        where: { id: body.assetId },
-        select: { id: true, plantId: true },
-      });
-      if (asset && asset.plantId !== existing.plantId) {
-        return NextResponse.json(
-          { success: false, error: 'Cannot assign an asset from a different plant' },
-          { status: 400 },
-        );
+      if (body.assetId !== null) {
+        const asset = await db.asset.findUnique({
+          where: { id: body.assetId },
+          select: { id: true, plantId: true },
+        });
+        if (!asset) {
+          return NextResponse.json({ success: false, error: `Asset ${body.assetId} not found` }, { status: 400 });
+        }
+        if (!existing.plantId || asset.plantId !== existing.plantId) {
+          return NextResponse.json(
+            { success: false, error: 'Cannot assign an asset from a different plant' },
+            { status: 400 },
+          );
+        }
       }
     }
 
-    // Assignment plant integrity: verify assigned users have access to WO's plant
     const assignmentFields = ['assignedTo', 'teamLeaderId', 'assignedSupervisorId'] as const;
     const usersToValidate = new Set<string>();
     for (const field of assignmentFields) {
@@ -279,7 +268,10 @@ export async function PUT(
         if (m.userId) usersToValidate.add(m.userId);
       }
     }
-    if (usersToValidate.size > 0 && existing.plantId) {
+    if (usersToValidate.size > 0) {
+      if (!existing.plantId) {
+        return NextResponse.json({ success: false, error: 'Operational work order must have a plant before assigning users' }, { status: 400 });
+      }
       const plantAccess = await db.userPlant.findMany({
         where: {
           userId: { in: Array.from(usersToValidate) },
@@ -295,6 +287,96 @@ export async function PUT(
             { status: 400 },
           );
         }
+      }
+    }
+
+    type PlannedPart = {
+      id: string;
+      itemId: string;
+      itemName: string;
+      itemCode: string;
+      quantity: number;
+      unit: string;
+      unitCost: number;
+      notes: string;
+    };
+    const resolvedParts: PlannedPart[] | null = Array.isArray(body.requiredParts) ? [] : null;
+    if (resolvedParts) {
+      if (!existing.plantId) {
+        return NextResponse.json({ success: false, error: 'Operational work order must have a plant before planning materials' }, { status: 400 });
+      }
+      for (const rawPart of body.requiredParts) {
+        const itemId = typeof rawPart === 'string' ? rawPart : rawPart?.itemId;
+        if (!itemId || typeof itemId !== 'string') {
+          return NextResponse.json({ success: false, error: 'Each required part must reference a valid inventory itemId' }, { status: 400 });
+        }
+        const invItem = await db.inventoryItem.findUnique({
+          where: { id: itemId },
+          select: { id: true, name: true, itemCode: true, unitOfMeasure: true, unitCost: true, plantId: true },
+        });
+        if (!invItem) {
+          return NextResponse.json({ success: false, error: `Inventory item ${itemId} not found` }, { status: 400 });
+        }
+        if (invItem.plantId !== existing.plantId) {
+          return NextResponse.json({ success: false, error: `Inventory item ${itemId} belongs to a different plant` }, { status: 400 });
+        }
+        const requestedQuantity = typeof rawPart === 'object' ? Number(rawPart.quantity ?? 1) : 1;
+        if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
+          return NextResponse.json({ success: false, error: `Invalid quantity for inventory item ${itemId}` }, { status: 400 });
+        }
+        resolvedParts.push({
+          id: crypto.randomUUID(),
+          itemId: invItem.id,
+          itemName: invItem.name,
+          itemCode: invItem.itemCode || '',
+          quantity: requestedQuantity,
+          unit: invItem.unitOfMeasure || 'each',
+          unitCost: invItem.unitCost ?? 0,
+          notes: typeof rawPart === 'object' && typeof rawPart.notes === 'string' ? rawPart.notes : '',
+        });
+      }
+    }
+
+    type PlannedTool = {
+      id: string;
+      toolId: string;
+      toolName: string;
+      toolCode: string;
+      quantity: number;
+      notes: string;
+    };
+    const resolvedTools: PlannedTool[] | null = Array.isArray(body.requiredTools) ? [] : null;
+    if (resolvedTools) {
+      if (!existing.plantId) {
+        return NextResponse.json({ success: false, error: 'Operational work order must have a plant before planning tools' }, { status: 400 });
+      }
+      for (const rawTool of body.requiredTools) {
+        const toolId = typeof rawTool === 'string' ? rawTool : rawTool?.toolId;
+        if (!toolId || typeof toolId !== 'string') {
+          return NextResponse.json({ success: false, error: 'Each required tool must reference a valid toolId' }, { status: 400 });
+        }
+        const toolRec = await db.tool.findUnique({
+          where: { id: toolId },
+          select: { id: true, name: true, toolCode: true, plantId: true },
+        });
+        if (!toolRec) {
+          return NextResponse.json({ success: false, error: `Tool ${toolId} not found` }, { status: 400 });
+        }
+        if (toolRec.plantId && toolRec.plantId !== existing.plantId) {
+          return NextResponse.json({ success: false, error: `Tool ${toolId} belongs to a different plant` }, { status: 400 });
+        }
+        const requestedQuantity = typeof rawTool === 'object' ? Number(rawTool.quantity ?? 1) : 1;
+        if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
+          return NextResponse.json({ success: false, error: `Invalid quantity for tool ${toolId}` }, { status: 400 });
+        }
+        resolvedTools.push({
+          id: crypto.randomUUID(),
+          toolId: toolRec.id,
+          toolName: toolRec.name,
+          toolCode: toolRec.toolCode || '',
+          quantity: requestedQuantity,
+          notes: typeof rawTool === 'object' && typeof rawTool.notes === 'string' ? rawTool.notes : '',
+        });
       }
     }
 
@@ -329,28 +411,23 @@ export async function PUT(
       },
     });
 
-    // Handle team members update (relational) — wrapped in a transaction so
-    // delete + create happen atomically (no partial state if create fails).
     if (body.teamMembers && Array.isArray(body.teamMembers)) {
       const now = new Date();
       const teamMemberData = body.teamMembers.map((member: { userId: string; role: string }) => ({
         workOrderId: id,
         userId: member.userId,
         role: member.role,
-        accessLevel: member.role === 'team_leader' ? 'full' : 'read_only',
+        accessLevel: member.role === 'team_leader' ? 'full' : 'execution',
         assignedAt: now,
       }));
 
       await db.$transaction([
-        // Delete existing team members
         db.workOrderTeamMember.deleteMany({ where: { workOrderId: id } }),
-        // Create new team members (only if there are any to create)
         ...(teamMemberData.length > 0
           ? [db.workOrderTeamMember.createMany({ data: teamMemberData })]
           : []),
       ]);
 
-      // Reload with updated team members
       updated.teamMembers = await db.workOrderTeamMember.findMany({
         where: { workOrderId: id },
         include: { user: { select: { id: true, fullName: true } } },
@@ -358,37 +435,21 @@ export async function PUT(
       });
     }
 
-    // Handle suggested parts update (stored as JSON + RepairMaterialRequest)
-    if (body.requiredParts && Array.isArray(body.requiredParts)) {
-      // Delete existing planner-suggested material requests that haven't been acted on yet
-      await db.repairMaterialRequest.deleteMany({
-        where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
-      });
-
-      const suggestedPartsArr: Array<{ id: string; itemId: string; itemName: string; itemCode: string; quantity: number; unit: string; notes?: string }> = [];
-      for (const part of body.requiredParts) {
-        if (typeof part === 'object' && part.itemId) {
-          const invItem = await db.inventoryItem.findUnique({ where: { id: part.itemId } });
-          const entry = {
-            id: crypto.randomUUID(),
-            itemId: part.itemId,
-            itemName: invItem?.name || part.itemName || 'Unknown Part',
-            itemCode: invItem?.itemCode || part.itemCode || '',
-            quantity: part.quantity || 1,
-            unit: part.unit || invItem?.unit || 'each',
-            notes: part.notes || '',
-          };
-          suggestedPartsArr.push(entry);
-
-          await db.repairMaterialRequest.create({
+    if (resolvedParts) {
+      await db.$transaction(async (tx) => {
+        await tx.repairMaterialRequest.deleteMany({
+          where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+        });
+        for (const part of resolvedParts) {
+          await tx.repairMaterialRequest.create({
             data: {
               workOrderId: id,
               itemId: part.itemId,
-              itemName: entry.itemName,
-              quantityRequested: entry.quantity,
-              unit: entry.unit,
-              unitCost: invItem?.unitCost || 0,
-              estimatedCost: (invItem?.unitCost || 0) * entry.quantity,
+              itemName: part.itemName,
+              quantityRequested: part.quantity,
+              unit: part.unit,
+              unitCost: part.unitCost,
+              estimatedCost: part.unitCost * part.quantity,
               reason: 'Planner suggested material (updated)',
               plantId: existing.plantId,
               source: 'planner_suggested',
@@ -396,67 +457,22 @@ export async function PUT(
               requestedById: session.userId,
             },
           });
-        } else if (typeof part === 'string') {
-          const invItem = await db.inventoryItem.findUnique({ where: { id: part } });
-          if (invItem) {
-            const entry = {
-              id: crypto.randomUUID(),
-              itemId: invItem.id,
-              itemName: invItem.name,
-              itemCode: invItem.itemCode || '',
-              quantity: 1,
-              unit: invItem.unit || 'each',
-              notes: '',
-            };
-            suggestedPartsArr.push(entry);
-
-            await db.repairMaterialRequest.create({
-              data: {
-                workOrderId: id,
-                itemId: invItem.id,
-                itemName: invItem.name,
-                quantityRequested: 1,
-                unit: invItem.unit || 'each',
-                unitCost: invItem.unitCost || 0,
-                estimatedCost: invItem.unitCost || 0,
-                reason: 'Planner suggested material (updated)',
-                plantId: existing.plantId,
-                source: 'planner_suggested',
-                status: 'pending',
-                requestedById: session.userId,
-              },
-            });
-          }
         }
-      }
-      await db.workOrder.update({ where: { id }, data: { suggestedParts: JSON.stringify(suggestedPartsArr) } });
+        await tx.workOrder.update({ where: { id }, data: { suggestedParts: JSON.stringify(resolvedParts) } });
+      });
     }
 
-    // Handle suggested tools update (stored as JSON + RepairToolRequest)
-    if (body.requiredTools && Array.isArray(body.requiredTools)) {
-      await db.repairToolRequest.deleteMany({
-        where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
-      });
-
-      const suggestedToolsArr: Array<{ id: string; toolId: string; toolName: string; toolCode: string; quantity: number; notes?: string }> = [];
-      for (const tool of body.requiredTools) {
-        if (typeof tool === 'object' && tool.toolId) {
-          const toolRec = await db.tool.findUnique({ where: { id: tool.toolId } });
-          const entry = {
-            id: crypto.randomUUID(),
-            toolId: tool.toolId,
-            toolName: toolRec?.name || tool.toolName || 'Unknown Tool',
-            toolCode: toolRec?.toolCode || tool.toolCode || '',
-            quantity: tool.quantity || 1,
-            notes: tool.notes || '',
-          };
-          suggestedToolsArr.push(entry);
-
-          await db.repairToolRequest.create({
+    if (resolvedTools) {
+      await db.$transaction(async (tx) => {
+        await tx.repairToolRequest.deleteMany({
+          where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+        });
+        for (const tool of resolvedTools) {
+          await tx.repairToolRequest.create({
             data: {
               workOrderId: id,
               toolId: tool.toolId,
-              toolName: entry.toolName,
+              toolName: tool.toolName,
               reason: 'Planner suggested tool (updated)',
               plantId: existing.plantId,
               source: 'planner_suggested',
@@ -465,39 +481,11 @@ export async function PUT(
               requestedById: session.userId,
             },
           });
-        } else if (typeof tool === 'string') {
-          const toolRec = await db.tool.findUnique({ where: { id: tool } });
-          if (toolRec) {
-            const entry = {
-              id: crypto.randomUUID(),
-              toolId: toolRec.id,
-              toolName: toolRec.name,
-              toolCode: toolRec.toolCode || '',
-              quantity: 1,
-              notes: '',
-            };
-            suggestedToolsArr.push(entry);
-
-            await db.repairToolRequest.create({
-              data: {
-                workOrderId: id,
-                toolId: toolRec.id,
-                toolName: toolRec.name,
-                reason: 'Planner suggested tool (updated)',
-                plantId: existing.plantId,
-                source: 'planner_suggested',
-                status: 'pending',
-                urgency: 'normal',
-                requestedById: session.userId,
-              },
-            });
-          }
         }
-      }
-      await db.workOrder.update({ where: { id }, data: { suggestedTools: JSON.stringify(suggestedToolsArr) } });
+        await tx.workOrder.update({ where: { id }, data: { suggestedTools: JSON.stringify(resolvedTools) } });
+      });
     }
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
