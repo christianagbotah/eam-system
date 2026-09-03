@@ -281,9 +281,10 @@ export async function POST(
     }
 
     // ── ENFORCEMENT: Single active work order rule ──
-    // A user can only have ONE active (running) work order at a time.
-    // Active = last time log action is 'start' or 'resume' (not 'pause' or 'complete').
-    if ((action === 'start' || action === 'resume') && !effectiveIsTeamLog) {
+    // A user can only have ONE live start/resume session at a time. Retrospective
+    // manual-hour entries are closed records and must not participate in this gate.
+    const isManualStartEntry = action === 'start' && typeof manualHours === 'number' && manualHours > 0;
+    if ((action === 'start' || action === 'resume') && !effectiveIsTeamLog && !isManualStartEntry) {
       // Same-WO concurrent session prevention
       const activeSessionOnThisWo = await db.workOrderTimeLog.findFirst({
         where: {
@@ -300,25 +301,30 @@ export async function POST(
         );
       }
 
-      // Global: prevent active session on a DIFFERENT WO
-      const latestGlobalLog = await db.workOrderTimeLog.findFirst({
-        where: { userId: effectiveUserId },
+      // Global: prevent a real open session on a DIFFERENT WO. Do not infer
+      // active state from the latest historical row; closed start/resume rows
+      // remain part of the audit trail and must never cause a false 409.
+      const activeGlobalSession = await db.workOrderTimeLog.findFirst({
+        where: {
+          userId: effectiveUserId,
+          workOrderId: { not: id },
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+        },
         orderBy: { timestamp: 'desc' },
         include: { workOrder: { select: { id: true, woNumber: true } } },
       });
-      if (latestGlobalLog && (latestGlobalLog.action === 'start' || latestGlobalLog.action === 'resume')) {
-        if (latestGlobalLog.workOrderId !== id) {
-          return NextResponse.json({
-            success: false,
-            error: `You already have an active work session on WO #${latestGlobalLog.workOrder?.woNumber || 'unknown'}. Pause that work order before starting a new one.`,
-            conflict: {
-              workOrderId: latestGlobalLog.workOrderId,
-              woNumber: latestGlobalLog.workOrder?.woNumber,
-              action: latestGlobalLog.action,
-              startedAt: (latestGlobalLog.startTime || latestGlobalLog.timestamp).toISOString(),
-            },
-          }, { status: 409 });
-        }
+      if (activeGlobalSession) {
+        return NextResponse.json({
+          success: false,
+          error: `You already have an active work session on WO #${activeGlobalSession.workOrder?.woNumber || 'unknown'}. Pause that work order before starting a new one.`,
+          conflict: {
+            workOrderId: activeGlobalSession.workOrderId,
+            woNumber: activeGlobalSession.workOrder?.woNumber,
+            action: activeGlobalSession.action,
+            startedAt: (activeGlobalSession.startTime || activeGlobalSession.timestamp).toISOString(),
+          },
+        }, { status: 409 });
       }
     }
 
@@ -355,7 +361,7 @@ export async function POST(
       if (!startTime) logDuration = null;
     } else if (action === 'pause') {
       const lastActiveLog = await db.workOrderTimeLog.findFirst({
-        where: { workOrderId: id, userId: effectiveUserId, action: { in: ['start', 'resume'] } },
+        where: { workOrderId: id, userId: effectiveUserId, action: { in: ['start', 'resume'] }, endTime: null },
         orderBy: { timestamp: 'desc' },
       });
       if (lastActiveLog) {
@@ -367,7 +373,7 @@ export async function POST(
       logDuration = null;
     } else if (action === 'complete') {
       const lastActiveLog = await db.workOrderTimeLog.findFirst({
-        where: { workOrderId: id, userId: effectiveUserId, action: { in: ['start', 'resume'] } },
+        where: { workOrderId: id, userId: effectiveUserId, action: { in: ['start', 'resume'] }, endTime: null },
         orderBy: { timestamp: 'desc' },
       });
       if (lastActiveLog) {
