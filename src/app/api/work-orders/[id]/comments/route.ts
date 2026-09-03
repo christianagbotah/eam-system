@@ -37,7 +37,7 @@ async function authorizeCommentAccess(
     select: {
       assignedTo: true,
       teamMembers: { select: { userId: true } },
-      maintenanceRequest: { select: { requesterId: true } },
+      maintenanceRequest: { select: { requestedBy: true } },
     },
   });
   if (!wo) {
@@ -46,7 +46,7 @@ async function authorizeCommentAccess(
 
   const isAssignee = wo.assignedTo === session.userId;
   const isTeamMember = wo.teamMembers.some((member) => member.userId === session.userId);
-  const isRequester = wo.maintenanceRequest?.requesterId === session.userId;
+  const isRequester = wo.maintenanceRequest?.requestedBy === session.userId;
   if (!isAssignee && !isTeamMember && !isRequester) {
     return NextResponse.json(
       { success: false, error: 'Access denied — you can only view comments for work orders assigned to you' },
