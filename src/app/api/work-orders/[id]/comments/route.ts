@@ -4,6 +4,15 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
+function canViewWorkOrderComments(session: ReturnType<typeof getSession>): boolean {
+  if (!session) return false;
+  return (
+    isAdmin(session) ||
+    hasPermission(session, 'work_orders.view') ||
+    hasPermission(session, 'work_orders.view_own')
+  );
+}
+
 // GET /api/work-orders/[id]/comments
 export async function GET(
   request: NextRequest,
@@ -15,7 +24,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
+    if (!canViewWorkOrderComments(session)) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
@@ -51,8 +60,8 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!canViewWorkOrderComments(session)) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
@@ -93,7 +102,7 @@ export async function POST(
         wo.plannerId,
         'wo_comment',
         'New Comment on WO',
-        `${session.fullName} commented on ${wo.woNumber}: "${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}"`,
+        `${session.fullName} commented on ${wo.woNumber}: \"${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}\"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,
@@ -106,7 +115,7 @@ export async function POST(
         wo.assignedTo,
         'wo_comment',
         'New Comment on WO',
-        `${session.fullName} commented on ${wo.woNumber}: "${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}"`,
+        `${session.fullName} commented on ${wo.woNumber}: \"${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}\"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,
