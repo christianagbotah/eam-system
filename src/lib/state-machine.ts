@@ -42,6 +42,13 @@ interface ExecuteResult {
 /** Entity types that support the DB-driven state machine */
 type EntityType = 'work_order' | 'maintenance_request';
 
+type CanonicalTransition = {
+  fromStatus: string | null;
+  toStatus: string;
+  allowedRoleSlugs: string;
+  requiresReason: boolean;
+};
+
 // ============================================================================
 // DEFAULT TRANSITIONS (auto-seeded when table is empty)
 // ============================================================================
@@ -137,12 +144,71 @@ export const DEFAULT_WO_TRANSITIONS = [
 /** Track whether seeding has been attempted this process to avoid repeated attempts */
 let _seedAttempted = false;
 
+async function upsertCanonicalTransition(
+  tx: PrismaClient,
+  entityType: EntityType,
+  transition: CanonicalTransition,
+  sortOrder: number,
+): Promise<void> {
+  const updateData = {
+    allowedRoleSlugs: transition.allowedRoleSlugs,
+    requiresReason: transition.requiresReason,
+    sortOrder,
+  };
+
+  // `fromStatus = NULL` represents a real initial state. Prisma compound-unique
+  // upserts cannot safely use a nullable member, and MySQL UNIQUE indexes also
+  // allow multiple NULL values. Preserve NULL semantics explicitly rather than
+  // inventing an empty-string sentinel.
+  if (transition.fromStatus === null) {
+    const existing = await tx.statusTransition.findFirst({
+      where: {
+        entityType,
+        fromStatus: null,
+        toStatus: transition.toStatus,
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await tx.statusTransition.update({ where: { id: existing.id }, data: updateData });
+    } else {
+      await tx.statusTransition.create({
+        data: {
+          entityType,
+          fromStatus: null,
+          toStatus: transition.toStatus,
+          ...updateData,
+        },
+      });
+    }
+    return;
+  }
+
+  await tx.statusTransition.upsert({
+    where: {
+      entityType_fromStatus_toStatus: {
+        entityType,
+        fromStatus: transition.fromStatus,
+        toStatus: transition.toStatus,
+      },
+    },
+    update: updateData,
+    create: {
+      entityType,
+      fromStatus: transition.fromStatus,
+      toStatus: transition.toStatus,
+      ...updateData,
+    },
+  });
+}
+
 /**
  * Seed ALL canonical transitions from the authoritative DEFAULT_*_TRANSITIONS arrays.
  *
- * Uses upsert on the `entityType_fromStatus_toStatus` unique constraint so it is
- * fully idempotent — safe to call multiple times, even when partial data already
- * exists (e.g. from a prior UAT seed that only inserted 14 WO transitions).
+ * Non-null transitions use the database compound unique key. Initial transitions
+ * preserve `fromStatus = NULL` and use find/update/create because the nullable
+ * compound key is not a valid Prisma upsert selector.
  *
  * Accepts an optional Prisma client so both the Next.js runtime (default `db`)
  * and external scripts (their own PrismaClient) can call it.
@@ -153,59 +219,13 @@ export async function seedCanonicalTransitions(
   const tx = client ?? db;
   let seeded = 0;
 
-  // Seed MR transitions
   for (let i = 0; i < DEFAULT_MR_TRANSITIONS.length; i++) {
-    const t = DEFAULT_MR_TRANSITIONS[i];
-    await tx.statusTransition.upsert({
-      where: {
-        entityType_fromStatus_toStatus: {
-          entityType: 'maintenance_request',
-          fromStatus: t.fromStatus,
-          toStatus: t.toStatus,
-        },
-      },
-      update: {
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason,
-        sortOrder: i,
-      },
-      create: {
-        entityType: 'maintenance_request',
-        fromStatus: t.fromStatus,
-        toStatus: t.toStatus,
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason,
-        sortOrder: i,
-      },
-    });
+    await upsertCanonicalTransition(tx, 'maintenance_request', DEFAULT_MR_TRANSITIONS[i], i);
     seeded++;
   }
 
-  // Seed WO transitions
   for (let i = 0; i < DEFAULT_WO_TRANSITIONS.length; i++) {
-    const t = DEFAULT_WO_TRANSITIONS[i];
-    await tx.statusTransition.upsert({
-      where: {
-        entityType_fromStatus_toStatus: {
-          entityType: 'work_order',
-          fromStatus: t.fromStatus,
-          toStatus: t.toStatus,
-        },
-      },
-      update: {
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason,
-        sortOrder: i,
-      },
-      create: {
-        entityType: 'work_order',
-        fromStatus: t.fromStatus,
-        toStatus: t.toStatus,
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason,
-        sortOrder: i,
-      },
-    });
+    await upsertCanonicalTransition(tx, 'work_order', DEFAULT_WO_TRANSITIONS[i], i);
     seeded++;
   }
 
@@ -215,7 +235,7 @@ export async function seedCanonicalTransitions(
 /**
  * Ensure the status_transitions table has the required rows.
  * If the table is empty (e.g., after a fresh deploy), auto-seed it.
- * Uses the canonical seedCanonicalTransitions() which is idempotent via upsert.
+ * Uses the canonical seedCanonicalTransitions() which is idempotent.
  * Returns true if seeding was performed, false if already populated.
  */
 async function ensureTransitionsSeeded(): Promise<boolean> {
