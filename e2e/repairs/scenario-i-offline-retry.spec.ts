@@ -236,4 +236,20 @@ test('UAT-10: Scenario I — Offline Replay / Idempotency', async () => {
     // (We can't directly count time logs via API, but we verify the WO state)
     expect(woData.data.actualHours).toBeGreaterThanOrEqual(0.5);
   });
+
+  // ────────────────────────────────────────────────────────────────────
+  // I6: Leave the shared UAT technician with no live session
+  // ────────────────────────────────────────────────────────────────────
+  await test.step('I6: Stop the live session after offline replay verification', async () => {
+    const techToken = await getToken('tech_single');
+    const { status, data } = await apiCall(
+      techToken,
+      'POST',
+      `/api/work-orders/${woId}/time-logs/stop`,
+      {},
+    );
+    expect(status).toBe(200);
+    expect(data.success).toBe(true);
+    expect(data.data.closedTimers).toBeGreaterThanOrEqual(1);
+  });
 });
