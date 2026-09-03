@@ -4,13 +4,57 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
-function canViewWorkOrderComments(session: ReturnType<typeof getSession>): boolean {
-  if (!session) return false;
+function hasBroadWorkOrderView(session: NonNullable<ReturnType<typeof getSession>>): boolean {
   return (
     isAdmin(session) ||
     hasPermission(session, 'work_orders.view') ||
-    hasPermission(session, 'work_orders.view_own')
+    hasPermission(session, 'work_orders.view_all')
   );
+}
+
+function canViewWorkOrderComments(session: NonNullable<ReturnType<typeof getSession>>): boolean {
+  return hasBroadWorkOrderView(session) || hasPermission(session, 'work_orders.view_own');
+}
+
+async function authorizeCommentAccess(
+  request: NextRequest,
+  session: NonNullable<ReturnType<typeof getSession>>,
+  workOrderId: string,
+) {
+  if (!canViewWorkOrderComments(session)) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
+  const plantAuth = await authorizeWorkOrderPlant(request, session, workOrderId);
+  if (!plantAuth.ok) return plantAuth.response;
+
+  if (hasBroadWorkOrderView(session)) return null;
+
+  // view_own is narrower than plant access: a technician/requester may only read
+  // comments for a WO they are assigned to, participate in, or originally requested.
+  const wo = await db.workOrder.findUnique({
+    where: { id: workOrderId },
+    select: {
+      assignedTo: true,
+      teamMembers: { select: { userId: true } },
+      maintenanceRequest: { select: { requesterId: true } },
+    },
+  });
+  if (!wo) {
+    return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+  }
+
+  const isAssignee = wo.assignedTo === session.userId;
+  const isTeamMember = wo.teamMembers.some((member) => member.userId === session.userId);
+  const isRequester = wo.maintenanceRequest?.requesterId === session.userId;
+  if (!isAssignee && !isTeamMember && !isRequester) {
+    return NextResponse.json(
+      { success: false, error: 'Access denied — you can only view comments for work orders assigned to you' },
+      { status: 403 },
+    );
+  }
+
+  return null;
 }
 
 // GET /api/work-orders/[id]/comments
@@ -24,16 +68,9 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!canViewWorkOrderComments(session)) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-    }
-
     const { id } = await params;
-
-    // Comments inherit the Work Order's plant scope. Never expose comments from
-    // a WO the caller cannot access, even when they have broad functional RBAC.
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
+    const authError = await authorizeCommentAccess(request, session, id);
+    if (authError) return authError;
 
     const comments = await db.workOrderComment.findMany({
       where: { workOrderId: id },
@@ -60,15 +97,9 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!canViewWorkOrderComments(session)) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-    }
-
     const { id } = await params;
-
-    // Plant authorization
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
+    const authError = await authorizeCommentAccess(request, session, id);
+    if (authError) return authError;
 
     const body = await request.json();
     const { content } = body;
@@ -102,7 +133,7 @@ export async function POST(
         wo.plannerId,
         'wo_comment',
         'New Comment on WO',
-        `${session.fullName} commented on ${wo.woNumber}: \"${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}\"`,
+        `${session.fullName} commented on ${wo.woNumber}: "${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,
@@ -115,7 +146,7 @@ export async function POST(
         wo.assignedTo,
         'wo_comment',
         'New Comment on WO',
-        `${session.fullName} commented on ${wo.woNumber}: \"${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}\"`,
+        `${session.fullName} commented on ${wo.woNumber}: "${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,
