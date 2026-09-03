@@ -413,7 +413,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       const res = await fetch(`${BASE}/api/repairs/reports/xlsx`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format: 'xlsx', filters: { status: 'closed', plantId } }),
+        body: JSON.stringify({ reportType: 'work-order', format: 'xlsx', filters: { status: 'closed', plantId } }),
       });
       expect(res.status).toBe(200);
       const bytes = new Uint8Array(await res.arrayBuffer());
