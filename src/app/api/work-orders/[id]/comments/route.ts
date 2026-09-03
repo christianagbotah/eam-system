@@ -4,6 +4,43 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
+// GET /api/work-orders/[id]/comments
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { id } = await params;
+
+    // Comments inherit the Work Order's plant scope. Never expose comments from
+    // a WO the caller cannot access, even when they have broad functional RBAC.
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
+    const comments = await db.workOrderComment.findMany({
+      where: { workOrderId: id },
+      include: {
+        user: { select: { id: true, fullName: true, username: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return NextResponse.json({ success: true, data: comments });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load comments';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
