@@ -36,7 +36,13 @@ type WoReadinessData = {
   repairToolRequests: {
     id: string
     status: string
-    items: { id: string; pendingReturnQty: number | null }[]
+    items: {
+      id: string
+      quantityIssued: number
+      quantityReturned: number
+      quantityTransferred: number
+      pendingReturnQty: number | null
+    }[]
   }[]
   repairMaterialRequests: {
     id: string
@@ -87,7 +93,15 @@ export async function checkReadiness(
         select: {
           id: true,
           status: true,
-          items: { select: { id: true, pendingReturnQty: true } },
+          items: {
+            select: {
+              id: true,
+              quantityIssued: true,
+              quantityReturned: true,
+              quantityTransferred: true,
+              pendingReturnQty: true,
+            },
+          },
         },
       },
       repairMaterialRequests: {
@@ -197,6 +211,10 @@ async function checkTechnicianEligibilityForStart(
   }
 }
 
+function hasOpenToolCustody(item: WoReadinessData['repairToolRequests'][number]['items'][number]): boolean {
+  return Math.max(0, item.quantityIssued - item.quantityReturned - item.quantityTransferred) > 0
+}
+
 function checkCompletionReadiness(
   wo: WoReadinessData,
   blockers: ReadinessItem[],
@@ -206,10 +224,10 @@ function checkCompletionReadiness(
   if (activeTimers.length > 0) blockers.push({ code: 'ACTIVE_TIMERS', category: 'timer', message: `${activeTimers.length} active time timer(s) must be stopped before completion`, severity: 'blocker' })
 
   const toolsOut = wo.repairToolRequests
-    .filter((tr) => tr.status === 'issued')
+    .filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')
     .flatMap((tr) => tr.items)
-    .filter((item) => (item.pendingReturnQty ?? 0) > 0)
-  if (toolsOut.length > 0) blockers.push({ code: 'TOOLS_ISSUED', category: 'tool', message: `${toolsOut.length} issued tool item(s) still pending return`, severity: 'blocker' })
+    .filter(hasOpenToolCustody)
+  if (toolsOut.length > 0) blockers.push({ code: 'TOOLS_ISSUED', category: 'tool', message: `${toolsOut.length} issued tool item(s) still in custody or awaiting confirmed return`, severity: 'blocker' })
 
   checkUnreconciledMaterials(wo, blockers, 'UNRECONCILED_MATERIALS')
 
@@ -274,10 +292,10 @@ function checkAuthoritativeCostUnavailable(wo: WoReadinessData, warnings: Readin
 
 function checkToolCustody(wo: WoReadinessData, out: ReadinessItem[]): void {
   const toolsOut = wo.repairToolRequests
-    .filter((tr) => tr.status === 'issued')
+    .filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')
     .flatMap((tr) => tr.items)
-    .filter((item) => (item.pendingReturnQty ?? 0) > 0)
-  if (toolsOut.length > 0) out.push({ code: 'OPEN_TOOL_CUSTODY', category: 'tool', message: `${toolsOut.length} issued tool item(s) still pending return`, severity: 'blocker' })
+    .filter(hasOpenToolCustody)
+  if (toolsOut.length > 0) out.push({ code: 'OPEN_TOOL_CUSTODY', category: 'tool', message: `${toolsOut.length} issued tool item(s) still in custody or awaiting confirmed return`, severity: 'blocker' })
 }
 
 function checkUnreconciledMaterials(
