@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant, applyPlantScope } from '@/lib/plant-scope';
 import * as XLSX from 'xlsx';
 
 // GET /api/repairs/reports/detailed — Machine + Parts repair report
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo');
     const status = searchParams.get('status');
     const type = searchParams.get('type');
-    const plantId = plantScope.isScoped && plantScope.plantId ? plantScope.plantId : searchParams.get('plantId');
+    const requestedPlantId = searchParams.get('plantId');
     const format = searchParams.get('format') || 'json';
 
     // Pagination params (used for JSON format; XLSX always fetches full filtered set)
@@ -48,7 +48,22 @@ export async function GET(request: NextRequest) {
       where.status = { in: ['completed', 'verified', 'closed'] };
     }
 
-    if (plantId) where.plantId = plantId;
+    // Apply plant scope before any report query. An explicit X-Plant-ID wins over
+    // query-string selection; a query-string plant must still belong to the caller.
+    // With neither selected, filter to ALL plants the caller is assigned to.
+    if (plantScope.isScoped && plantScope.plantId) {
+      if (requestedPlantId && requestedPlantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+      }
+      where.plantId = plantScope.plantId;
+    } else if (requestedPlantId) {
+      if (!canAccessPlant(plantScope, requestedPlantId)) {
+        return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+      }
+      where.plantId = requestedPlantId;
+    } else {
+      applyPlantScope(where, plantScope);
+    }
 
     if (dateFrom || dateTo) {
       const dateFilter: Record<string, unknown> = {};
@@ -68,11 +83,11 @@ export async function GET(request: NextRequest) {
     const skip = usePagination ? (page - 1) * limit : 0;
     const take = usePagination ? limit : Math.min(100, total);
 
-    // Fetch WOs with components, asset, completion, and material requests
+    // WorkOrder stores assetId/assetName as scalar fields and has no Prisma asset
+    // relation. Fetch WOs first, then resolve referenced assets explicitly in bulk.
     const workOrders = await db.workOrder.findMany({
       where: filterWhere,
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
         assignee: { select: { id: true, fullName: true, username: true } },
         workOrderComponents: {
           include: {
@@ -117,10 +132,26 @@ export async function GET(request: NextRequest) {
       take,
     });
 
+    const assetIds = [
+      ...new Set(
+        workOrders
+          .map((wo) => wo.assetId)
+          .filter((assetId): assetId is string => Boolean(assetId)),
+      ),
+    ];
+    const assets = assetIds.length > 0
+      ? await db.asset.findMany({
+          where: { id: { in: assetIds } },
+          select: { id: true, name: true, assetTag: true, serialNumber: true },
+        })
+      : [];
+    const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+
     // Transform into report rows (one row per WO-component pair)
     const rows: Record<string, unknown>[] = [];
 
     for (const wo of workOrders) {
+      const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
       const components = wo.workOrderComponents;
       const completion = wo.repairCompletion;
       const materials = wo.repairMaterialRequests;
@@ -130,9 +161,9 @@ export async function GET(request: NextRequest) {
         // WO with no linked components — still show the WO
         rows.push({
           'WO Number': wo.woNumber,
-          'Machine Name': wo.asset?.name || wo.assetName || 'N/A',
-          'Machine Tag': wo.asset?.assetTag || 'N/A',
-          'Serial Number': wo.asset?.serialNumber || 'N/A',
+          'Machine Name': asset?.name || wo.assetName || 'N/A',
+          'Machine Tag': asset?.assetTag || 'N/A',
+          'Serial Number': asset?.serialNumber || 'N/A',
           'Component/Part': '(No component specified)',
           'Component Code': '',
           'Component Type': '',
@@ -162,15 +193,12 @@ export async function GET(request: NextRequest) {
           const compMaterials = materials.filter(
             (m) => m.componentRegistryId === comp.id
           );
-          const otherMaterials = materials.filter(
-            (m) => m.componentRegistryId && m.componentRegistryId !== comp.id
-          );
 
           rows.push({
             'WO Number': wo.woNumber,
-            'Machine Name': wo.asset?.name || wo.assetName || 'N/A',
-            'Machine Tag': wo.asset?.assetTag || 'N/A',
-            'Serial Number': wo.asset?.serialNumber || 'N/A',
+            'Machine Name': asset?.name || wo.assetName || 'N/A',
+            'Machine Tag': asset?.assetTag || 'N/A',
+            'Serial Number': asset?.serialNumber || 'N/A',
             'Component/Part': comp.name,
             'Component Code': comp.componentCode,
             'Component Type': comp.componentType,
@@ -245,7 +273,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="repair-details-${new Date().toISOString().split('T')[0]}.xlsx"`,
+        'Content-Disposition': `attachment; filename=\"repair-details-${new Date().toISOString().split('T')[0]}.xlsx\"`,
       },
     });
   } catch (error: unknown) {
