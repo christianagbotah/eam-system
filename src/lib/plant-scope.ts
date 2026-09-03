@@ -183,12 +183,16 @@ export function getPlantFilterWhere(
 }
 
 /**
- * Merge plant filter into an existing where clause object.
- * Returns a new object with the plant filter applied.
+ * Apply a plant filter to an existing where clause.
  *
- * **Security note**: If `plantScope.denyAccess` is true the merged where clause
- * will never match any rows, effectively returning an empty result set.
- * Callers that want a proper 403 response should check `plantScope.denyAccess` first.
+ * SECURITY CONTRACT: this function mutates the supplied object AND returns it.
+ * This is intentional and fail-safe: callers that use the return value and older
+ * callers that invoke `applyPlantScope(where, scope)` for its side effect both
+ * receive the same enforced plant constraint. Ignoring the return value must never
+ * silently turn a plant-scoped query into an unrestricted query.
+ *
+ * If `plantScope.denyAccess` is true, the applied filter never matches any rows.
+ * Callers that want an explicit 403 should still check `plantScope.denyAccess` first.
  *
  * @param where — Existing Prisma where clause
  * @param plantScope — Result from getPlantScope()
@@ -203,5 +207,6 @@ export function applyPlantScope<T extends Record<string, unknown>>(
   if (Object.keys(plantFilter).length === 0) {
     return where;
   }
-  return { ...where, ...plantFilter } as T;
+  Object.assign(where, plantFilter);
+  return where;
 }
