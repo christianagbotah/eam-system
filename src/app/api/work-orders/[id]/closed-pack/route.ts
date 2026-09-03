@@ -201,15 +201,34 @@ export async function GET(
       orderBy: { uploadedAt: 'asc' as const },
     });
 
-    // ── Fetch Work Instruction Executions ──
-    const wiExecutions = await db.workInstructionExecution.findMany({
+    // WorkInstructionExecution stores technicianId as a scalar and has no
+    // Prisma technician relation. Resolve technician names explicitly and map
+    // them back into the shape expected by the PDF generator.
+    const wiExecutionsRaw = await db.workInstructionExecution.findMany({
       where: { workOrderId: wo.id },
       include: {
         workInstruction: { select: { id: true, title: true } },
-        technician: { select: { id: true, fullName: true } },
       },
-      orderBy: { createdAt: 'asc' as const },
+      orderBy: { startedAt: 'asc' as const },
     });
+    const wiTechnicianIds = [
+      ...new Set(
+        wiExecutionsRaw
+          .map((execution) => execution.technicianId)
+          .filter((technicianId): technicianId is string => Boolean(technicianId)),
+      ),
+    ];
+    const wiTechnicians = wiTechnicianIds.length > 0
+      ? await db.user.findMany({
+          where: { id: { in: wiTechnicianIds } },
+          select: { id: true, fullName: true },
+        })
+      : [];
+    const wiTechnicianMap = new Map(wiTechnicians.map((technician) => [technician.id, technician]));
+    const wiExecutions = wiExecutionsRaw.map((execution) => ({
+      ...execution,
+      technician: wiTechnicianMap.get(execution.technicianId) ?? null,
+    }));
 
     // ── Fetch Company Profile ──
     const companyProfile = await db.companyProfile.findFirst({
