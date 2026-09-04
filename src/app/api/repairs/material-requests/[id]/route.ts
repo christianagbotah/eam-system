@@ -70,21 +70,48 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const existing = await db.repairMaterialRequest.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
 
-    // Ownership check: only the requester (or admin/supervisor/manager) can edit a pending request
+    // Once approval begins, quantity/cost metadata is part of the audit trail and
+    // must not be edited in place. Corrections require cancel/re-request or rework.
+    if (existing.status !== 'pending') {
+      return NextResponse.json({ success: false, error: 'Only pending requests can be edited' }, { status: 400 });
+    }
+
+    // Ownership check: requester or maintenance leadership may edit a pending request.
     if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
       if (existing.requestedById !== session.userId) {
         return NextResponse.json({ success: false, error: 'You can only edit your own requests' }, { status: 403 });
       }
-      if (existing.status !== 'pending') {
-        return NextResponse.json({ success: false, error: 'Only pending requests can be edited' }, { status: 400 });
-      }
     }
 
     const body = await request.json();
+    if (body.unitCost !== undefined) {
+      return NextResponse.json({
+        success: false,
+        error: 'unitCost is server-authoritative and cannot be edited by clients',
+      }, { status: 400 });
+    }
+
     const allowedFields: Record<string, unknown> = {};
-    if (body.quantityRequested !== undefined) allowedFields.quantityRequested = body.quantityRequested;
-    if (body.unit !== undefined) allowedFields.unit = body.unit;
-    if (body.unitCost !== undefined) allowedFields.unitCost = body.unitCost;
+    if (body.quantityRequested !== undefined) {
+      const quantityRequested = Number(body.quantityRequested);
+      if (!Number.isFinite(quantityRequested) || quantityRequested <= 0) {
+        return NextResponse.json({ success: false, error: 'quantityRequested must be a positive number' }, { status: 400 });
+      }
+      allowedFields.quantityRequested = quantityRequested;
+      allowedFields.estimatedCost = quantityRequested * (existing.unitCost ?? 0);
+    }
+    if (body.unit !== undefined) {
+      if (existing.itemId) {
+        return NextResponse.json({
+          success: false,
+          error: 'unit is server-authoritative for inventory-backed material requests',
+        }, { status: 400 });
+      }
+      if (typeof body.unit !== 'string' || !body.unit.trim()) {
+        return NextResponse.json({ success: false, error: 'unit must be a non-empty string' }, { status: 400 });
+      }
+      allowedFields.unit = body.unit.trim();
+    }
     if (body.reason !== undefined) allowedFields.reason = body.reason;
     if (body.notes !== undefined) allowedFields.notes = body.notes;
     if (body.urgency !== undefined && ['low', 'normal', 'high', 'critical'].includes(body.urgency)) {
