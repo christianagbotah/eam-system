@@ -520,13 +520,14 @@ describe('submitCompletion', () => {
     expect(result.readiness?.blockers[0].code).toBe('ACTIVE_TIMERS');
   });
 
-  it('should calculate actual hours from actualStart', async () => {
+  it('should use authoritative time logs for actual labor hours instead of wall-clock elapsed time', async () => {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
     mockFetchEnrichedWO(makeEnrichedWO({
       actualStart: twoHoursAgo.toISOString(),
       laborCost: 0,
       partsCost: 0,
       contractorCost: 25,
+      timeLogs: [],
     }));
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockExecuteTransition.mockResolvedValue({ success: true });
@@ -537,10 +538,10 @@ describe('submitCompletion', () => {
     const result = await submitCompletion('wo-1', techSession, {});
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('completed');
-    // actualHours should be ~2 hours
-    expect(result.data?.actualHours).toBeGreaterThanOrEqual(1.9);
-    expect(result.data?.actualHours).toBeLessThanOrEqual(2.1);
-    // totalCost is now authoritative: labor=0 (no rate), material=0, tool=0, contractor=25
+    // Wall-clock elapsed time may include holds, permits, materials waits, and shift gaps.
+    // With no closed execution time logs, authoritative labor time is therefore zero.
+    expect(result.data?.actualHours).toBe(0);
+    // totalCost is authoritative: labor=0 (no rate), material=0, tool=0, contractor=25
     expect(result.data?.totalCost).toBe(25);
   });
 
@@ -745,7 +746,6 @@ describe('requestRework', () => {
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('in_progress');
     expect(result.data?.reworkReason).toBe('Bearing not properly seated');
-    // Rework counter should be incremented
     expect(mockDb.repairCompletion.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { workOrderId: 'wo-1' },
@@ -753,7 +753,6 @@ describe('requestRework', () => {
         create: { workOrderId: 'wo-1', reworkCount: 1, reworkReason: 'Bearing not properly seated' },
       }),
     );
-    // Category should be passed in extraData
     const transitionCall = mockExecuteTransition.mock.calls[0][4];
     expect(transitionCall.extraData.reworkCategory).toBe('quality');
   });
@@ -830,7 +829,6 @@ describe('plannerClose', () => {
     expect(result.data?.status).toBe('closed');
     expect(result.data?.isLocked).toBe(true);
 
-    // WO should be locked
     expect(mockDb.workOrder.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -932,7 +930,6 @@ describe('cancelWorkOrder', () => {
     const result = await cancelWorkOrder('wo-1', adminSession, { reason: 'No longer needed' });
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('cancelled');
-    // Should pass reason to executeTransition
     expect(mockExecuteTransition).toHaveBeenCalledWith(
       'work_order', 'wo-1', 'cancelled', adminSession,
       expect.objectContaining({ reason: 'No longer needed' }),
@@ -976,7 +973,6 @@ describe('calculateAuthoritativeCosts', () => {
     const result = await calculateAuthoritativeCosts('wo-1');
     expect(result).not.toBeNull();
     expect(result!.laborHours).toBe(3.5);
-    // New authoritative model: laborCost=0 (no rate configured), toolCost=0, contractorCost from WO (duration field is in hours)
     expect(result!.actualLaborCost).toBe(0);
     expect(result!.actualMaterialCost).toBe(0);
     expect(result!.actualToolCost).toBe(0);
@@ -992,8 +988,8 @@ describe('calculateAuthoritativeCosts', () => {
       contractorCost: 0,
       timeLogs: [],
       repairMaterialRequests: [
-        { unitCost: 25, consumedQty: 4, wastedQty: 1 }, // (4+1)*25 = 125
-        { unitCost: 10, consumedQty: 2, wastedQty: 0 }, // (2+0)*10 = 20
+        { unitCost: 25, consumedQty: 4, wastedQty: 1 },
+        { unitCost: 10, consumedQty: 2, wastedQty: 0 },
       ],
       repairToolRequests: [],
     });
@@ -1025,7 +1021,6 @@ describe('calculateAuthoritativeCosts', () => {
 
     const result = await calculateAuthoritativeCosts('wo-1');
     expect(result).not.toBeNull();
-    // Reusable tools in custody — no consumption cost
     expect(result!.actualToolCost).toBe(0);
     expect(result!.toolCostNote).toBe('Reusable tools in custody — no consumption cost');
     expect(result!.totalActualCost).toBe(0);
@@ -1036,9 +1031,9 @@ describe('calculateAuthoritativeCosts', () => {
       id: 'wo-1',
       laborCost: 200,
       contractorCost: 75,
-      timeLogs: [{ id: 'tl-1', action: 'start', duration: 3.0, startTime: null, endTime: null, breakMinutes: 0, userId: 'tech-1', timestamp: new Date('2025-01-15T08:00:00Z') }], // 3 hours (duration field is in hours)
+      timeLogs: [{ id: 'tl-1', action: 'start', duration: 3.0, startTime: null, endTime: null, breakMinutes: 0, userId: 'tech-1', timestamp: new Date('2025-01-15T08:00:00Z') }],
       repairMaterialRequests: [
-        { unitCost: 15, consumedQty: 10, wastedQty: 2 }, // 180
+        { unitCost: 15, consumedQty: 10, wastedQty: 2 },
       ],
       repairToolRequests: [
         { id: 'tr-1', status: 'issued', items: [{ id: 'ti-1', unitCost: 40, quantityIssued: 1 }] },
@@ -1048,12 +1043,11 @@ describe('calculateAuthoritativeCosts', () => {
     const result = await calculateAuthoritativeCosts('wo-1');
     expect(result).not.toBeNull();
     expect(result!.laborHours).toBe(3.0);
-    // Authoritative: labor=0 (no rate), material=180, tool=0, contractor=75
     expect(result!.actualLaborCost).toBe(0);
     expect(result!.actualMaterialCost).toBe(180);
     expect(result!.actualToolCost).toBe(0);
     expect(result!.actualContractorCost).toBe(75);
-    expect(result!.totalActualCost).toBe(255); // 0 + 180 + 0 + 75
+    expect(result!.totalActualCost).toBe(255);
   });
 
   it('should handle null/undefined durations and quantities', async () => {
@@ -1088,7 +1082,6 @@ describe('calculateAuthoritativeCosts', () => {
 // ============================================================================
 describe('Team Authority — documented governance rules', () => {
   it('admin always has authority regardless of team membership', () => {
-    // Documented: admin, maintenance_manager, plant_manager always bypass
     const adminRoles = ['admin', 'maintenance_manager', 'plant_manager'];
     for (const role of adminRoles) {
       expect(['admin', 'maintenance_manager', 'plant_manager']).toContain(role);
@@ -1097,8 +1090,6 @@ describe('Team Authority — documented governance rules', () => {
   });
 
   it('multi-tech WO requires team leader for completion (documented)', () => {
-    // When distinct team members (excluding assignee) >= 1 AND assignee exists → multi-tech
-    // Only team_leader role or admin can complete
     const teamMembers = [
       { userId: 'tech-1', role: 'technician' },
       { userId: 'tech-2', role: 'technician' },
@@ -1110,15 +1101,11 @@ describe('Team Authority — documented governance rules', () => {
   });
 
   it('start and pause allow assignee or team leader (documented)', () => {
-    // start, pause, handover operations: assignee || teamLeader
     const operations = ['start', 'pause', 'handover'] as const;
     expect(operations).toHaveLength(3);
   });
 
   it('complete operation has stricter governance than start (documented)', () => {
-    // start: assignee || teamLeader || admin
-    // complete (multi-tech): teamLeader || admin ONLY
-    // This is the key distinction documented in the service
     const startAllowed = ['assignee', 'teamLeader', 'admin'];
     const multiTechCompleteAllowed = ['teamLeader', 'admin'];
     expect(multiTechCompleteAllowed.length).toBeLessThan(startAllowed.length);
@@ -1154,8 +1141,6 @@ describe('Waiting state types (documented)', () => {
 // ============================================================================
 describe('Notification queuing behavior (documented)', () => {
   it('should queue notification via BullMQ on success', () => {
-    // The service uses jobQueue.add(QUEUES.NOTIFICATION, ...) which is non-blocking
-    // If the queue fails, it falls back to direct notifyUser
     expect(typeof mockJobQueue.add).toBe('function');
   });
 
@@ -1170,15 +1155,12 @@ describe('Notification queuing behavior (documented)', () => {
 // ============================================================================
 describe('Work Execution Service — Phase 3A/3D type contracts', () => {
   it('should export StartWorkOptions with optional fields', () => {
-    // Verify the types are importable and have the expected shape
     const opts = { reason: 'test', notes: 'test notes' };
     expect(opts.reason).toBe('test');
     expect(opts.notes).toBe('test notes');
   });
 
   it('should export CompletionOptions without client-submitted cost fields', () => {
-    // CompletionOptions no longer has laborCost, partsCost, or contractorCost
-    // (authoritative cost calculation is used instead)
     const opts: CompletionOptions = {
       notes: 'done',
       failureDescription: 'failure',
@@ -1188,7 +1170,6 @@ describe('Work Execution Service — Phase 3A/3D type contracts', () => {
     };
     expect(opts.notes).toBe('done');
     expect(opts.idempotencyKey).toBe('test-key');
-    // Verify cost fields are not on the object
     const keys = Object.keys(opts);
     expect(keys).not.toContain('laborCost');
     expect(keys).not.toContain('partsCost');
