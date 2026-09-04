@@ -52,6 +52,16 @@ if (!dbUrl) {
   }
 }
 
+// Prisma Client generation and TypeScript validation do not connect to the
+// database, but Prisma 7 still requires a datasource URL while loading the
+// config. GitHub Actions intentionally has no production database secrets, so
+// use a non-routable local placeholder only in CI/test. Real db push/migrate
+// operations outside CI still fail fast when no database configuration exists.
+if (!dbUrl && (process.env.CI === 'true' || process.env.NODE_ENV === 'test')) {
+  dbUrl = 'mysql://ci:ci@127.0.0.1:3306/iassetspro_ci';
+  provider = 'mysql';
+}
+
 if (!dbUrl) {
   throw new Error(
     'DATABASE_URL is not set. Set it in your environment or .env file.\n' +
