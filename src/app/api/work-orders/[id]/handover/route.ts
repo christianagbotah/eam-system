@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { initiateHandover } from '@/services/workExecution.service';
+import { initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
 import { resumeConfirmedHandover } from '@/services/repairHandoverResume.service';
 import type { SessionContext } from '@/services/workExecution.service';
 
@@ -80,9 +80,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Designated handover receiver does not have access to this plant' }, { status: 400 });
     }
 
-    // Default: initiate handover (atomic in canonical service: close timers +
-    // transition WO + create ShiftHandover + audit).
-    const result = await initiateHandover(id, sessionCtx, {
+    // Canonical handover initiation closes all live team sessions without
+    // rewriting their start/resume action, then transitions + creates the
+    // ShiftHandover record atomically.
+    const result = await initiateCanonicalHandover(id, sessionCtx, {
       reason: body.reason,
       idempotencyKey: body.idempotencyKey,
       shiftType: body.shiftType,
