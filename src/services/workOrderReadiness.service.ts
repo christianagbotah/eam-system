@@ -212,7 +212,15 @@ async function checkTechnicianEligibilityForStart(
 }
 
 function hasOpenToolCustody(item: WoReadinessData['repairToolRequests'][number]['items'][number]): boolean {
-  return Math.max(0, item.quantityIssued - item.quantityReturned - item.quantityTransferred) > 0
+  // Current custody is authoritative from issued/returned/transferred quantities.
+  // pendingReturnQty is retained as a compatibility safety net for legacy/imported
+  // records that predate the complete quantity-ledger fields. Never allow an old
+  // record with a known pending return to bypass completion readiness.
+  const issued = Number.isFinite(item.quantityIssued) ? item.quantityIssued : 0
+  const returned = Number.isFinite(item.quantityReturned) ? item.quantityReturned : 0
+  const transferred = Number.isFinite(item.quantityTransferred) ? item.quantityTransferred : 0
+  const outstanding = Math.max(0, issued - returned - transferred)
+  return outstanding > 0 || (item.pendingReturnQty ?? 0) > 0
 }
 
 function checkCompletionReadiness(
