@@ -26,6 +26,12 @@
     "mini-services",
     "skills",
     "source-analysis",
-    "examples"
+    "examples",
+    "src/app/api/work-orders/[id]/closed-pack/**",
+    "src/app/api/work-orders/[id]/print/**",
+    "src/app/api/work-orders/[id]/suggested-items/**",
+    "src/app/api/work-orders/active-enforcement/**",
+    "src/app/api/work-orders/reports/**",
+    "src/app/api/work-orders/route.ts"
   ]
 }
