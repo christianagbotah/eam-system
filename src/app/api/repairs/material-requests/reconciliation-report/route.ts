@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
 // GET /api/repairs/material-requests/reconciliation-report
@@ -18,43 +18,30 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const plantId = searchParams.get('plantId');
     const itemName = searchParams.get('itemName');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '20', 10);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10) || 20));
 
-    // Build where clause with plant scope
     const where: Record<string, unknown> = {};
+    const plantScope = await getPlantScope(request, session);
+    applyPlantScope(where, plantScope);
 
-    if (session) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope) {
-        applyPlantScope(where, plantScope);
-      }
-    }
-
-    // Additional filters
     if (plantId) where.plantId = plantId;
     if (itemName) where.itemName = { contains: itemName };
 
-    // Date range filter on issuedAt
     const dateFilter: Record<string, unknown> = {};
     if (startDate) dateFilter.gte = new Date(startDate);
     if (endDate) dateFilter.lte = new Date(endDate);
-    if (Object.keys(dateFilter).length > 0) {
-      where.issuedAt = dateFilter;
-    }
+    if (Object.keys(dateFilter).length > 0) where.issuedAt = dateFilter;
 
-    // Only include material requests that have been issued (have reconciliation data)
-    // or that have been picked
     where.status = { in: ['issued', 'picking', 'closed', 'partially_returned', 'fully_returned'] };
 
-    // Fetch detailed records
+    const queryWhere = Object.keys(where).length > 0 ? where : undefined;
     const [records, total] = await Promise.all([
       db.repairMaterialRequest.findMany({
-        where: Object.keys(where).length > 0 ? where : undefined,
+        where: queryWhere,
         include: {
           requestedBy: { select: { id: true, fullName: true, username: true } },
           issuedByUser: { select: { id: true, fullName: true } },
-          pickedByUser: { select: { id: true, fullName: true } },
           workOrder: {
             select: { id: true, woNumber: true, title: true, status: true },
           },
@@ -64,12 +51,9 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.repairMaterialRequest.count({
-        where: Object.keys(where).length > 0 ? where : undefined,
-      }),
+      db.repairMaterialRequest.count({ where: queryWhere }),
     ]);
 
-    // Compute per-record reconciliation data
     const details = records.map((r) => {
       const issuedQty = r.quantityIssued || r.quantityApproved || 0;
       const consumedQty = r.consumedQty ?? 0;
@@ -100,35 +84,28 @@ export async function GET(request: NextRequest) {
         wastedCost: wastedQty * (r.unitCost || 0),
         requestedBy: r.requestedBy?.fullName,
         issuedBy: r.issuedByUser?.fullName,
-        pickedBy: (r as any).pickedByUser?.fullName,
-        pickedAt: (r as any).pickedAt,
+        // pickedBy is stored as the picker identity string, not a User relation.
+        pickedBy: r.pickedBy,
+        pickedAt: r.pickedAt,
         issuedAt: r.issuedAt,
         plantId: r.plantId,
       };
     });
 
-    // Compute overall summary stats using a separate query for aggregation
     const summaryWhere: Record<string, unknown> = {};
-    if (session) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope) {
-        applyPlantScope(summaryWhere, plantScope);
-      }
-    }
+    applyPlantScope(summaryWhere, plantScope);
     if (plantId) summaryWhere.plantId = plantId;
     if (itemName) summaryWhere.itemName = { contains: itemName };
-    if (Object.keys(dateFilter).length > 0) {
-      summaryWhere.issuedAt = dateFilter;
-    }
+    if (Object.keys(dateFilter).length > 0) summaryWhere.issuedAt = dateFilter;
     summaryWhere.status = { in: ['issued', 'picking', 'closed', 'partially_returned', 'fully_returned'] };
 
+    const summaryQueryWhere = Object.keys(summaryWhere).length > 0 ? summaryWhere : undefined;
     const allRecords = await db.repairMaterialRequest.findMany({
-      where: Object.keys(summaryWhere).length > 0 ? summaryWhere : undefined,
+      where: summaryQueryWhere,
       select: {
         quantityRequested: true,
         quantityApproved: true,
         quantityIssued: true,
-        quantityReturned: true,
         consumedQty: true,
         wastedQty: true,
         unitCost: true,
@@ -164,11 +141,8 @@ export async function GET(request: NextRequest) {
       totalConsumedCost += consumed * cost;
       totalWastedCost += wasted * cost;
 
-      if (r.consumedQty !== null) {
-        reconciledCount++;
-      } else {
-        pendingReconciliationCount++;
-      }
+      if (r.consumedQty !== null) reconciledCount++;
+      else pendingReconciliationCount++;
     }
 
     const totalRecords = allRecords.length;
@@ -176,16 +150,14 @@ export async function GET(request: NextRequest) {
     const overallWasteRate = totalIssued > 0 ? (totalWasted / totalIssued) * 100 : 0;
     const completionRate = totalRecords > 0 ? (reconciledCount / totalRecords) * 100 : 0;
 
-    // Item-level breakdown (top wasteful items)
     const itemBreakdown = await db.repairMaterialRequest.groupBy({
       by: ['itemName'],
-      where: Object.keys(summaryWhere).length > 0 ? summaryWhere : undefined,
+      where: summaryQueryWhere,
       _sum: {
         quantityRequested: true,
         quantityIssued: true,
         consumedQty: true,
         wastedQty: true,
-        quantityReturned: true,
       },
       _count: { id: true },
       orderBy: { _sum: { wastedQty: 'desc' } },
@@ -221,7 +193,7 @@ export async function GET(request: NextRequest) {
       totalCost: Number(totalCost.toFixed(2)),
       totalConsumedCost: Number(totalConsumedCost.toFixed(2)),
       totalWastedCost: Number(totalWastedCost.toFixed(2)),
-      savingsFromReturns: Number(((totalReturned * (totalCost / (totalIssued || 1)))).toFixed(2)),
+      savingsFromReturns: Number((totalReturned * (totalCost / (totalIssued || 1))).toFixed(2)),
     };
 
     return NextResponse.json({
