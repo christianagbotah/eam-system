@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
-import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { generateReportPDF, type ReportPDFParams } from '@/lib/generate-report-pdf';
 
 type ReportType = 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance';
@@ -32,7 +32,33 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const plantId = plantScope.isScoped && plantScope.plantId ? plantScope.plantId : (searchParams.get('plantId') || undefined);
+    // Reports must never widen a user's plant scope. An explicit active plant
+    // wins over query-string selection. Ordinary users with multiple accessible
+    // plants must choose one, because these aggregate handlers currently accept
+    // a single plantId rather than an IN-list.
+    const requestedPlantId = searchParams.get('plantId') || undefined;
+    let plantId: string | undefined;
+    if (plantScope.isScoped && plantScope.plantId) {
+      if (requestedPlantId && requestedPlantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Forbidden: requested plant is outside the active plant scope' }, { status: 403 });
+      }
+      plantId = plantScope.plantId;
+    } else if (plantScope.isSystemWide) {
+      plantId = requestedPlantId;
+    } else if (requestedPlantId) {
+      if (!canAccessPlant(plantScope, requestedPlantId)) {
+        return NextResponse.json({ success: false, error: 'Forbidden: no access to requested plant' }, { status: 403 });
+      }
+      plantId = requestedPlantId;
+    } else if (plantScope.accessiblePlantIds.length === 1) {
+      plantId = plantScope.accessiblePlantIds[0];
+    } else {
+      return NextResponse.json(
+        { success: false, error: 'Select one of your accessible plants before generating this report' },
+        { status: 400 },
+      );
+    }
+
     const from = searchParams.get('from') ? new Date(searchParams.get('from')!) : undefined;
     const to = searchParams.get('to') ? new Date(searchParams.get('to')!) : undefined;
     const priority = searchParams.get('priority') || undefined;
@@ -62,7 +88,7 @@ export async function GET(request: NextRequest) {
       if (jsonBody.success && jsonBody.data) {
         const pdfBuffer = await generateReportPDF(buildRepairPdfParams(type, jsonBody.data, session.fullName || session.userId, from, to, plantId, priority, department));
         const filename = `repair-${type}-report.pdf`;
-        return new NextResponse(pdfBuffer, {
+        return new NextResponse(new Uint8Array(pdfBuffer), {
           headers: {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `attachment; filename="${filename}"`,
@@ -98,7 +124,6 @@ async function handleLifecycleReport(
       workOrder: {
         include: {
           statusHistory: { orderBy: { createdAt: 'asc' } },
-          timeLogs: true,
         },
       },
       requester: { select: { id: true, fullName: true } },
@@ -107,7 +132,6 @@ async function handleLifecycleReport(
       assignedPlanner: { select: { id: true, fullName: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 200,
   });
 
   const lifecycleEntries = mrs.map((mr) => {
@@ -116,27 +140,23 @@ async function handleLifecycleReport(
 
     stages.mr_created = { timestamp: mr.createdAt, durationHours: null };
 
-    // Check for supervisor review
     if (mr.workflowStatus === 'supervisor_review' || mr.supervisorId) {
       const nextStage: Date | null = mr.updatedAt;
       stages.mr_supervisor_review = { timestamp: nextStage, durationHours: previousTimestamp && nextStage ? (nextStage.getTime() - previousTimestamp.getTime()) / (1000 * 3600) : null };
       previousTimestamp = nextStage;
     }
 
-    // Check for approval
     if (mr.status === 'approved' || mr.status === 'converted') {
       const approvalTime = mr.updatedAt;
       stages.mr_approved = { timestamp: approvalTime, durationHours: previousTimestamp && approvalTime ? (approvalTime.getTime() - previousTimestamp.getTime()) / (1000 * 3600) : null };
       previousTimestamp = approvalTime;
     }
 
-    // Check for planner assignment
     if (mr.assignedPlannerId) {
       stages.mr_planner_assigned = { timestamp: mr.updatedAt, durationHours: previousTimestamp ? (mr.updatedAt.getTime() - previousTimestamp.getTime()) / (1000 * 3600) : null };
       previousTimestamp = mr.updatedAt;
     }
 
-    // WO lifecycle stages
     const wo = mr.workOrder;
     if (wo) {
       stages.wo_created = { timestamp: wo.createdAt, durationHours: previousTimestamp ? (wo.createdAt.getTime() - previousTimestamp.getTime()) / (1000 * 3600) : null };
@@ -172,25 +192,23 @@ async function handleLifecycleReport(
     };
   });
 
-  // Calculate averages
   const completedWithWo = lifecycleEntries.filter((e) => e.woStatus === 'closed' && e.totalTurnaroundHours !== null);
   const avgTurnaround = completedWithWo.length > 0
     ? completedWithWo.reduce((sum, e) => sum + (e.totalTurnaroundHours || 0), 0) / completedWithWo.length
     : null;
 
-  const avgByStage: Record<string, number> = {};
+  const stageDurations: Record<string, number[]> = {};
   for (const entry of lifecycleEntries) {
     for (const [stageName, stageData] of Object.entries(entry.stages)) {
       if (stageData.durationHours !== null) {
-        if (!avgByStage[stageName]) avgByStage[stageName] = [];
-        (avgByStage[stageName] as unknown as number[]).push(stageData.durationHours);
+        if (!stageDurations[stageName]) stageDurations[stageName] = [];
+        stageDurations[stageName].push(stageData.durationHours);
       }
     }
   }
   const avgStageDurations: Record<string, number> = {};
-  for (const [k, v] of Object.entries(avgByStage)) {
-    const arr = v as unknown as number[];
-    avgStageDurations[k] = arr.length > 0 ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
+  for (const [stageName, durations] of Object.entries(stageDurations)) {
+    avgStageDurations[stageName] = durations.length > 0 ? durations.reduce((sum, value) => sum + value, 0) / durations.length : 0;
   }
 
   return NextResponse.json({
@@ -228,90 +246,81 @@ async function handleExecutionReport(
       teamLeader: { select: { id: true, fullName: true } },
       repairCompletion: true,
       timeLogs: true,
-      materials: true,
       statusHistory: true,
     },
     orderBy: { createdAt: 'desc' },
-    take: 300,
   });
 
   const total = workOrders.length;
   const closed = workOrders.filter((wo) => wo.status === 'closed');
   const completed = workOrders.filter((wo) => ['completed', 'verified', 'closed'].includes(wo.status));
+  const laborHours = (wo: (typeof workOrders)[number]) => wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0;
 
-  // Completion by type
   const byType: Record<string, { total: number; closed: number; rate: number; totalHours: number }> = {};
   for (const wo of workOrders) {
     if (!byType[wo.type]) byType[wo.type] = { total: 0, closed: 0, rate: 0, totalHours: 0 };
     byType[wo.type].total++;
-    byType[wo.type].totalHours += wo.actualHours || 0;
+    byType[wo.type].totalHours += laborHours(wo);
     if (wo.status === 'closed') byType[wo.type].closed++;
   }
-  for (const t of Object.keys(byType)) {
-    byType[t].rate = byType[t].total > 0 ? byType[t].closed / byType[t].total : 0;
+  for (const typeKey of Object.keys(byType)) {
+    byType[typeKey].rate = byType[typeKey].total > 0 ? byType[typeKey].closed / byType[typeKey].total : 0;
   }
 
-  // Completion by priority
   const byPriority: Record<string, { total: number; closed: number; rate: number }> = {};
   for (const wo of workOrders) {
     if (!byPriority[wo.priority]) byPriority[wo.priority] = { total: 0, closed: 0, rate: 0 };
     byPriority[wo.priority].total++;
     if (wo.status === 'closed') byPriority[wo.priority].closed++;
   }
-  for (const p of Object.keys(byPriority)) {
-    byPriority[p].rate = byPriority[p].total > 0 ? byPriority[p].closed / byPriority[p].total : 0;
+  for (const priorityKey of Object.keys(byPriority)) {
+    byPriority[priorityKey].rate = byPriority[priorityKey].total > 0 ? byPriority[priorityKey].closed / byPriority[priorityKey].total : 0;
   }
 
-  // Actual vs estimated hours
-  let totalEstimated = 0;
-  let totalActual = 0;
-  let withEstimate = 0;
-  for (const wo of workOrders) {
-    if (wo.estimatedHours) {
-      totalEstimated += wo.estimatedHours;
-      withEstimate++;
-    }
-    if (wo.actualHours) totalActual += wo.actualHours;
-  }
-  const avgEstimated = withEstimate > 0 ? totalEstimated / withEstimate : 0;
-  const avgActual = completed.length > 0 ? totalActual / completed.length : 0;
-  const avgVariance = withEstimate > 0 ? avgActual - avgEstimated : 0;
+  const avgActual = completed.length > 0
+    ? completed.reduce((sum, wo) => sum + laborHours(wo), 0) / completed.length
+    : 0;
+  const comparable = completed.filter((wo) => (wo.estimatedHours ?? 0) > 0);
+  const avgEstimated = comparable.length > 0
+    ? comparable.reduce((sum, wo) => sum + (wo.estimatedHours ?? 0), 0) / comparable.length
+    : 0;
+  const avgComparableActual = comparable.length > 0
+    ? comparable.reduce((sum, wo) => sum + laborHours(wo), 0) / comparable.length
+    : 0;
+  const avgVariance = comparable.length > 0 ? avgComparableActual - avgEstimated : 0;
 
-  // Rework analysis
-  const reworkCount = workOrders.filter((wo) => {
-    const completion = wo.repairCompletion;
-    return completion && completion.reworkCount > 0;
-  }).length;
+  const reworkCount = workOrders.filter((wo) => (wo.repairCompletion?.reworkCount ?? 0) > 0).length;
   const reworkRate = total > 0 ? reworkCount / total : 0;
   const totalReworkInstances = workOrders.reduce((sum, wo) => sum + (wo.repairCompletion?.reworkCount || 0), 0);
 
-  // Team performance metrics
   const teamMetrics: Record<string, { fullName: string; total: number; closed: number; avgActualHours: number; rework: number }> = {};
   for (const wo of workOrders) {
+    const key = wo.assignedTo || 'unassigned';
     const techName = wo.assignee?.fullName || 'Unassigned';
-    if (!teamMetrics[wo.assignedTo || 'unassigned']) {
-      teamMetrics[wo.assignedTo || 'unassigned'] = { fullName: techName, total: 0, closed: 0, avgActualHours: 0, rework: 0 };
+    if (!teamMetrics[key]) {
+      teamMetrics[key] = { fullName: techName, total: 0, closed: 0, avgActualHours: 0, rework: 0 };
     }
-    teamMetrics[wo.assignedTo || 'unassigned'].total++;
-    if (wo.status === 'closed') teamMetrics[wo.assignedTo || 'unassigned'].closed++;
-    teamMetrics[wo.assignedTo || 'unassigned'].rework += (wo.repairCompletion?.reworkCount || 0);
+    teamMetrics[key].total++;
+    if (wo.status === 'closed') teamMetrics[key].closed++;
+    teamMetrics[key].rework += wo.repairCompletion?.reworkCount || 0;
   }
-  for (const tm of Object.values(teamMetrics)) {
-    tm.avgActualHours = tm.closed > 0 ? workOrders.filter((wo) => wo.assignedTo && wo.status === 'closed').reduce((sum) => sum + (workOrders.find((w) => w.assignedTo)?.actualHours || 0), 0) / tm.closed : 0;
+  for (const [technicianId, metric] of Object.entries(teamMetrics)) {
+    const techClosed = workOrders.filter((wo) => (wo.assignedTo || 'unassigned') === technicianId && wo.status === 'closed');
+    metric.avgActualHours = techClosed.length > 0
+      ? techClosed.reduce((sum, wo) => sum + laborHours(wo), 0) / techClosed.length
+      : 0;
   }
 
-  // Convert byType Record to array format for frontend
-  const byTypeArray = Object.entries(byType).map(([type, data]) => ({
-    type,
+  const byTypeArray = Object.entries(byType).map(([typeName, data]) => ({
+    type: typeName,
     count: data.total,
     closed: data.closed,
     rate: Math.round(data.rate * 10000) / 100,
     avgHours: data.total > 0 ? Math.round((data.totalHours / data.total) * 100) / 100 : 0,
   }));
 
-  // Convert byPriority Record to array format
-  const byPriorityArray = Object.entries(byPriority).map(([priority, data]) => ({
-    priority,
+  const byPriorityArray = Object.entries(byPriority).map(([priorityName, data]) => ({
+    priority: priorityName,
     total: data.total,
     closed: data.closed,
     rate: Math.round(data.rate * 10000) / 100,
@@ -337,6 +346,7 @@ async function handleExecutionReport(
       labor: {
         avgEstimatedHours: Math.round(avgEstimated * 100) / 100,
         avgActualHours: Math.round(avgActual * 100) / 100,
+        avgComparableActualHours: Math.round(avgComparableActual * 100) / 100,
         avgVarianceHours: Math.round(avgVariance * 100) / 100,
         variancePercent: avgEstimated > 0 ? Math.round((avgVariance / avgEstimated) * 10000) / 100 : 0,
       },
@@ -345,7 +355,9 @@ async function handleExecutionReport(
         reworkRate: Math.round(reworkRate * 10000) / 100,
         totalReworkInstances,
       },
-      teamMetrics: Object.values(teamMetrics).sort((a, b) => b.closed - a.closed),
+      teamMetrics: Object.values(teamMetrics)
+        .map((metric) => ({ ...metric, avgActualHours: Math.round(metric.avgActualHours * 100) / 100 }))
+        .sort((a, b) => b.closed - a.closed),
     },
   });
 }
@@ -358,7 +370,6 @@ async function handleTechnicianPerformanceReport(
   department: string | undefined,
   dateFilter: Record<string, unknown>,
 ) {
-  // Get all work orders in date range
   const woWhere: Record<string, unknown> = { plantId: plantId || undefined };
   if (department) woWhere.departmentId = department;
   if (Object.keys(dateFilter).length > 0) woWhere.createdAt = dateFilter;
@@ -371,12 +382,8 @@ async function handleTechnicianPerformanceReport(
       timeLogs: true,
     },
     orderBy: { createdAt: 'desc' },
-    // Capped at 100 for aggregate report — date/plant/department filters
-    // should narrow the result set sufficiently for accurate aggregations.
-    take: 100,
   });
 
-  // Group by technician
   const techMap: Record<string, {
     user: { id: string; fullName: string; username: string; department: string | null; primaryTrade: string | null };
     woCount: number;
@@ -390,11 +397,11 @@ async function handleTechnicianPerformanceReport(
 
   for (const wo of workOrders) {
     const uid = wo.assignedTo;
-    if (!uid) continue;
+    if (!uid || !wo.assignee) continue;
 
     if (!techMap[uid]) {
       techMap[uid] = {
-        user: wo.assignee!,
+        user: wo.assignee,
         woCount: 0,
         closedCount: 0,
         totalTimeLogged: 0,
@@ -407,12 +414,11 @@ async function handleTechnicianPerformanceReport(
 
     techMap[uid].woCount++;
     if (wo.status === 'closed') techMap[uid].closedCount++;
-    techMap[uid].totalTimeLogged += wo.actualHours || 0;
+    techMap[uid].totalTimeLogged += wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0;
     techMap[uid].totalEstimated += wo.estimatedHours || 0;
     techMap[uid].reworkCount += wo.repairCompletion?.reworkCount || 0;
   }
 
-  // Calculate per-technician metrics
   const technicians = Object.values(techMap).map((tech) => {
     const avgTimePerWo = tech.woCount > 0 ? tech.totalTimeLogged / tech.woCount : 0;
     const timeAccuracy = tech.totalEstimated > 0
@@ -451,47 +457,49 @@ async function handleMaterialsReport(
   const workOrders = await db.workOrder.findMany({
     where: woWhere,
     include: {
-      materials: true,
+      repairMaterialRequests: true,
       repairCompletion: true,
     },
     orderBy: { createdAt: 'desc' },
-    take: 300,
   });
 
-  // Material cost by WO
   const materialCostByWo = workOrders.map((wo) => {
-    const totalMaterialCost = wo.materials.reduce((sum, m) => sum + (m.totalCost || 0), 0);
-    const totalIssued = wo.materials.filter((m) => ['issued', 'returned'].includes(m.status)).length;
-    const totalReturned = wo.materials.filter((m) => m.status === 'returned').length;
+    const materialCost = wo.repairMaterialRequests.reduce((sum, material) => {
+      const unitCost = material.unitCost ?? 0;
+      const consumed = material.consumedQty ?? 0;
+      const wasted = material.wastedQty ?? 0;
+      const authoritativeUsedCost = (consumed + wasted) * unitCost;
+      const issuedFallbackCost = (material.quantityIssued ?? 0) * unitCost;
+      return sum + (authoritativeUsedCost > 0 ? authoritativeUsedCost : (material.estimatedCost ?? issuedFallbackCost));
+    }, 0);
+    const totalIssued = wo.repairMaterialRequests.filter((material) => (material.quantityIssued ?? 0) > 0).length;
+    const totalReturned = wo.repairMaterialRequests.filter((material) => (material.quantityReturned ?? 0) > 0 || material.status === 'returned').length;
 
     return {
       workOrderId: wo.id,
       woNumber: wo.woNumber,
       title: wo.title,
-      materialCount: wo.materials.length,
+      materialCount: wo.repairMaterialRequests.length,
       issuedCount: totalIssued,
       returnedCount: totalReturned,
-      totalMaterialCost: Math.round(totalMaterialCost * 100) / 100,
-      completionCost: wo.repairCompletion?.totalMaterialCost || 0,
+      totalMaterialCost: Math.round(materialCost * 100) / 100,
+      completionCost: wo.repairCompletion?.totalMaterialCost ?? materialCost,
     };
-  }).filter((m) => m.materialCount > 0);
+  }).filter((entry) => entry.materialCount > 0);
 
-  // Aggregate cost by category (via items)
-  const totalMaterialCost = materialCostByWo.reduce((sum, m) => sum + m.totalMaterialCost, 0);
+  const totalMaterialCost = materialCostByWo.reduce((sum, entry) => sum + entry.totalMaterialCost, 0);
 
-  // Spare part return analysis
   const sprWhere: Record<string, unknown> = { plantId: plantId || undefined };
   if (Object.keys(dateFilter).length > 0) sprWhere.createdAt = dateFilter;
 
   const sparePartReturns = await db.sparePartReturn.findMany({ where: sprWhere });
   const totalReturns = sparePartReturns.length;
-  const returnedToStore = sparePartReturns.filter((r) => r.status === 'returned_to_store').length;
-  const disposed = sparePartReturns.filter((r) => r.status === 'disposed').length;
-  const totalRefurbCost = sparePartReturns.reduce((sum, r) => sum + (r.actualRefurbCost || 0), 0);
+  const returnedToStore = sparePartReturns.filter((returnRecord) => returnRecord.status === 'returned_to_store').length;
+  const disposed = sparePartReturns.filter((returnRecord) => returnRecord.status === 'disposed').length;
+  const totalRefurbCost = sparePartReturns.reduce((sum, returnRecord) => sum + (returnRecord.actualRefurbCost || 0), 0);
   const returnRate = totalReturns > 0 ? Math.round((returnedToStore / totalReturns) * 10000) / 100 : 0;
 
-  // Top materials by cost
-  const itemIds = [...new Set(workOrders.flatMap((wo) => wo.materials.map((m) => m.itemId).filter(Boolean) as string[]))];
+  const itemIds = [...new Set(workOrders.flatMap((wo) => wo.repairMaterialRequests.map((material) => material.itemId).filter(Boolean) as string[]))];
   const topItems = itemIds.length > 0 ? await db.inventoryItem.findMany({
     where: { id: { in: itemIds } },
     select: { id: true, itemCode: true, name: true, category: true, unitCost: true },
@@ -536,41 +544,35 @@ async function handleDowntimeReport(
       createdBy: { select: { id: true, fullName: true } },
     },
     orderBy: { createdAt: 'desc' },
-    // Capped at 100 for aggregate report — date/plant filters should
-    // narrow the result set sufficiently for accurate aggregations.
-    take: 100,
   });
 
   const total = downtimes.length;
-  const totalDowntimeMinutes = downtimes.reduce((sum, d) => sum + (d.durationMinutes || 0), 0);
+  const totalDowntimeMinutes = downtimes.reduce((sum, downtime) => sum + (downtime.durationMinutes || 0), 0);
   const totalDowntimeHours = Math.round((totalDowntimeMinutes / 60) * 100) / 100;
   const avgDurationHours = total > 0 ? Math.round((totalDowntimeMinutes / 60 / total) * 100) / 100 : 0;
-  const totalProductionLoss = downtimes.reduce((sum, d) => sum + (d.productionLoss || 0), 0);
+  const totalProductionLoss = downtimes.reduce((sum, downtime) => sum + (downtime.productionLoss || 0), 0);
 
-  // By asset
   const byAsset: Record<string, { assetName: string; count: number; totalHours: number; totalLoss: number }> = {};
-  for (const dt of downtimes) {
-    const key = dt.assetId || 'unknown';
-    if (!byAsset[key]) byAsset[key] = { assetName: dt.assetName, count: 0, totalHours: 0, totalLoss: 0 };
+  for (const downtime of downtimes) {
+    const key = downtime.assetId || 'unknown';
+    if (!byAsset[key]) byAsset[key] = { assetName: downtime.assetName, count: 0, totalHours: 0, totalLoss: 0 };
     byAsset[key].count++;
-    byAsset[key].totalHours += (dt.durationMinutes || 0) / 60;
-    byAsset[key].totalLoss += dt.productionLoss || 0;
+    byAsset[key].totalHours += (downtime.durationMinutes || 0) / 60;
+    byAsset[key].totalLoss += downtime.productionLoss || 0;
   }
 
-  // By category
   const byCategory: Record<string, { count: number; totalHours: number }> = {};
-  for (const dt of downtimes) {
-    if (!byCategory[dt.category]) byCategory[dt.category] = { count: 0, totalHours: 0 };
-    byCategory[dt.category].count++;
-    byCategory[dt.category].totalHours += (dt.durationMinutes || 0) / 60;
+  for (const downtime of downtimes) {
+    if (!byCategory[downtime.category]) byCategory[downtime.category] = { count: 0, totalHours: 0 };
+    byCategory[downtime.category].count++;
+    byCategory[downtime.category].totalHours += (downtime.durationMinutes || 0) / 60;
   }
 
-  // By impact level
   const byImpactLevel: Record<string, { count: number; totalHours: number }> = {};
-  for (const dt of downtimes) {
-    if (!byImpactLevel[dt.impactLevel]) byImpactLevel[dt.impactLevel] = { count: 0, totalHours: 0 };
-    byImpactLevel[dt.impactLevel].count++;
-    byImpactLevel[dt.impactLevel].totalHours += (dt.durationMinutes || 0) / 60;
+  for (const downtime of downtimes) {
+    if (!byImpactLevel[downtime.impactLevel]) byImpactLevel[downtime.impactLevel] = { count: 0, totalHours: 0 };
+    byImpactLevel[downtime.impactLevel].count++;
+    byImpactLevel[downtime.impactLevel].totalHours += (downtime.durationMinutes || 0) / 60;
   }
 
   const topAssetsByDowntime = Object.entries(byAsset)
@@ -589,8 +591,8 @@ async function handleDowntimeReport(
         avgLossPerHour: totalDowntimeHours > 0 ? Math.round((totalProductionLoss / totalDowntimeHours) * 100) / 100 : 0,
       },
       byAsset: topAssetsByDowntime,
-      byCategory: Object.fromEntries(Object.entries(byCategory).map(([k, v]) => [k, { ...v, totalHours: Math.round(v.totalHours * 100) / 100 }])),
-      byImpactLevel: Object.fromEntries(Object.entries(byImpactLevel).map(([k, v]) => [k, { ...v, totalHours: Math.round(v.totalHours * 100) / 100 }])),
+      byCategory: Object.fromEntries(Object.entries(byCategory).map(([key, value]) => [key, { ...value, totalHours: Math.round(value.totalHours * 100) / 100 }])),
+      byImpactLevel: Object.fromEntries(Object.entries(byImpactLevel).map(([key, value]) => [key, { ...value, totalHours: Math.round(value.totalHours * 100) / 100 }])),
     },
   });
 }
@@ -602,7 +604,6 @@ async function handleToolsReport(
   to: Date | undefined,
   dateFilter: Record<string, unknown>,
 ) {
-  // Tool damage analysis
   const dtrWhere: Record<string, unknown> = { plantId: plantId || undefined };
   if (Object.keys(dateFilter).length > 0) dtrWhere.createdAt = dateFilter;
 
@@ -612,63 +613,56 @@ async function handleToolsReport(
       tool: { select: { id: true, toolCode: true, name: true, category: true, purchaseCost: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 300,
   });
 
   const totalDamageReports = damagedReports.length;
-  const totalRepairCost = damagedReports.reduce((sum, d) => sum + (d.actualRepairCost || 0), 0);
-  const writtenOff = damagedReports.filter((d) => d.status === 'written_off').length;
-  const repaired = damagedReports.filter((d) => d.status === 'repaired').length;
-  const inProgress = damagedReports.filter((d) => d.status === 'repair_in_progress').length;
+  const totalRepairCost = damagedReports.reduce((sum, report) => sum + (report.actualRepairCost || 0), 0);
+  const writtenOff = damagedReports.filter((report) => report.status === 'written_off').length;
+  const repaired = damagedReports.filter((report) => report.status === 'repaired').length;
+  const inProgress = damagedReports.filter((report) => report.status === 'repair_in_progress').length;
 
-  // By damage type
   const byDamageType: Record<string, { count: number; cost: number }> = {};
-  for (const dr of damagedReports) {
-    if (!byDamageType[dr.damageType]) byDamageType[dr.damageType] = { count: 0, cost: 0 };
-    byDamageType[dr.damageType].count++;
-    byDamageType[dr.damageType].cost += dr.actualRepairCost || 0;
+  for (const report of damagedReports) {
+    if (!byDamageType[report.damageType]) byDamageType[report.damageType] = { count: 0, cost: 0 };
+    byDamageType[report.damageType].count++;
+    byDamageType[report.damageType].cost += report.actualRepairCost || 0;
   }
 
-  // By severity
   const bySeverity: Record<string, { count: number; cost: number }> = {};
-  for (const dr of damagedReports) {
-    if (!bySeverity[dr.damageSeverity]) bySeverity[dr.damageSeverity] = { count: 0, cost: 0 };
-    bySeverity[dr.damageSeverity].count++;
-    bySeverity[dr.damageSeverity].cost += dr.actualRepairCost || 0;
+  for (const report of damagedReports) {
+    if (!bySeverity[report.damageSeverity]) bySeverity[report.damageSeverity] = { count: 0, cost: 0 };
+    bySeverity[report.damageSeverity].count++;
+    bySeverity[report.damageSeverity].cost += report.actualRepairCost || 0;
   }
 
-  // By tool category
   const byCategory: Record<string, { count: number; cost: number }> = {};
-  for (const dr of damagedReports) {
-    const cat = dr.tool?.category || 'Unknown';
-    if (!byCategory[cat]) byCategory[cat] = { count: 0, cost: 0 };
-    byCategory[cat].count++;
-    byCategory[cat].cost += dr.actualRepairCost || 0;
+  for (const report of damagedReports) {
+    const category = report.tool?.category || 'Unknown';
+    if (!byCategory[category]) byCategory[category] = { count: 0, cost: 0 };
+    byCategory[category].count++;
+    byCategory[category].cost += report.actualRepairCost || 0;
   }
 
-  // Tool transfer frequency
   const txWhere: Record<string, unknown> = {};
   if (from || to) txWhere.createdAt = dateFilter;
 
   const transfers = await db.toolTransferRequest.findMany({
     where: { ...txWhere, plantId: plantId || undefined },
     orderBy: { createdAt: 'desc' },
-    take: 200,
   });
 
   const totalTransfers = transfers.length;
-  const completedTransfers = transfers.filter((t) => t.status === 'transferred').length;
+  const completedTransfers = transfers.filter((transfer) => transfer.status === 'transferred').length;
 
-  // Most damaged tools
   const damagedToolsMap: Record<string, { toolName: string; toolCode: string; category: string; damageCount: number; totalCost: number }> = {};
-  for (const dr of damagedReports) {
-    if (!dr.tool) continue;
-    const key = dr.toolId;
+  for (const report of damagedReports) {
+    if (!report.tool) continue;
+    const key = report.toolId;
     if (!damagedToolsMap[key]) {
-      damagedToolsMap[key] = { toolName: dr.tool.name, toolCode: dr.tool.toolCode, category: dr.tool.category, damageCount: 0, totalCost: 0 };
+      damagedToolsMap[key] = { toolName: report.tool.name, toolCode: report.tool.toolCode, category: report.tool.category, damageCount: 0, totalCost: 0 };
     }
     damagedToolsMap[key].damageCount++;
-    damagedToolsMap[key].totalCost += dr.actualRepairCost || 0;
+    damagedToolsMap[key].totalCost += report.actualRepairCost || 0;
   }
 
   const mostDamagedTools = Object.values(damagedToolsMap)
@@ -688,9 +682,9 @@ async function handleToolsReport(
         totalTransfers,
         completedTransfers,
       },
-      byDamageType: Object.fromEntries(Object.entries(byDamageType).map(([k, v]) => [k, { ...v, cost: Math.round(v.cost * 100) / 100 }])),
-      bySeverity: Object.fromEntries(Object.entries(bySeverity).map(([k, v]) => [k, { ...v, cost: Math.round(v.cost * 100) / 100 }])),
-      byCategory: Object.fromEntries(Object.entries(byCategory).map(([k, v]) => [k, { ...v, cost: Math.round(v.cost * 100) / 100 }])),
+      byDamageType: Object.fromEntries(Object.entries(byDamageType).map(([key, value]) => [key, { ...value, cost: Math.round(value.cost * 100) / 100 }])),
+      bySeverity: Object.fromEntries(Object.entries(bySeverity).map(([key, value]) => [key, { ...value, cost: Math.round(value.cost * 100) / 100 }])),
+      byCategory: Object.fromEntries(Object.entries(byCategory).map(([key, value]) => [key, { ...value, cost: Math.round(value.cost * 100) / 100 }])),
       mostDamagedTools,
     },
   });
@@ -725,7 +719,6 @@ function buildRepairPdfParams(
   };
 
   const { title, subtitle } = reportTitles[type];
-
   const sections: ReportPDFParams['sections'] = [];
 
   switch (type) {
@@ -740,7 +733,7 @@ function buildRepairPdfParams(
         { title: 'Average Stage Durations', type: 'table', data: {
           headers: ['Stage', 'Avg Hours'],
           rows: Object.entries(data.avgStageDurations as Record<string, number>).map(([stage, hours]) => [
-            stage.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            stage.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase()),
             `${Math.round(hours * 100) / 100}`,
           ]),
         }},
@@ -758,11 +751,11 @@ function buildRepairPdfParams(
         ]},
         { title: 'Work Orders by Type', type: 'table', data: {
           headers: ['Type', 'Count', 'Closed', 'Rate (%)', 'Avg Hours'],
-          rows: (data.byType as any[]).map(d => [d.type, String(d.count), String(d.closed), String(d.rate), String(d.avgHours)]),
+          rows: (data.byType as any[]).map((entry) => [entry.type, String(entry.count), String(entry.closed), String(entry.rate), String(entry.avgHours)]),
         }},
         { title: 'Team Performance', type: 'table', data: {
-          headers: ['Name', 'Total', 'Closed', 'Rework'],
-          rows: (data.teamMetrics as any[]).map(d => [d.fullName, String(d.total), String(d.closed), String(d.rework)]),
+          headers: ['Name', 'Total', 'Closed', 'Avg Hours', 'Rework'],
+          rows: (data.teamMetrics as any[]).map((entry) => [entry.fullName, String(entry.total), String(entry.closed), String(entry.avgActualHours), String(entry.rework)]),
         }},
       );
       break;
@@ -772,13 +765,13 @@ function buildRepairPdfParams(
       sections.push(
         { title: 'Technician Performance', type: 'table', data: {
           headers: ['Name', 'WO Count', 'Closed', 'Avg Time/WO', 'Time Accuracy (%)', 'Rework Rate (%)'],
-          rows: (data.technicians as any[]).map(d => [
-            d.user?.fullName || 'Unknown',
-            String(d.woCount),
-            String(d.closedCount),
-            String(d.avgTimePerWo),
-            String(d.timeAccuracy),
-            String(d.reworkRate),
+          rows: (data.technicians as any[]).map((entry) => [
+            entry.user?.fullName || 'Unknown',
+            String(entry.woCount),
+            String(entry.closedCount),
+            String(entry.avgTimePerWo),
+            String(entry.timeAccuracy),
+            String(entry.reworkRate),
           ]),
         }},
       );
@@ -794,11 +787,11 @@ function buildRepairPdfParams(
         ]},
         { title: 'Material Cost by Work Order', type: 'table', data: {
           headers: ['WO #', 'Title', 'Items', 'Cost'],
-          rows: (data.costByWorkOrder as any[]).slice(0, 15).map(d => [
-            d.woNumber || '—',
-            d.title || '—',
-            String(d.materialCount),
-            `$${d.totalMaterialCost.toLocaleString()}`,
+          rows: (data.costByWorkOrder as any[]).slice(0, 15).map((entry) => [
+            entry.woNumber || '—',
+            entry.title || '—',
+            String(entry.materialCount),
+            `$${entry.totalMaterialCost.toLocaleString()}`,
           ]),
         }},
         { title: 'Spare Part Returns', type: 'key-value', data: [
@@ -822,19 +815,19 @@ function buildRepairPdfParams(
         ]},
         { title: 'Top 10 Assets by Downtime', type: 'table', data: {
           headers: ['Asset', 'Events', 'Hours', 'Loss'],
-          rows: (data.byAsset as any[]).slice(0, 10).map(d => [
-            d.assetName || '—',
-            String(d.count),
-            String(d.totalHours),
-            `$${(d.totalLoss || 0).toLocaleString()}`,
+          rows: (data.byAsset as any[]).slice(0, 10).map((entry) => [
+            entry.assetName || '—',
+            String(entry.count),
+            String(entry.totalHours),
+            `$${(entry.totalLoss || 0).toLocaleString()}`,
           ]),
         }},
         { title: 'Downtime by Category', type: 'table', data: {
           headers: ['Category', 'Events', 'Hours'],
-          rows: Object.entries(data.byCategory as Record<string, any>).map(([cat, v]) => [
-            cat,
-            String(v.count),
-            String(v.totalHours),
+          rows: Object.entries(data.byCategory as Record<string, any>).map(([category, value]) => [
+            category,
+            String(value.count),
+            String(value.totalHours),
           ]),
         }},
       );
@@ -852,20 +845,20 @@ function buildRepairPdfParams(
         ]},
         { title: 'Most Damaged Tools', type: 'table', data: {
           headers: ['Tool', 'Code', 'Category', 'Damage Count', 'Repair Cost'],
-          rows: (data.mostDamagedTools as any[]).slice(0, 10).map(d => [
-            d.toolName,
-            d.toolCode,
-            d.category,
-            String(d.damageCount),
-            `$${d.totalCost.toLocaleString()}`,
+          rows: (data.mostDamagedTools as any[]).slice(0, 10).map((entry) => [
+            entry.toolName,
+            entry.toolCode,
+            entry.category,
+            String(entry.damageCount),
+            `$${entry.totalCost.toLocaleString()}`,
           ]),
         }},
         { title: 'By Damage Type', type: 'table', data: {
           headers: ['Damage Type', 'Count', 'Cost'],
-          rows: Object.entries(data.byDamageType as Record<string, any>).map(([dtype, v]) => [
-            dtype,
-            String(v.count),
-            `$${v.cost.toLocaleString()}`,
+          rows: Object.entries(data.byDamageType as Record<string, any>).map(([damageType, value]) => [
+            damageType,
+            String(value.count),
+            `$${value.cost.toLocaleString()}`,
           ]),
         }},
       );
