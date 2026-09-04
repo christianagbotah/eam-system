@@ -1,13 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasAnyPermission, hasRole } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
-/**
- * GET /api/work-orders/[id]/personal-tools
- *
- * Returns the work order's personalTools JSON parsed.
- */
+type PersonalToolAccessWO = {
+  assignedTo: string | null;
+  teamLeaderId: string | null;
+  teamMembers: Array<{ userId: string; role: string }>;
+  maintenanceRequest: { requestedBy: string } | null;
+};
+
+function hasBroadWorkOrderView(session: NonNullable<ReturnType<typeof getSession>>): boolean {
+  return isAdmin(session) || hasAnyPermission(session, ['work_orders.view', 'work_orders.view_all']);
+}
+
+function canViewOwnWorkOrder(
+  session: NonNullable<ReturnType<typeof getSession>>,
+  wo: PersonalToolAccessWO,
+): boolean {
+  if (!hasAnyPermission(session, ['work_orders.view_own'])) return false;
+  return (
+    wo.assignedTo === session.userId ||
+    wo.teamLeaderId === session.userId ||
+    wo.teamMembers.some((member) => member.userId === session.userId) ||
+    wo.maintenanceRequest?.requestedBy === session.userId
+  );
+}
+
+function parsePersonalTools(value: string | null | undefined): unknown[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn('[personal-tools] Failed to parse personalTools JSON:', error);
+    return [];
+  }
+}
+
+/** GET /api/work-orders/[id]/personal-tools */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -19,44 +50,36 @@ export async function GET(
     }
 
     const { id } = await params;
-
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const wo = await db.workOrder.findUnique({
       where: { id },
-      select: { id: true, personalTools: true },
+      select: {
+        id: true,
+        personalTools: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        teamMembers: { select: { userId: true, role: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
+      },
     });
-
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Parse the JSON personalTools field
-    let tools: unknown[] = [];
-    try {
-      const parsed = JSON.parse(wo.personalTools);
-      if (Array.isArray(parsed)) {
-        tools = parsed;
-      }
-    } catch (err) {
-      console.warn('[personal-tools] Failed to parse personalTools JSON:', err);
+    if (!hasBroadWorkOrderView(session) && !canViewOwnWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    return NextResponse.json({ success: true, data: tools });
+    return NextResponse.json({ success: true, data: parsePersonalTools(wo.personalTools) });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch personal tools';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
-/**
- * POST /api/work-orders/[id]/personal-tools
- *
- * Add a single personal tool to the work order.
- * Any team member or the assignee can add their own personal tools.
- */
+/** POST /api/work-orders/[id]/personal-tools — add one personal tool record */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -68,70 +91,73 @@ export async function POST(
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const { toolName, toolCode, condition, notes } = body;
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
+    const body = await request.json();
+    const toolName = typeof body.toolName === 'string' ? body.toolName.trim() : '';
     if (!toolName) {
       return NextResponse.json({ success: false, error: 'toolName is required' }, { status: 400 });
     }
 
     const wo = await db.workOrder.findUnique({
       where: { id },
-      select: { id: true, isLocked: true, status: true, assignedTo: true, teamMembers: { select: { userId: true } } },
+      select: {
+        id: true,
+        personalTools: true,
+        isLocked: true,
+        status: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        teamMembers: { select: { userId: true, role: true } },
+      },
     });
-
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
-
-    // Don't allow adding personal tools once WO has been verified
     if (wo.status === 'verified' || wo.status === 'closed') {
-      return NextResponse.json({ success: false, error: 'Work order has been reviewed. Changes are no longer allowed. Status: ' + wo.status }, { status: 400 });
+      return NextResponse.json({ success: false, error: `Work order has been reviewed. Changes are no longer allowed. Status: ${wo.status}` }, { status: 400 });
     }
 
-    // Any team member, assignee, or user with permission can add personal tools
-    const isTeamMember = wo.teamMembers.some((m) => m.userId === session.userId);
-    const isAssignee = wo.assignedTo === session.userId;
-    const hasPerm = hasAnyPermission(session, ['work_orders.update']);
-
-    if (!isTeamMember && !isAssignee && !hasPerm) {
-      return NextResponse.json(
-        { success: false, error: 'Only team members or the assigned technician can add personal tools.' },
-        { status: 403 }
-      );
+    const isExecutionMember =
+      wo.assignedTo === session.userId ||
+      wo.teamLeaderId === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId);
+    const hasUpdatePermission = isAdmin(session) || hasAnyPermission(session, ['work_orders.update']);
+    if (!isExecutionMember && !hasUpdatePermission) {
+      return NextResponse.json({ success: false, error: 'Only team members or authorized WO editors can add personal tools.' }, { status: 403 });
     }
 
-    // Parse existing tools
-    let existingTools: any[] = [];
-    try {
-      const raw = wo.personalTools;
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) existingTools = parsed;
-      }
-    } catch (err) {
-      console.warn('[personal-tools] Failed to parse existing personalTools JSON:', err);
-    }
-
-    // Add the new tool
+    const existingTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;
     const newTool = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       toolName,
-      toolCode: toolCode || null,
-      condition: condition || 'good',
-      notes: notes || '',
+      toolCode: typeof body.toolCode === 'string' && body.toolCode.trim() ? body.toolCode.trim() : null,
+      condition: typeof body.condition === 'string' && body.condition.trim() ? body.condition.trim() : 'good',
+      notes: typeof body.notes === 'string' ? body.notes.trim() : '',
       addedBy: session.userId,
       addedAt: new Date().toISOString(),
     };
-    existingTools.push(newTool);
 
-    await db.workOrder.update({
-      where: { id },
-      data: { personalTools: JSON.stringify(existingTools) },
+    existingTools.push(newTool);
+    await db.$transaction(async (tx) => {
+      await tx.workOrder.update({
+        where: { id },
+        data: { personalTools: JSON.stringify(existingTools) },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'work_order',
+          entityId: id,
+          oldValues: JSON.stringify({ personalTools: wo.personalTools }),
+          newValues: JSON.stringify({ personalTools: existingTools, personalToolAdded: newTool.id }),
+        },
+      });
     });
 
     return NextResponse.json({ success: true, data: newTool }, { status: 201 });
@@ -141,13 +167,7 @@ export async function POST(
   }
 }
 
-/**
- * PUT /api/work-orders/[id]/personal-tools
- *
- * Accepts { tools: [{ toolName, toolCode, condition, notes }] }
- * Saves as JSON to personalTools field.
- * Requires work_orders.update permission or team_leader role on the WO.
- */
+/** PUT /api/work-orders/[id]/personal-tools — replace personal tool list */
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -159,99 +179,100 @@ export async function PUT(
     }
 
     const { id } = await params;
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
-    const { tools } = body;
-
-    if (!tools || !Array.isArray(tools)) {
-      return NextResponse.json(
-        { success: false, error: 'tools array is required' },
-        { status: 400 }
-      );
+    const tools = body.tools;
+    if (!Array.isArray(tools)) {
+      return NextResponse.json({ success: false, error: 'tools array is required' }, { status: 400 });
     }
 
-    // Validate tool items
-    for (const tool of tools) {
-      if (!tool.toolName) {
-        return NextResponse.json(
-          { success: false, error: 'Each tool must have a toolName' },
-          { status: 400 }
-        );
-      }
-    }
-
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        personalTools: true,
+        isLocked: true,
+        status: true,
+        teamLeaderId: true,
+        teamMembers: { select: { userId: true, role: true } },
+      },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
-
-    // Don't allow updating personal tools once WO has been verified
     if (wo.status === 'verified' || wo.status === 'closed') {
-      return NextResponse.json({ success: false, error: 'Work order has been reviewed. Changes are no longer allowed. Status: ' + wo.status }, { status: 400 });
+      return NextResponse.json({ success: false, error: `Work order has been reviewed. Changes are no longer allowed. Status: ${wo.status}` }, { status: 400 });
     }
 
-    // Check permissions: requires work_orders.update permission OR team_leader role on the WO
-    const hasPermission = hasAnyPermission(session, ['work_orders.update']);
-    const isTeamLeader = await db.workOrderTeamMember.findFirst({
-      where: {
-        workOrderId: id,
-        userId: session.userId,
-        role: 'team_leader',
-      },
-    });
-
-    if (!hasPermission && !isTeamLeader) {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions. Requires work_orders.update permission or team_leader role on this work order.' },
-        { status: 403 }
-      );
+    const hasUpdatePermission = isAdmin(session) || hasAnyPermission(session, ['work_orders.update']);
+    const isTeamLeader =
+      wo.teamLeaderId === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId && member.role === 'team_leader');
+    if (!hasUpdatePermission && !isTeamLeader) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions. Requires WO update permission or team-leader authority.' }, { status: 403 });
     }
 
-    const oldValues = wo.personalTools;
-    const newValues = JSON.stringify(tools);
+    const previousTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;
+    const previousById = new Map(
+      previousTools
+        .filter((tool) => typeof tool.id === 'string')
+        .map((tool) => [tool.id as string, tool]),
+    );
+    const now = new Date().toISOString();
+    const normalizedTools: Array<Record<string, unknown>> = [];
 
-    const updated = await db.workOrder.update({
-      where: { id },
-      data: {
-        personalTools: newValues,
-      },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-      },
-    });
-
-    // Audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'work_order',
-        entityId: id,
-        oldValues: JSON.stringify({ personalTools: oldValues }),
-        newValues: JSON.stringify({ personalTools: newValues }),
-      },
-    });
-
-    // Parse and return the tools
-    let parsedTools: unknown[] = [];
-    try {
-      const parsed = JSON.parse(newValues);
-      if (Array.isArray(parsed)) {
-        parsedTools = parsed;
+    for (const tool of tools) {
+      if (!tool || typeof tool !== 'object') {
+        return NextResponse.json({ success: false, error: 'Each tool must be an object' }, { status: 400 });
       }
-    } catch (err) {
-      console.warn('[personal-tools] Failed to parse personalTools after update:', err);
+      const source = tool as Record<string, unknown>;
+      const toolName = typeof source.toolName === 'string' ? source.toolName.trim() : '';
+      if (!toolName) {
+        return NextResponse.json({ success: false, error: 'Each tool must have a toolName' }, { status: 400 });
+      }
+
+      const requestedId = typeof source.id === 'string' && source.id ? source.id : null;
+      const previous = requestedId ? previousById.get(requestedId) : undefined;
+      normalizedTools.push({
+        id: previous?.id || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        toolName,
+        toolCode: typeof source.toolCode === 'string' && source.toolCode.trim() ? source.toolCode.trim() : null,
+        condition: typeof source.condition === 'string' && source.condition.trim() ? source.condition.trim() : 'good',
+        notes: typeof source.notes === 'string' ? source.notes.trim() : '',
+        addedBy: previous?.addedBy || session.userId,
+        addedAt: previous?.addedAt || now,
+      });
     }
 
-    return NextResponse.json({
-      success: true,
-      data: parsedTools,
-      workOrder: updated,
+    const newValues = JSON.stringify(normalizedTools);
+    const updated = await db.$transaction(async (tx) => {
+      const updatedWO = await tx.workOrder.update({
+        where: { id },
+        data: { personalTools: newValues },
+        include: {
+          assignee: { select: { id: true, fullName: true, username: true } },
+          teamLeader: { select: { id: true, fullName: true, username: true } },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'work_order',
+          entityId: id,
+          oldValues: JSON.stringify({ personalTools: wo.personalTools }),
+          newValues: JSON.stringify({ personalTools: normalizedTools }),
+        },
+      });
+      return updatedWO;
     });
+
+    return NextResponse.json({ success: true, data: normalizedTools, workOrder: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update personal tools';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
