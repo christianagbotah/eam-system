@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 
 export interface TimeLogNormalizationResult {
@@ -33,11 +34,17 @@ type PlannedTimeLogUpdate = {
  *   rows remain sortable, but they do not contribute synthetic labor hours.
  * - `laborHours` is the sum of duration-bearing start/resume execution sessions,
  *   keeping labor effort distinct from total WO elapsed/calendar time.
+ *
+ * When a transaction client is supplied, reads and writes participate in the
+ * caller's domain transaction; otherwise the helper creates its own transaction
+ * for the update batch to preserve its existing standalone behavior.
  */
 export async function normalizeWorkOrderTimeLogs(
   workOrderId: string,
+  tx?: Prisma.TransactionClient,
 ): Promise<TimeLogNormalizationResult> {
-  const logs = await db.workOrderTimeLog.findMany({
+  const client = tx ?? db;
+  const logs = await client.workOrderTimeLog.findMany({
     where: { workOrderId },
     select: {
       id: true,
@@ -84,14 +91,20 @@ export async function normalizeWorkOrderTimeLogs(
   }
 
   if (plannedUpdates.length > 0) {
-    await db.$transaction(async (tx) => {
+    const applyUpdates = async (writeClient: Prisma.TransactionClient) => {
       for (const update of plannedUpdates) {
-        await tx.workOrderTimeLog.update({
+        await writeClient.workOrderTimeLog.update({
           where: { id: update.id },
           data: update.data,
         });
       }
-    });
+    };
+
+    if (tx) {
+      await applyUpdates(tx);
+    } else {
+      await db.$transaction(applyUpdates);
+    }
   }
 
   return {
