@@ -3,6 +3,19 @@ import React from 'react';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 const DEFAULT_TIMEOUT_MS = 15_000; // 15 second default timeout
 
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  status?: number;
+  kpis?: any;
+  pagination?: any;
+  _diag?: any;
+  // Preserve structured domain metadata returned by APIs (for example
+  // readiness blockers, active-session conflicts, validation details).
+  [key: string]: any;
+}
+
 export function getAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const token = localStorage.getItem('eam_token');
@@ -16,7 +29,7 @@ export function getAuthHeaders(): Record<string, string> {
 export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit & { timeout?: number } = {}
-): Promise<{ success: boolean; data?: T; error?: string; kpis?: any; pagination?: any; _diag?: any }> {
+): Promise<ApiResponse<T>> {
   const { timeout = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...restOptions } = options;
   const isFormData = restOptions.body instanceof FormData;
 
@@ -52,36 +65,48 @@ export async function apiFetch<T = any>(
 
     // Handle 204 No Content
     if (res.status === 204) {
-      return { success: true };
+      return { success: true, status: res.status };
     }
 
     // Check Content-Type before parsing JSON
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
       if (!res.ok) {
-        return { success: false, error: `Request failed with status ${res.status}` };
+        return { success: false, error: `Request failed with status ${res.status}`, status: res.status };
       }
-      return { success: true };
+      return { success: true, status: res.status };
     }
 
     let json: any;
     try {
       json = await res.json();
     } catch (parseErr: any) {
-      return { success: false, error: `Invalid JSON response: ${parseErr.message}` };
+      return { success: false, error: `Invalid JSON response: ${parseErr.message}`, status: res.status };
     }
 
-    if (!res.ok) {
-      return { success: false, error: json.error || `Request failed with status ${res.status}` };
+    const payload: Record<string, any> = json && typeof json === 'object' ? json : {};
+
+    if (!res.ok || payload.success === false) {
+      // Preserve every structured field returned by the domain endpoint. Older
+      // behavior collapsed failures to {success,error}, which discarded data
+      // such as readiness blockers and the conflicting active work order and
+      // left field technicians with a generic, non-actionable error.
+      return {
+        ...payload,
+        success: false,
+        error: typeof payload.error === 'string' && payload.error
+          ? payload.error
+          : `Request failed with status ${res.status}`,
+        status: res.status,
+      } as ApiResponse<T>;
     }
 
-    const result: { success: boolean; data?: T; kpis?: any; pagination?: any; _diag?: any; error?: string } = {
+    const result: ApiResponse<T> = {
+      ...payload,
       success: true,
-      data: json.data !== undefined ? json.data : json,
+      status: res.status,
+      data: payload.data !== undefined ? payload.data : json,
     };
-    if (json.kpis !== undefined) result.kpis = json.kpis;
-    if (json.pagination !== undefined) result.pagination = json.pagination;
-    if (json._diag !== undefined) result._diag = json._diag;
     return result;
   } catch (err: any) {
     clearTimeout(timeoutId);
