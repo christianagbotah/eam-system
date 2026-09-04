@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderReadiness.service';
 import { calculateAuthoritativeCosts } from '@/services/workExecution.service';
+import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
 
@@ -84,6 +85,10 @@ export async function closeRepairWorkOrder(
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+
+    // Normalize legacy rows in the same transaction as readiness, costing and
+    // final closure. Active sessions are never auto-closed by normalization.
+    await normalizeWorkOrderTimeLogs(workOrderId, tx);
 
     const readiness = await checkReadiness(workOrderId, 'close', tx);
     if (!readiness.ready) {
