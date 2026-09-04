@@ -2,29 +2,22 @@ import type { Prisma } from '@prisma/client';
 
 export interface ClosedWorkSessionsResult {
   closedTimerIds: string[];
+  closedUserIds: string[];
   closedHours: number;
   actualHours: number;
 }
 
-/**
- * Close a technician's genuinely active execution sessions on one WO.
- *
- * The original action (`start` or `resume`) is deliberately preserved because
- * authoritative labor costing classifies execution effort by that action. A
- * pause/hold/handover is an event that ends the session; it must not rewrite the
- * session into a non-labor action.
- */
-export async function closeActiveWorkSessions(
+async function closeSessions(
   tx: Prisma.TransactionClient,
   workOrderId: string,
-  userId: string,
+  userId: string | null,
   endedAt: Date,
   reason: string,
 ): Promise<ClosedWorkSessionsResult> {
   const activeLogs = await tx.workOrderTimeLog.findMany({
     where: {
       workOrderId,
-      userId,
+      ...(userId ? { userId } : {}),
       action: { in: ['start', 'resume'] },
       endTime: null,
     },
@@ -44,6 +37,8 @@ export async function closeActiveWorkSessions(
     await tx.workOrderTimeLog.update({
       where: { id: log.id },
       data: {
+        // Preserve original action (`start`/`resume`) so authoritative costing
+        // still recognizes this row as labor effort.
         startTime: startedAt,
         endTime: endedAt,
         duration,
@@ -74,7 +69,33 @@ export async function closeActiveWorkSessions(
 
   return {
     closedTimerIds: activeLogs.map((log) => log.id),
+    closedUserIds: [...new Set(activeLogs.map((log) => log.userId))],
     closedHours: Math.round(closedHours * 100) / 100,
     actualHours,
   };
+}
+
+/** Close one technician's genuinely active execution sessions on one WO. */
+export function closeActiveWorkSessions(
+  tx: Prisma.TransactionClient,
+  workOrderId: string,
+  userId: string,
+  endedAt: Date,
+  reason: string,
+): Promise<ClosedWorkSessionsResult> {
+  return closeSessions(tx, workOrderId, userId, endedAt, reason);
+}
+
+/**
+ * Close every genuinely active execution session on a WO.
+ * Use this when the Work Order itself leaves an executable state (hold,
+ * waiting state, shift handover) so no teammate timer survives the global state.
+ */
+export function closeAllActiveWorkSessions(
+  tx: Prisma.TransactionClient,
+  workOrderId: string,
+  endedAt: Date,
+  reason: string,
+): Promise<ClosedWorkSessionsResult> {
+  return closeSessions(tx, workOrderId, null, endedAt, reason);
 }
