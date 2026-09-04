@@ -21,13 +21,13 @@ export async function GET(
       include: {
         workOrder: {
           select: {
-            id: true, woNumber: true, title: true, status: true,
+            id: true, plantId: true, woNumber: true, title: true, status: true,
+            assetId: true, assetName: true,
             assignee: { select: { id: true, fullName: true, avatar: true } },
-            asset: { select: { id: true, name: true, assetTag: true } },
           },
         },
         component: { select: { id: true, componentCode: true, name: true, criticality: true, assetId: true } },
-        materialRequest: { select: { id: true, itemName: true, quantity: true } },
+        materialRequest: { select: { id: true, itemName: true, quantityIssued: true } },
         item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true, binLocation: true } },
         requestedBy: { select: { id: true, fullName: true, username: true, avatar: true } },
         inspectedBy: { select: { id: true, fullName: true, username: true } },
@@ -41,14 +41,38 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Spare part return not found' }, { status: 404 });
     }
 
-    // Plant scope validation via linked WO
     const plantScope = await getPlantScope(request, session);
     const plantId = sparePartReturn.workOrder?.plantId;
     if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    return NextResponse.json({ success: true, data: sparePartReturn });
+    const asset = sparePartReturn.workOrder?.assetId
+      ? await db.asset.findUnique({
+          where: { id: sparePartReturn.workOrder.assetId },
+          select: { id: true, name: true, assetTag: true },
+        })
+      : null;
+
+    const data = {
+      ...sparePartReturn,
+      workOrder: sparePartReturn.workOrder
+        ? {
+            ...sparePartReturn.workOrder,
+            asset: asset ?? (sparePartReturn.workOrder.assetName
+              ? { id: sparePartReturn.workOrder.assetId, name: sparePartReturn.workOrder.assetName, assetTag: null }
+              : null),
+          }
+        : null,
+      materialRequest: sparePartReturn.materialRequest
+        ? {
+            ...sparePartReturn.materialRequest,
+            quantity: sparePartReturn.materialRequest.quantityIssued,
+          }
+        : null,
+    };
+
+    return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch spare part return';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -72,7 +96,6 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Spare part return not found' }, { status: 404 });
     }
 
-    // Only allow updates on non-terminal statuses
     const terminalStatuses = ['returned_to_store', 'disposed', 'rejected'];
     if (terminalStatuses.includes(existing.status)) {
       return NextResponse.json(
@@ -81,20 +104,16 @@ export async function PUT(
       );
     }
 
-    // Ownership check: only the requester (or admin/supervisor/manager) can edit non-terminal returns
     if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
       if (existing.requestedById !== session.userId) {
         return NextResponse.json({ success: false, error: 'You can only edit your own spare part returns' }, { status: 403 });
       }
     }
 
-    // Build update data (only allow certain fields)
     const allowedFields = ['itemName', 'partSerialNumber', 'quantity', 'conditionOnReturn', 'damageDescription', 'refurbishmentNotes', 'estimatedRefurbCost', 'componentId'];
     const updateData: Record<string, unknown> = {};
     for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        (updateData as Record<string, unknown>)[field] = body[field];
-      }
+      if (body[field] !== undefined) updateData[field] = body[field];
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -152,12 +171,10 @@ export async function POST(
 
     const now = new Date();
 
-    // ── INSPECT ──
     if (action === 'inspect') {
       if (existing.status !== 'pending') {
         return NextResponse.json({ success: false, error: `Cannot inspect: current status is '${existing.status}', expected 'pending'` }, { status: 400 });
       }
-      // Role check: only store-related roles or admin can inspect returns
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
           !hasRole(session, 'inventory_manager') &&
@@ -194,7 +211,6 @@ export async function POST(
         newValues: { status: 'inspected', refurbishmentNeeded, inspectionNotes },
       });
 
-      // Notify requester
       await notifyUser(
         existing.requestedById,
         'spare_part_inspected',
@@ -206,7 +222,6 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── START_REHABILITATION ──
     if (action === 'start_refurbishment') {
       if (existing.status !== 'inspected') {
         return NextResponse.json({ success: false, error: `Cannot start refurbishment: current status is '${existing.status}'` }, { status: 400 });
@@ -214,7 +229,6 @@ export async function POST(
       if (!existing.refurbishmentNeeded) {
         return NextResponse.json({ success: false, error: 'Refurbishment not needed for this part' }, { status: 400 });
       }
-      // Role check: only authorized roles can start refurbishment
       if (!isAdmin(session) &&
           !hasRole(session, 'maintenance_supervisor') &&
           !hasRole(session, 'maintenance_manager') &&
@@ -242,7 +256,6 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── COMPLETE_REHABILITATION ──
     if (action === 'complete_refurbishment') {
       if (existing.status !== 'refurbishing') {
         return NextResponse.json({ success: false, error: `Cannot complete refurbishment: current status is '${existing.status}'` }, { status: 400 });
@@ -268,7 +281,6 @@ export async function POST(
         newValues: { status: 'refurbished', actualRefurbCost },
       });
 
-      // Notify storekeeper that part is ready for return
       await notifyUser(
         session.userId,
         'spare_part_refurbished',
@@ -280,12 +292,10 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── RETURN_TO_STORE ──
     if (action === 'return_to_store') {
       if (existing.status !== 'refurbished') {
         return NextResponse.json({ success: false, error: `Cannot return to store: current status is '${existing.status}'` }, { status: 400 });
       }
-      // Role check: only store-related roles or admin can return to store
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
           !hasRole(session, 'inventory_manager') &&
@@ -307,7 +317,6 @@ export async function POST(
         },
       });
 
-      // Add stock back via StockMovement
       if (existing.itemId) {
         const item = await db.inventoryItem.findUnique({ where: { id: existing.itemId } });
         if (item) {
@@ -340,7 +349,6 @@ export async function POST(
         newValues: { status: 'returned_to_store', itemId: existing.itemId, quantity: existing.quantity },
       });
 
-      // Notify requester
       await notifyUser(
         existing.requestedById,
         'spare_part_returned_to_store',
@@ -352,12 +360,10 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── DISPOSE ──
     if (action === 'dispose') {
       if (!['pending', 'inspected', 'refurbishing', 'refurbished'].includes(existing.status)) {
         return NextResponse.json({ success: false, error: `Cannot dispose: current status is '${existing.status}'` }, { status: 400 });
       }
-      // Role check: only authorized roles can dispose parts
       if (!isAdmin(session) &&
           !hasRole(session, 'maintenance_supervisor') &&
           !hasRole(session, 'maintenance_manager') &&
@@ -393,12 +399,10 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── REJECT ──
     if (action === 'reject') {
       if (existing.status !== 'pending') {
         return NextResponse.json({ success: false, error: `Cannot reject: current status is '${existing.status}'` }, { status: 400 });
       }
-      // Role check: only store-related roles or admin can reject returns
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
           !hasRole(session, 'inventory_manager') &&
@@ -433,7 +437,6 @@ export async function POST(
         newValues: { status: 'rejected', reason },
       });
 
-      // Notify requester
       await notifyUser(
         existing.requestedById,
         'spare_part_rejected',
