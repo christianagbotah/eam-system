@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
-import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import {
   generateReport,
   SUPPORTED_REPORT_TYPES,
@@ -13,15 +13,11 @@ const logger = createLogger('api:repairs:reports:xlsx');
 
 // ============================================================================
 // POST /api/repairs/reports/xlsx
-//
 // Body: { reportType: string, filters?: Record<string, string> }
-//
-// Returns XLSX binary file as application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 // ============================================================================
 
 export async function POST(request: NextRequest) {
   try {
-    // ── 1. Auth ────────────────────────────────────────────────────────────
     const session = getSession(request);
     if (!session) {
       return NextResponse.json(
@@ -30,7 +26,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 2. RBAC — requires reports.view permission ───────────────────────────
     if (
       !hasAnyPermission(session, ['reports.view', 'reports.export', 'analytics.view']) &&
       !isAdmin(session)
@@ -41,7 +36,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 3. Parse request body ────────────────────────────────────────────────
     let body: { reportType?: string; filters?: Record<string, string | undefined> };
     try {
       body = await request.json();
@@ -61,7 +55,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 4. Validate report type ─────────────────────────────────────────────
     if (!SUPPORTED_REPORT_TYPES.includes(reportType as ReportType)) {
       return NextResponse.json(
         {
@@ -72,10 +65,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 5. Plant scope enforcement ────────────────────────────────────────
+    // Plant authorization is server authoritative. The report service currently
+    // accepts one plantId, so non-system-wide users must never be allowed to
+    // omit plant scope and accidentally export data from every plant.
     const plantScope = await getPlantScope(request, session);
-
-    // If user explicitly requested a plant they have no access to, deny
     if (plantScope.denyAccess) {
       return NextResponse.json(
         { success: false, error: 'Forbidden: no access to the requested plant' },
@@ -83,17 +76,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build filters — merge plant scope into the filters
+    const requestedPlantId = rawFilters?.plantId;
     const filters: ReportFilters = {
       ...(rawFilters ?? {}),
     };
 
-    // If plant scope is active, enforce the plant ID filter on the server side
     if (plantScope.isScoped && plantScope.plantId) {
+      if (requestedPlantId && requestedPlantId !== plantScope.plantId) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: requested plant is outside the active plant scope' },
+          { status: 403 },
+        );
+      }
       filters.plantId = plantScope.plantId;
+    } else if (!plantScope.isSystemWide) {
+      if (requestedPlantId) {
+        if (!canAccessPlant(plantScope, requestedPlantId)) {
+          return NextResponse.json(
+            { success: false, error: 'Forbidden: no access to the requested plant' },
+            { status: 403 },
+          );
+        }
+        filters.plantId = requestedPlantId;
+      } else if (plantScope.accessiblePlantIds.length === 1) {
+        filters.plantId = plantScope.accessiblePlantIds[0];
+      } else {
+        // Fail closed until the service supports an IN-list of accessible plants.
+        // This avoids an all-plant export for ordinary multi-plant users.
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Select one of your accessible plants before exporting this report',
+          },
+          { status: 400 },
+        );
+      }
     }
 
-    // ── 6. Generate XLSX ────────────────────────────────────────────────────
     logger.info('Generating XLSX report', {
       reportType,
       plantId: filters.plantId || 'all',
@@ -106,8 +125,7 @@ export async function POST(request: NextRequest) {
       session,
     );
 
-    // ── 7. Return file response ─────────────────────────────────────────────
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type':
