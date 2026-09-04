@@ -26,6 +26,13 @@ export type WaitingWorkOrderStatus =
   | 'waiting_shutdown'
   | 'waiting_permit';
 
+class ExecutionStateTransitionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ExecutionStateTransitionError';
+  }
+}
+
 function hasExecutionAuthority(
   wo: {
     assignedTo: string | null;
@@ -102,7 +109,9 @@ export async function placeWorkOrderInWaitingState(
       extraData: options.extraData,
       tx,
     });
-    if (!transition.success) throw new Error(transition.error || 'State transition failed');
+    if (!transition.success) {
+      throw new ExecutionStateTransitionError(transition.error || 'State transition failed');
+    }
 
     await tx.auditLog.create({
       data: buildAuditData(
@@ -136,6 +145,11 @@ export async function placeWorkOrderInWaitingState(
         plannerId: wo.plannerId,
       },
     };
+  }).catch((error: unknown) => {
+    if (error instanceof ExecutionStateTransitionError) {
+      return { success: false as const, error: error.message };
+    }
+    throw error;
   });
 
   if (!outcome.success) return outcome;
@@ -209,7 +223,9 @@ export async function resumeWaitingWorkOrder(
       reason: options.reason,
       tx,
     });
-    if (!transition.success) throw new Error(transition.error || 'Failed to resume work order');
+    if (!transition.success) {
+      throw new ExecutionStateTransitionError(transition.error || 'Failed to resume work order');
+    }
 
     await tx.workOrderTimeLog.create({
       data: {
@@ -243,6 +259,11 @@ export async function resumeWaitingWorkOrder(
         plannerId: wo.plannerId,
       },
     };
+  }).catch((error: unknown) => {
+    if (error instanceof ExecutionStateTransitionError) {
+      return { success: false as const, error: error.message };
+    }
+    throw error;
   });
 
   if (!outcome.success) return outcome;
