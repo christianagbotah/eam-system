@@ -78,13 +78,12 @@ export async function GET(request: NextRequest) {
     // complete filtered dataset; silently truncating at 100 WOs produced
     // incomplete management reports and incorrect totals.
     const usePagination = format !== 'xlsx';
-    const pagination = usePagination
-      ? { skip: (page - 1) * limit, take: limit }
-      : {};
 
     // WorkOrder stores assetId/assetName as scalar fields and has no Prisma asset
     // relation. Fetch WOs first, then resolve referenced assets explicitly in bulk.
-    const workOrders = await db.workOrder.findMany({
+    // Keep pagination as an explicit branch so Prisma does not infer an invalid
+    // union where skip/take are simultaneously required and optional.
+    const baseQuery = {
       where: filterWhere,
       include: {
         assignee: { select: { id: true, fullName: true, username: true } },
@@ -126,9 +125,16 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
-      ...pagination,
-    });
+      orderBy: { createdAt: 'desc' as const },
+    };
+
+    const workOrders = usePagination
+      ? await db.workOrder.findMany({
+          ...baseQuery,
+          skip: (page - 1) * limit,
+          take: limit,
+        })
+      : await db.workOrder.findMany(baseQuery);
 
     const assetIds = [
       ...new Set(
