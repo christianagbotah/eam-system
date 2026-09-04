@@ -5,7 +5,6 @@ import {
   type ClosureSessionContext,
   type ClosureAuditContext,
 } from '@/services/workOrderClosure.service';
-import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
@@ -29,10 +28,6 @@ export async function POST(
     const { id } = await params;
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
-
-    // Close recalculates authoritative costs. Normalize legacy timestamp-only
-    // rows first without closing any genuinely active timer.
-    await normalizeWorkOrderTimeLogs(id);
 
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
