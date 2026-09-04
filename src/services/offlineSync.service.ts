@@ -110,14 +110,19 @@ export class OfflineSyncService {
   }
 
   /**
-   * Remove synced records (cleanup)
+   * Remove records that have been acknowledged as successfully synced.
+   *
+   * Failed/unsynced records must remain in the queue regardless of retry count;
+   * dropping them here would silently lose field activity that still needs to
+   * reach the server. Retry/dead-letter policy belongs to the sync processor,
+   * not local storage cleanup.
    */
   static cleanup(): number {
     const queue = this.getQueue();
     const before = queue.length;
-    const cleaned = queue.filter(r => !r.synced || r.syncAttempts < 10);
-    this.saveQueue(cleaned);
-    return before - cleaned.length;
+    const pendingOnly = queue.filter(r => !r.synced);
+    this.saveQueue(pendingOnly);
+    return before - pendingOnly.length;
   }
 
   /**
