@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasAnyPermission } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
-const VALID_STATUSES = ['requested', 'approved', 'issued', 'returned'];
-
+/**
+ * WorkOrderMaterial is a legacy compatibility projection used by older WO views.
+ * The authoritative material lifecycle is RepairMaterialRequest, which owns
+ * supervisor/store approvals, inventory issue/return, consumption/waste and
+ * reconciliation. Do not maintain a second independent workflow here.
+ */
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; materialId: string }> }
@@ -15,79 +20,38 @@ export async function PUT(
     }
 
     const { id, materialId } = await params;
-    const body = await request.json();
-    const { status, notes } = body;
 
-    if (!status || !VALID_STATUSES.includes(status)) {
-      return NextResponse.json(
-        { success: false, error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` },
-        { status: 400 }
-      );
-    }
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
-    // Validate WO exists
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: { id: true, isLocked: true },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-
-    // Block all mutations on permanently locked WOs
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
 
-    // Validate material belongs to the WO
     const existing = await db.workOrderMaterial.findUnique({
       where: { id: materialId },
+      select: { id: true, workOrderId: true, status: true },
     });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Material not found' }, { status: 404 });
     }
-
     if (existing.workOrderId !== id) {
-      return NextResponse.json(
-        { success: false, error: 'Material does not belong to this work order' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Material does not belong to this work order' }, { status: 400 });
     }
 
-    // Build update data
-    const updateData: Record<string, unknown> = { status };
-
-    if (status === 'approved') {
-      updateData.approvedBy = session.userId;
-    }
-
-    if (status === 'issued') {
-      updateData.issuedBy = session.userId;
-    }
-
-    const updated = await db.workOrderMaterial.update({
-      where: { id: materialId },
-      data: updateData,
-      include: {
-        requester: { select: { id: true, fullName: true, username: true } },
-        approver: { select: { id: true, fullName: true } },
-        issuer: { select: { id: true, fullName: true } },
-      },
-    });
-
-    // Audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'wo_material',
-        entityId: materialId,
-        oldValues: JSON.stringify({ status: existing.status }),
-        newValues: JSON.stringify({
-          status,
-          notes: notes || undefined,
-        }),
-      },
-    });
-
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({
+      success: false,
+      error: 'Legacy WorkOrderMaterial status is read-only. Use the canonical RepairMaterialRequest workflow for approval, issue, return, consumption, waste, and reconciliation.',
+      canonicalEndpoint: '/api/repairs/material-requests',
+      currentStatus: existing.status,
+    }, { status: 409 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update material';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -104,67 +68,32 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.update'])) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-    }
-
     const { id, materialId } = await params;
 
-    // Validate WO exists
-    const wo = await db.workOrder.findUnique({ where: { id } });
-    if (!wo) {
-      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-    }
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
-    if (wo.isLocked) {
-      return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
-    }
-
-    // Validate material belongs to the WO
     const material = await db.workOrderMaterial.findUnique({
       where: { id: materialId },
-      include: { requester: { select: { id: true, fullName: true } } },
+      select: { id: true, workOrderId: true, status: true },
     });
     if (!material) {
       return NextResponse.json({ success: false, error: 'Material not found' }, { status: 404 });
     }
-
     if (material.workOrderId !== id) {
-      return NextResponse.json(
-        { success: false, error: 'Material does not belong to this work order' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Material does not belong to this work order' }, { status: 400 });
     }
 
-    // Only allow deletion if status is "requested"
-    if (material.status !== 'requested') {
-      return NextResponse.json(
-        { success: false, error: `Cannot delete material with status "${material.status}". Only materials with "requested" status can be deleted.` },
-        { status: 400 }
-      );
-    }
-
-    await db.workOrderMaterial.delete({
-      where: { id: materialId },
-    });
-
-    // Audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'delete',
-        entityType: 'wo_material',
-        entityId: materialId,
-        oldValues: JSON.stringify({
-          workOrderId: id,
-          itemName: material.itemName,
-          quantity: material.quantity,
-          status: material.status,
-        }),
-      },
-    });
-
-    return NextResponse.json({ success: true, data: { id: materialId } });
+    // Deleting only the compatibility projection would leave the authoritative
+    // RepairMaterialRequest behind and create inconsistent audit/state. Cancel
+    // the canonical request instead; projection cleanup can be performed by a
+    // controlled migration once legacy consumers are retired.
+    return NextResponse.json({
+      success: false,
+      error: 'Legacy WorkOrderMaterial records cannot be deleted independently. Cancel the canonical RepairMaterialRequest instead.',
+      canonicalEndpoint: '/api/repairs/material-requests',
+      currentStatus: material.status,
+    }, { status: 409 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to delete material';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
