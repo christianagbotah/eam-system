@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { executeTransition } from '@/lib/state-machine';
+import {
+  placeWorkOrderInWaitingState,
+  type ExecutionStateSessionContext,
+  type ExecutionStateAuditContext,
+} from '@/services/workOrderExecutionState.service';
+import { extractAuditContext } from '@/lib/audit-helpers';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 /**
@@ -26,48 +31,37 @@ export async function POST(
 
     const { id } = await params;
 
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
-    const { notes, requiredParts } = body;
-
-    const wo = await db.workOrder.findUnique({ where: { id } });
-    if (!wo) {
-      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-    }
-
+    const notes = typeof body.notes === 'string' ? body.notes.trim() : '';
+    const requiredParts = body.requiredParts;
     const reason = notes || 'Waiting for parts/materials';
-    const result = await executeTransition(
-      'work_order',
+    const waitingPartsNote = `[Waiting Parts] ${reason}${
+      requiredParts ? ` | Parts: ${JSON.stringify(requiredParts)}` : ''
+    }`;
+    const auditCtx = extractAuditContext(request);
+
+    const result = await placeWorkOrderInWaitingState(
       id,
       'waiting_parts',
-      session,
+      session as ExecutionStateSessionContext,
       {
         reason,
-        extraData: {
-          notes: `[Waiting Parts] ${reason}${requiredParts ? ` | Parts: ${JSON.stringify(requiredParts)}` : ''}`,
-        },
+        // Preserve the route's existing state-machine role rules. The canonical
+        // service still closes all live team timers in the same transaction.
+        extraData: { notes: waitingPartsNote },
+        auditCtx: auditCtx as ExecutionStateAuditContext,
       },
     );
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      const status = result.error === 'Work order not found' ? 404 : 400;
+      return NextResponse.json({ success: false, error: result.error }, { status });
     }
 
-    // Create time log entry
-    await db.workOrderTimeLog.create({
-      data: {
-        workOrderId: id,
-        userId: session.userId,
-        action: 'pause',
-        notes: reason,
-        timestamp: new Date(),
-      },
-    });
-
-    // Re-fetch with includes
+    // Preserve the existing API response contract expected by Repairs UI callers.
     const updated = await db.workOrder.findUnique({
       where: { id },
       include: {
