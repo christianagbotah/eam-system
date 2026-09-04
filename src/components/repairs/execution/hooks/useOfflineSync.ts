@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('useOfflineSync');
+const MAX_SYNC_BATCH = 100;
 
 export type OfflineStatus = 'online' | 'offline' | 'pending_sync' | 'sync_failed';
 
@@ -18,6 +19,23 @@ interface UseOfflineSyncReturn {
   status: OfflineStatus;
 }
 
+/**
+ * Split queued records into server-safe batches. The offline endpoint enforces
+ * a maximum of 100 records per request, so the client must never submit the
+ * whole local queue blindly.
+ */
+export function chunkSyncRecords(
+  records: SyncRecord[],
+  batchSize = MAX_SYNC_BATCH,
+): SyncRecord[][] {
+  if (batchSize <= 0) throw new Error('batchSize must be greater than zero');
+  const batches: SyncRecord[][] = [];
+  for (let i = 0; i < records.length; i += batchSize) {
+    batches.push(records.slice(i, i + batchSize));
+  }
+  return batches;
+}
+
 export function useOfflineSync(): UseOfflineSyncReturn {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -27,7 +45,6 @@ export function useOfflineSync(): UseOfflineSyncReturn {
   const [lastError, setLastError] = useState<string | null>(null);
   const syncInProgressRef = useRef(false);
 
-  // Refresh pending count from the OfflineSyncService
   const refreshPendingCount = useCallback(() => {
     try {
       const count = OfflineSyncService.getPendingRecords().length;
@@ -38,13 +55,86 @@ export function useOfflineSync(): UseOfflineSyncReturn {
     }
   }, []);
 
-  // Listen to online/offline events
+  const syncNow = useCallback(async () => {
+    if (syncInProgressRef.current) return;
+
+    const records = OfflineSyncService.getPendingRecords();
+    if (records.length === 0) {
+      OfflineSyncService.cleanup();
+      refreshPendingCount();
+      return;
+    }
+
+    syncInProgressRef.current = true;
+    setSyncInProgress(true);
+    setLastError(null);
+
+    try {
+      let hasFailure = false;
+      let firstFailure: string | null = null;
+
+      for (const batch of chunkSyncRecords(records)) {
+        const res = await api.post<{
+          results: Array<{ id: string; success: boolean; replayed?: boolean; error?: string }>;
+        }>(
+          '/api/sync/offline',
+          { records: batch },
+          { timeout: 30_000 },
+        );
+
+        if (res.success && res.data?.results) {
+          for (const result of res.data.results) {
+            if (result.success) {
+              OfflineSyncService.markSynced(result.id);
+            } else {
+              const message = result.error || 'Sync failed';
+              OfflineSyncService.markFailed(result.id, message);
+              hasFailure = true;
+              firstFailure ||= message;
+            }
+          }
+
+          // Purge only server-acknowledged records after every successful
+          // batch. Failed/unsynced records are intentionally preserved.
+          OfflineSyncService.cleanup();
+          continue;
+        }
+
+        // A request-level API failure affects only this batch. Preserve later
+        // batches untouched so no unsent field activity is mislabeled failed.
+        const errorMsg = res.error || 'Sync request failed';
+        for (const record of batch) {
+          OfflineSyncService.markFailed(record.id, errorMsg);
+        }
+        hasFailure = true;
+        firstFailure ||= errorMsg;
+        break;
+      }
+
+      if (hasFailure) {
+        setLastError(firstFailure || 'Some records failed to sync');
+      }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Network error during sync';
+      setLastError(errorMsg);
+      logger.error('Sync failed', { error: errorMsg });
+      // Network failures are not recorded as mutation failures. Records stay
+      // pending and can be retried when connectivity is restored.
+    } finally {
+      // A final cleanup is safe because cleanup removes only records already
+      // acknowledged as synced by the server.
+      OfflineSyncService.cleanup();
+      syncInProgressRef.current = false;
+      setSyncInProgress(false);
+      refreshPendingCount();
+    }
+  }, [refreshPendingCount]);
+
   useEffect(() => {
     const handleOnline = () => {
       logger.info('Device came online');
       setIsOnline(true);
-      // Auto-sync when coming back online
-      syncNow();
+      void syncNow();
     };
 
     const handleOffline = () => {
@@ -55,10 +145,7 @@ export function useOfflineSync(): UseOfflineSyncReturn {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Poll pending count periodically (every 5 seconds)
     const interval = setInterval(refreshPendingCount, 5000);
-
-    // Initial count
     refreshPendingCount();
 
     return () => {
@@ -66,69 +153,22 @@ export function useOfflineSync(): UseOfflineSyncReturn {
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
     };
-  }, [refreshPendingCount]);
+  }, [refreshPendingCount, syncNow]);
 
-  // Sync function
-  const syncNow = useCallback(async () => {
-    // Prevent concurrent syncs
-    if (syncInProgressRef.current) return;
+  // If the app opens while already online with queued field work, do not wait
+  // for a synthetic browser "online" event. One automatic attempt is made.
+  // A server-level failure sets lastError and stops automatic retry loops;
+  // the user can explicitly retry after resolving the cause.
+  useEffect(() => {
+    if (!isOnline || pendingCount === 0 || syncInProgress || lastError) return;
+    void syncNow();
+  }, [isOnline, pendingCount, syncInProgress, lastError, syncNow]);
 
-    const records = OfflineSyncService.getPendingRecords();
-    if (records.length === 0) {
-      refreshPendingCount();
-      return;
-    }
-
-    syncInProgressRef.current = true;
-    setSyncInProgress(true);
-    setLastError(null);
-
-    try {
-      const res = await api.post<{ results: Array<{ id: string; success: boolean; error?: string }> }>(
-        '/api/sync/offline',
-        { records },
-        { timeout: 30_000 },
-      );
-
-      if (res.success && res.data?.results) {
-        let hasFailure = false;
-        for (const result of res.data.results) {
-          if (result.success) {
-            OfflineSyncService.markSynced(result.id);
-          } else {
-            OfflineSyncService.markFailed(result.id, result.error || 'Sync failed');
-            hasFailure = true;
-          }
-        }
-
-        if (hasFailure) {
-          setLastError('Some records failed to sync');
-        }
-      } else {
-        // API call itself failed — mark all as failed
-        const errorMsg = res.error || 'Sync request failed';
-        setLastError(errorMsg);
-        for (const record of records) {
-          OfflineSyncService.markFailed(record.id, errorMsg);
-        }
-      }
-    } catch (err: any) {
-      const errorMsg = err?.message || 'Network error during sync';
-      setLastError(errorMsg);
-      logger.error('Sync failed', { error: errorMsg });
-      // Don't mark as failed — it's a network issue, will retry when back online
-    } finally {
-      syncInProgressRef.current = false;
-      setSyncInProgress(false);
-      refreshPendingCount();
-    }
-  }, [refreshPendingCount]);
-
-  // Derive composite status
   const status: OfflineStatus = (() => {
+    if (!isOnline) return 'offline';
     if (syncInProgress) return 'pending_sync';
     if (lastError && pendingCount > 0) return 'sync_failed';
-    if (!isOnline) return 'offline';
+    if (pendingCount > 0) return 'pending_sync';
     return 'online';
   })();
 
