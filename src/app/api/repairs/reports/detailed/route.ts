@@ -32,10 +32,8 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(limitParam || '50', 10) || 50));
 
-    // Build where clause for completed WOs
     const where: Record<string, unknown> = {};
 
-    // Only show repair-type WOs (corrective, emergency, predictive)
     if (type) {
       where.type = type;
     } else {
@@ -73,15 +71,16 @@ export async function GET(request: NextRequest) {
     }
 
     const filterWhere = Object.keys(where).length > 0 ? where : undefined;
-
-    // Count total matching WOs for pagination
     const total = await db.workOrder.count({ where: filterWhere });
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
-    // For XLSX, fetch all (capped at 100 for memory safety); for JSON, paginate
+    // JSON is paginated for interactive use. XLSX intentionally exports the
+    // complete filtered dataset; silently truncating at 100 WOs produced
+    // incomplete management reports and incorrect totals.
     const usePagination = format !== 'xlsx';
-    const skip = usePagination ? (page - 1) * limit : 0;
-    const take = usePagination ? limit : Math.min(100, total);
+    const pagination = usePagination
+      ? { skip: (page - 1) * limit, take: limit }
+      : {};
 
     // WorkOrder stores assetId/assetName as scalar fields and has no Prisma asset
     // relation. Fetch WOs first, then resolve referenced assets explicitly in bulk.
@@ -128,8 +127,7 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { createdAt: 'desc' },
-      skip,
-      take,
+      ...pagination,
     });
 
     const assetIds = [
@@ -147,7 +145,6 @@ export async function GET(request: NextRequest) {
       : [];
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
 
-    // Transform into report rows (one row per WO-component pair)
     const rows: Record<string, unknown>[] = [];
 
     for (const wo of workOrders) {
@@ -158,7 +155,6 @@ export async function GET(request: NextRequest) {
       const failures = wo.failureRecords;
 
       if (components.length === 0) {
-        // WO with no linked components — still show the WO
         rows.push({
           'WO Number': wo.woNumber,
           'Machine Name': asset?.name || wo.assetName || 'N/A',
@@ -179,15 +175,14 @@ export async function GET(request: NextRequest) {
           'Findings': completion?.findings || '',
           'Materials Used': materials.map((m) => `${m.itemName} (Qty: ${m.quantityIssued})`).join('; ') || '',
           'Total Material Cost': wo.partsCost,
-          'Labor Hours': completion?.totalLaborHours || wo.actualHours || 0,
-          'Downtime (mins)': completion?.totalDowntimeMinutes || 0,
+          'Labor Hours': completion?.totalLaborHours ?? wo.actualHours ?? 0,
+          'Downtime (mins)': completion?.totalDowntimeMinutes ?? 0,
           'Total Cost': wo.totalCost,
           'Started': wo.actualStart?.toISOString().split('T')[0] || '',
           'Completed': wo.actualEnd?.toISOString().split('T')[0] || '',
           'Completion Notes': completion?.completionNotes || '',
         });
       } else {
-        // One row per component
         for (const woc of components) {
           const comp = woc.componentRegistry;
           const compMaterials = materials.filter(
@@ -216,8 +211,8 @@ export async function GET(request: NextRequest) {
               .map((m) => `${m.itemName} (Qty: ${m.quantityIssued})`)
               .join('; ') || '',
             'Total Material Cost': wo.partsCost,
-            'Labor Hours': completion?.totalLaborHours || wo.actualHours || 0,
-            'Downtime (mins)': completion?.totalDowntimeMinutes || 0,
+            'Labor Hours': completion?.totalLaborHours ?? wo.actualHours ?? 0,
+            'Downtime (mins)': completion?.totalDowntimeMinutes ?? 0,
             'Total Cost': wo.totalCost,
             'Started': wo.actualStart?.toISOString().split('T')[0] || '',
             'Completed': wo.actualEnd?.toISOString().split('T')[0] || '',
@@ -227,39 +222,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // JSON response (paginated)
     if (format === 'json') {
       return NextResponse.json({
         success: true,
         data: rows,
         summary: {
-          totalWorkOrders: workOrders.length,
-          totalRows: rows.length,
-          workOrdersWithComponents: workOrders.filter((wo) => wo.workOrderComponents.length > 0).length,
-          workOrdersWithoutComponents: workOrders.filter((wo) => wo.workOrderComponents.length === 0).length,
+          totalWorkOrders: total,
+          workOrdersOnPage: workOrders.length,
+          totalRowsOnPage: rows.length,
+          workOrdersWithComponentsOnPage: workOrders.filter((wo) => wo.workOrderComponents.length > 0).length,
+          workOrdersWithoutComponentsOnPage: workOrders.filter((wo) => wo.workOrderComponents.length === 0).length,
         },
         pagination: { page, limit, total, totalPages },
       });
     }
 
-    // Excel response (full filtered set, no pagination)
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
 
-    // Set column widths
     const colWidths = Object.keys(rows[0] || {}).map((key) => ({
       wch: Math.max(key.length + 2, 15),
     }));
     ws['!cols'] = colWidths;
 
-    // Add summary sheet
     const summaryData = [
       { 'Metric': 'Total Work Orders', 'Value': workOrders.length },
       { 'Metric': 'WOs with Components Specified', 'Value': workOrders.filter((wo) => wo.workOrderComponents.length > 0).length },
       { 'Metric': 'WOs without Components', 'Value': workOrders.filter((wo) => wo.workOrderComponents.length === 0).length },
       { 'Metric': 'Total Report Rows', 'Value': rows.length },
       { 'Metric': 'Total Material Cost', 'Value': workOrders.reduce((sum, wo) => sum + wo.partsCost, 0) },
-      { 'Metric': 'Total Labor Hours', 'Value': workOrders.reduce((sum, wo) => sum + (wo.actualHours || 0), 0) },
+      { 'Metric': 'Total Labor Hours', 'Value': workOrders.reduce((sum, wo) => sum + (wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0), 0) },
+      { 'Metric': 'Total Work Order Cost', 'Value': workOrders.reduce((sum, wo) => sum + (wo.totalCost ?? 0), 0) },
     ];
     const wsSummary = XLSX.utils.json_to_sheet(summaryData);
     wsSummary['!cols'] = [{ wch: 35 }, { wch: 20 }];
@@ -269,7 +262,7 @@ export async function GET(request: NextRequest) {
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
