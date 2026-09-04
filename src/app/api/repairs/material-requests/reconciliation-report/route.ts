@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // GET /api/repairs/material-requests/reconciliation-report
 // Generates a material reconciliation report with summary stats and detail list
@@ -21,11 +21,24 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10) || 20));
 
-    const where: Record<string, unknown> = {};
     const plantScope = await getPlantScope(request, session);
-    applyPlantScope(where, plantScope);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
 
-    if (plantId) where.plantId = plantId;
+    const where: Record<string, unknown> = {};
+    if (plantId) {
+      const conflictsWithSelectedPlant = Boolean(
+        plantScope.isScoped && plantScope.plantId && plantScope.plantId !== plantId,
+      );
+      if (conflictsWithSelectedPlant || !canAccessPlantStrict(plantScope, plantId)) {
+        return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+      }
+      where.plantId = plantId;
+    } else {
+      applyPlantScope(where, plantScope);
+    }
+
     if (itemName) where.itemName = { contains: itemName };
 
     const dateFilter: Record<string, unknown> = {};
@@ -84,7 +97,6 @@ export async function GET(request: NextRequest) {
         wastedCost: wastedQty * (r.unitCost || 0),
         requestedBy: r.requestedBy?.fullName,
         issuedBy: r.issuedByUser?.fullName,
-        // pickedBy is stored as the picker identity string, not a User relation.
         pickedBy: r.pickedBy,
         pickedAt: r.pickedAt,
         issuedAt: r.issuedAt,
@@ -92,14 +104,9 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const summaryWhere: Record<string, unknown> = {};
-    applyPlantScope(summaryWhere, plantScope);
-    if (plantId) summaryWhere.plantId = plantId;
-    if (itemName) summaryWhere.itemName = { contains: itemName };
-    if (Object.keys(dateFilter).length > 0) summaryWhere.issuedAt = dateFilter;
-    summaryWhere.status = { in: ['issued', 'picking', 'closed', 'partially_returned', 'fully_returned'] };
-
-    const summaryQueryWhere = Object.keys(summaryWhere).length > 0 ? summaryWhere : undefined;
+    // Use the exact same authorized filter for summary/aggregation so the report
+    // cannot expose counts or costs outside the caller's plant scope.
+    const summaryQueryWhere = queryWhere;
     const allRecords = await db.repairMaterialRequest.findMany({
       where: summaryQueryWhere,
       select: {
