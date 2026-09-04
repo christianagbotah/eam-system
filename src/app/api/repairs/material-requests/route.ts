@@ -121,9 +121,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { workOrderId, itemId, itemName, quantityRequested, unit, unitCost, reason, notes, urgency, componentRegistryId } = body;
-    if (!workOrderId || !itemName || !quantityRequested || !reason) {
-      return NextResponse.json({ success: false, error: 'workOrderId, itemName, quantityRequested, and reason are required' }, { status: 400 });
+    const { workOrderId, itemId, itemName, quantityRequested, unit, reason, notes, urgency, componentRegistryId } = body;
+    if (!workOrderId || (!itemId && !itemName) || !reason) {
+      return NextResponse.json({ success: false, error: 'workOrderId, itemId or itemName, and reason are required' }, { status: 400 });
+    }
+    const requestedQuantity = Number(quantityRequested);
+    if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
+      return NextResponse.json({ success: false, error: 'quantityRequested must be a positive number' }, { status: 400 });
     }
 
     const resolvedUrgency = VALID_URGENCIES.includes(urgency) ? urgency : 'normal';
@@ -142,11 +146,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
     }
 
+    if (componentRegistryId) {
+      const linkedComponent = await db.workOrderComponent.findUnique({
+        where: {
+          workOrderId_componentRegistryId: {
+            workOrderId,
+            componentRegistryId,
+          },
+        },
+        select: { id: true },
+      });
+      if (!linkedComponent) {
+        return NextResponse.json({ success: false, error: 'Selected component is not linked to this work order' }, { status: 400 });
+      }
+    }
+
     let currentStock: number | null = null;
-    let resolvedUnitCost = unitCost || null;
+    let resolvedUnitCost: number | null = null;
     let stockWarning: string | null = null;
-    let resolvedItemName = itemName;
-    let resolvedUnit = unit || 'each';
+    let resolvedItemName = typeof itemName === 'string' && itemName.trim() ? itemName.trim() : '';
+    let resolvedUnit = typeof unit === 'string' && unit.trim() ? unit.trim() : 'each';
 
     if (itemId) {
       const invItem = await db.inventoryItem.findUnique({ where: { id: itemId } });
@@ -156,25 +175,25 @@ export async function POST(request: NextRequest) {
       currentStock = invItem.currentStock;
       resolvedItemName = invItem.name;
       resolvedUnit = invItem.unitOfMeasure || resolvedUnit;
-      if (!resolvedUnitCost) resolvedUnitCost = invItem.unitCost;
+      resolvedUnitCost = invItem.unitCost ?? 0;
 
-      if (invItem.currentStock < quantityRequested) {
-        stockWarning = `Insufficient stock for ${invItem.name}. Available: ${invItem.currentStock}, Requested: ${quantityRequested}. Shortfall: ${quantityRequested - invItem.currentStock}`;
-      } else if (invItem.currentStock < quantityRequested * 2) {
-        const remainingAfterIssue = invItem.currentStock - quantityRequested;
+      if (invItem.currentStock < requestedQuantity) {
+        stockWarning = `Insufficient stock for ${invItem.name}. Available: ${invItem.currentStock}, Requested: ${requestedQuantity}. Shortfall: ${requestedQuantity - invItem.currentStock}`;
+      } else if (invItem.currentStock < requestedQuantity * 2) {
+        const remainingAfterIssue = invItem.currentStock - requestedQuantity;
         if (remainingAfterIssue < invItem.currentStock * 0.1) {
-          stockWarning = `Low stock warning: issuing ${quantityRequested} would leave only ${remainingAfterIssue} units of ${invItem.name} in inventory.`;
+          stockWarning = `Low stock warning: issuing ${requestedQuantity} would leave only ${remainingAfterIssue} units of ${invItem.name} in inventory.`;
         }
       }
     }
 
-    const estimatedCost = (quantityRequested || 0) * (resolvedUnitCost || 0);
+    const estimatedCost = requestedQuantity * (resolvedUnitCost ?? 0);
     const matReq = await db.repairMaterialRequest.create({
       data: {
         workOrderId,
         itemId: itemId || null,
         itemName: resolvedItemName,
-        quantityRequested,
+        quantityRequested: requestedQuantity,
         quantityApproved: 0,
         quantityIssued: 0,
         quantityReturned: 0,
@@ -198,10 +217,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (wo.assignedSupervisorId) {
-      await notifyUser(wo.assignedSupervisorId, 'repair_material_request', `${resolvedUrgency === 'critical' ? '🔴 ' : resolvedUrgency === 'high' ? '🟠 ' : ''}Material Request Pending Approval`, `${matReq.requestedBy.fullName} requested ${quantityRequested} ${resolvedUnit} of ${resolvedItemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
+      await notifyUser(wo.assignedSupervisorId, 'repair_material_request', `${resolvedUrgency === 'critical' ? '🔴 ' : resolvedUrgency === 'high' ? '🟠 ' : ''}Material Request Pending Approval`, `${matReq.requestedBy.fullName} requested ${requestedQuantity} ${resolvedUnit} of ${resolvedItemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
     }
     if (wo.plannerId && wo.plannerId !== wo.assignedSupervisorId) {
-      await notifyUser(wo.plannerId, 'repair_material_request', 'New Material Request Submitted', `${matReq.requestedBy.fullName} requested ${quantityRequested} ${resolvedUnit} of ${resolvedItemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
+      await notifyUser(wo.plannerId, 'repair_material_request', 'New Material Request Submitted', `${matReq.requestedBy.fullName} requested ${requestedQuantity} ${resolvedUnit} of ${resolvedItemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
     }
 
     await db.auditLog.create({
@@ -210,7 +229,16 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'repair_material_request',
         entityId: matReq.id,
-        newValues: JSON.stringify({ workOrderId, itemId: itemId || null, itemName: resolvedItemName, quantityRequested, urgency: resolvedUrgency, reason, plantId: wo.plantId }),
+        newValues: JSON.stringify({
+          workOrderId,
+          itemId: itemId || null,
+          itemName: resolvedItemName,
+          quantityRequested: requestedQuantity,
+          unitCost: resolvedUnitCost,
+          urgency: resolvedUrgency,
+          reason,
+          plantId: wo.plantId,
+        }),
       },
     });
 
