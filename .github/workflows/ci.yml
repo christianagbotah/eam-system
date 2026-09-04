@@ -2,7 +2,7 @@
 # iAssetsPro EAM — Main CI Pipeline
 # =============================================================================
 # Triggers on pushes to main/develop and all pull requests.
-# Jobs: lint → typecheck advisory → unit-tests → build → e2e-tests (main push only)
+# Jobs: lint → typecheck advisory → unit-tests → build → Repairs UAT (PR) / E2E (push)
 # =============================================================================
 
 name: CI
@@ -165,7 +165,100 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Job 5: E2E Tests (only on push to main, not PRs)
+  # Job 5: Repairs/RWOP UAT — hard PR gate
+  # ---------------------------------------------------------------------------
+  # This job uses an isolated MariaDB + Redis pair and the idempotent UAT seed.
+  # It runs the production Repairs API/UI contract, including start readiness,
+  # handover, plant isolation, materials/tools, completion, and closeout flows.
+  repairs-uat:
+    name: Repairs UAT (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: [build]
+    if: github.event_name == 'pull_request'
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: uat_test_root
+          MARIADB_DATABASE: repairs_uat
+          MARIADB_USER: repairs_uat
+          MARIADB_PASSWORD: repairs_uat_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: mysql://repairs_uat:repairs_uat_pass@127.0.0.1:3306/repairs_uat
+      REDIS_URL: redis://127.0.0.1:6379
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      NEXTAUTH_SECRET: repairs-uat-ci-nextauth-secret-not-for-production
+      JWT_SECRET: repairs-uat-ci-jwt-secret-not-for-production-32-bytes-minimum
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bunx prisma generate
+
+      - name: Create isolated UAT schema
+        run: bunx prisma db push --skip-generate
+
+      - name: Seed Repairs UAT data
+        run: bunx tsx scripts/seed-repairs-uat.ts
+
+      - name: Install Playwright Chromium browser with system dependencies
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run Repairs/RWOP Playwright UAT
+        run: bun run test:repairs-uat
+
+      - name: Upload Repairs UAT results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repairs-uat-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Job 6: Full E2E Tests (pushes to main/develop)
   # ---------------------------------------------------------------------------
   e2e-tests:
     name: E2E Tests (Playwright)
