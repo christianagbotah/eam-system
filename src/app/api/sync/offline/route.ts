@@ -155,27 +155,28 @@ async function handleTimeLogCreate(
   if (wo.status === 'verified') throw new Error('Work order has been reviewed and time logging is no longer allowed');
   if (!isExecutionActor(wo, session)) throw new Error('You do not have execution access to this work order');
 
-  const validActions = ['start', 'pause', 'resume', 'complete'];
-  const action = typeof data.action === 'string' ? data.action : 'complete';
-  if (!validActions.includes(action)) throw new Error(`Invalid time log action: ${action}`);
-
-  const duration = typeof data.duration === 'number' && data.duration >= 0 ? data.duration : null;
-  const startTime = recordTimestamp;
-  const endTime = duration != null
-    ? new Date(startTime.getTime() + duration * 3_600_000)
-    : (action === 'pause' || action === 'complete' ? recordTimestamp : null);
-
-  if ((action === 'start' || action === 'resume') && endTime === null) {
-    const existing = await tx.workOrderTimeLog.findFirst({
-      where: {
-        userId: session.userId,
-        action: { in: ['start', 'resume'] },
-        endTime: null,
-      },
-      select: { workOrderId: true },
-    });
-    if (existing) throw new Error('An active work session already exists for this technician');
+  // Offline generic time records are CLOSED retrospective labor entries only.
+  // Live Start/Hold/Resume/Complete remain work-order lifecycle operations and
+  // must use their canonical endpoints. This keeps WO.actualHours, readiness,
+  // completion snapshots and authoritative costing on one labor model.
+  const validActions = ['start', 'resume'];
+  const action = typeof data.action === 'string' ? data.action : '';
+  if (!validActions.includes(action)) {
+    throw new Error("Offline time log action must be 'start' or 'resume'; lifecycle pause/complete actions are not accepted here");
   }
+
+  const duration = typeof data.duration === 'number' && Number.isFinite(data.duration) && data.duration > 0
+    ? data.duration
+    : null;
+  if (duration == null) {
+    throw new Error('Offline labor duration must be greater than zero');
+  }
+
+  const breakMinutes = typeof data.breakMinutes === 'number' && Number.isFinite(data.breakMinutes)
+    ? Math.max(0, Math.min(Math.round(data.breakMinutes), 480))
+    : 0;
+  const startTime = recordTimestamp;
+  const endTime = new Date(startTime.getTime() + duration * 3_600_000);
 
   await tx.workOrderTimeLog.create({
     data: {
@@ -188,13 +189,16 @@ async function handleTimeLogCreate(
       startTime,
       endTime,
       activityType: typeof data.activityType === 'string' ? data.activityType : 'maintenance',
-      breakMinutes: typeof data.breakMinutes === 'number' ? Math.max(0, Math.round(data.breakMinutes)) : 0,
-      pauseReason: action === 'pause' && typeof data.pauseReason === 'string' ? data.pauseReason : null,
+      breakMinutes,
+      pauseReason: null,
     },
   });
 
   const logs = await tx.workOrderTimeLog.findMany({
-    where: { workOrderId: wo.id },
+    where: {
+      workOrderId: wo.id,
+      action: { in: ['start', 'resume'] },
+    },
     select: { duration: true },
   });
   const actualHours = Math.round(logs.reduce((sum, log) => sum + (log.duration || 0), 0) * 100) / 100;
