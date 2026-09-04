@@ -55,6 +55,8 @@ export async function placeWorkOrderInWaitingState(
     reason: string;
     requireExecutionAuthority?: boolean;
     auditCtx?: ExecutionStateAuditContext;
+    /** Additional trusted WO fields to update atomically with the state change. */
+    extraData?: Record<string, unknown>;
   },
 ): Promise<{
   success: boolean;
@@ -97,6 +99,7 @@ export async function placeWorkOrderInWaitingState(
 
     const transition = await executeTransition('work_order', workOrderId, targetStatus, session, {
       reason,
+      extraData: options.extraData,
       tx,
     });
     if (!transition.success) throw new Error(transition.error || 'State transition failed');
@@ -114,6 +117,7 @@ export async function placeWorkOrderInWaitingState(
           closedTimerIds: closed.closedTimerIds,
           closedTimerUsers: closed.closedUserIds,
           actualHours: closed.actualHours,
+          ...(options.extraData ? { extraData: options.extraData } : {}),
         },
         options.auditCtx,
       ),
