@@ -5,6 +5,10 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, type SessionData } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { createLogger } from '@/lib/logger';
+import {
+  buildOfflineRequestHash,
+  isOfflineReplayMatch,
+} from '@/lib/offline-idempotency';
 
 const logger = createLogger('sync:offline');
 
@@ -294,11 +298,19 @@ async function processRecord(
   const recordTimestamp = new Date(record.timestamp);
   if (Number.isNaN(recordTimestamp.getTime())) throw new Error('Invalid offline record timestamp');
 
+  const requestHash = buildOfflineRequestHash(record);
+  const conflictMessage = 'Idempotency key conflict: key is already bound to a different offline action';
+
   try {
     return await db.$transaction(async (tx) => {
       if (idempotencyKey) {
         const existing = await tx.idempotencyRecord.findUnique({ where: { key: idempotencyKey } });
-        if (existing) return { replayed: true };
+        if (existing) {
+          if (!isOfflineReplayMatch(existing, record, session.userId)) {
+            throw new Error(conflictMessage);
+          }
+          return { replayed: true };
+        }
       }
 
       const wo = await loadWorkOrder(tx, record.entityId);
@@ -328,7 +340,7 @@ async function processRecord(
       }
 
       if (idempotencyKey) {
-        const responseData = JSON.stringify({ success: true, recordId: record.id });
+        const responseData = JSON.stringify({ success: true, recordId: record.id, requestHash });
         await tx.idempotencyRecord.create({
           data: {
             key: idempotencyKey,
@@ -346,11 +358,16 @@ async function processRecord(
     });
   } catch (error: unknown) {
     // Concurrent duplicate requests may race on the unique idempotency key.
-    // The losing transaction is rolled back; if the winner committed, replay
-    // is successful and must not re-run the mutation.
+    // The losing transaction is rolled back; only an exact same-user/same-
+    // payload replay is accepted. A collided or reused key must fail closed.
     if (idempotencyKey) {
       const existing = await db.idempotencyRecord.findUnique({ where: { key: idempotencyKey } });
-      if (existing) return { replayed: true };
+      if (existing) {
+        if (isOfflineReplayMatch(existing, record, session.userId)) {
+          return { replayed: true };
+        }
+        throw new Error(conflictMessage);
+      }
     }
     throw error;
   }
