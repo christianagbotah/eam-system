@@ -17,10 +17,6 @@ import {
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatDate, formatCurrency, PriorityBadge } from '@/components/shared/helpers';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 interface PlannerInboxItem {
   id: string;
   woNumber: string;
@@ -42,10 +38,6 @@ interface PlannerCloseoutInboxListProps {
   onSelectWO: (workOrderId: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxListProps) {
   const abortRef = useAbortRef();
   const [items, setItems] = useState<PlannerInboxItem[]>([]);
@@ -64,9 +56,7 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
         toast.error(res.error || 'Failed to load planner inbox');
       }
     } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        toast.error('Failed to load planner inbox');
-      }
+      if (err?.name !== 'AbortError') toast.error('Failed to load planner inbox');
     } finally {
       setLoading(false);
     }
@@ -74,21 +64,17 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  // Filters
   const filtered = items.filter((wo) => {
     if (filterPriority !== 'all' && wo.priority !== filterPriority) return false;
     if (search) {
       const s = search.toLowerCase();
-      return (
-        wo.woNumber?.toLowerCase().includes(s) ||
-        wo.title?.toLowerCase().includes(s) ||
-        wo.assetName?.toLowerCase().includes(s)
-      );
+      return wo.woNumber?.toLowerCase().includes(s)
+        || wo.title?.toLowerCase().includes(s)
+        || wo.assetName?.toLowerCase().includes(s);
     }
     return true;
   });
 
-  // Sort: by priority then by verification date
   const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
   const sorted = [...filtered].sort((a, b) => {
     const pa = priorityOrder[a.priority] ?? 2;
@@ -97,7 +83,6 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
     return new Date(a.verifiedAt || 0).getTime() - new Date(b.verifiedAt || 0).getTime();
   });
 
-  // Totals
   const totalCostSum = items.reduce((s, i) => s + (i.totalCost || 0), 0);
   const totalEstimate = items.reduce((s, i) => s + (i.estimatedCost || 0), 0);
   const variance = totalEstimate - totalCostSum;
@@ -106,7 +91,6 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-teal-100 flex items-center justify-center">
@@ -136,7 +120,6 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -162,7 +145,6 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
         </Select>
       </div>
 
-      {/* List */}
       {sorted.length === 0 ? (
         <EmptyState
           icon={Inbox}
@@ -171,7 +153,6 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
         />
       ) : (
         <div className="rounded-xl border bg-card">
-          {/* Desktop table */}
           <div className="hidden md:block">
             <Table>
               <TableHeader>
@@ -206,7 +187,7 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
                           </p>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDate(wo.verifiedAt)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{formatDate(wo.verifiedAt ?? undefined)}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                           <FileCheck className="h-4 w-4 text-teal-600" />
@@ -219,7 +200,6 @@ export function PlannerCloseoutInboxList({ onSelectWO }: PlannerCloseoutInboxLis
             </Table>
           </div>
 
-          {/* Mobile cards */}
           <div className="md:hidden divide-y">
             {sorted.map((wo) => {
               const costVariance = (wo.estimatedCost || 0) - (wo.totalCost || 0);
