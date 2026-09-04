@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import {
-  generateReport,
   SUPPORTED_REPORT_TYPES,
   type ReportType,
   type ReportFilters,
 } from '@/services/repairsReportXlsx.service';
+import { generateRepairsReport } from '@/services/repairsReportXlsxSafe.service';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('api:repairs:reports:xlsx');
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
       userId: session.userId,
     });
 
-    const { buffer, filename } = await generateReport(
+    const { buffer, filename } = await generateRepairsReport(
       reportType as ReportType,
       filters,
       session,
