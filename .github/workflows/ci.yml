@@ -2,7 +2,7 @@
 # iAssetsPro EAM — Main CI Pipeline
 # =============================================================================
 # Triggers on pushes to main/develop and all pull requests.
-# Jobs: lint → typecheck advisory → unit-tests → build → Repairs UAT (PR) / E2E (push)
+# Jobs: lint → typecheck → unit-tests → build → Repairs UAT (PR) / E2E (push)
 # =============================================================================
 
 name: CI
@@ -55,15 +55,10 @@ jobs:
         run: bun run lint
 
   # ---------------------------------------------------------------------------
-  # Job 2: Typecheck advisory
+  # Job 2: TypeScript hard gate
   # ---------------------------------------------------------------------------
-  # The repository has substantial pre-existing TypeScript debt in modules
-  # outside the Repairs release scope (Digital Twin, Reliability, AI, mobile,
-  # seed utilities, etc.). Keep the full compiler output visible as an advisory
-  # without preventing the production Next.js build from being validated.
-  # Prisma generation remains a hard gate.
   typecheck:
-    name: TypeScript Advisory Check
+    name: TypeScript Type Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -90,8 +85,7 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
-      - name: Run TypeScript compiler check (legacy debt advisory)
-        continue-on-error: true
+      - name: Run TypeScript compiler check
         run: bunx tsc --noEmit
 
   # ---------------------------------------------------------------------------
