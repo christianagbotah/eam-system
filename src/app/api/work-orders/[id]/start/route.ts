@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
-import { startWork, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import {
+  startWorkOrderExecution,
+  type StartExecutionSessionContext,
+  type StartExecutionAuditContext,
+} from '@/services/workOrderStartExecution.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 
 export async function POST(
@@ -23,8 +27,9 @@ export async function POST(
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    // A technician may only own one live execution timer at a time. Enforce
-    // this at the canonical WO start boundary, not only in the time-log API.
+    // Fast conflict pre-check for a clear 409 response. The canonical start
+    // service repeats this check inside its transaction, so this is UX only and
+    // is not the authoritative enforcement boundary.
     if (!isAdmin(session)) {
       const activeSession = await db.workOrderTimeLog.findFirst({
         where: {
@@ -64,17 +69,22 @@ export async function POST(
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
 
-    const result = await startWork(id, session as SessionContext, {
-      reason: body.reason,
-      notes: body.notes,
-      auditCtx: auditCtx as AuditContext,
-    });
+    const result = await startWorkOrderExecution(
+      id,
+      session as StartExecutionSessionContext,
+      {
+        reason: typeof body.reason === 'string' ? body.reason : undefined,
+        notes: typeof body.notes === 'string' ? body.notes : undefined,
+        auditCtx: auditCtx as StartExecutionAuditContext,
+      },
+    );
 
     if (!result.success) {
-      const status = result.readiness ? 422 : 400;
+      const status = result.conflict ? 409 : result.readiness ? 422 : result.error === 'Work order not found' ? 404 : 400;
       return NextResponse.json({
         success: false,
         error: result.error,
+        ...(result.conflict ? { conflict: result.conflict } : {}),
         ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
       }, { status });
     }
