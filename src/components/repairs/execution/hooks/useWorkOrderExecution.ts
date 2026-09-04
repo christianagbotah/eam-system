@@ -394,25 +394,15 @@ export function useWorkOrderExecution(
   const fetchReadiness = useCallback(async () => {
     if (!workOrderId) return;
     try {
-      const res = await api.post<ReadinessResult>(`/api/work-orders/${workOrderId}/complete`, {}, {
+      const res = await api.get<ReadinessResult>(`/api/work-orders/${workOrderId}/readiness?phase=complete`, {
         signal: abortRef.current.signal,
         timeout: 10_000,
       });
-      // 422 is expected when not ready — parse the response body for blockers
-      // The api client returns { success: false, error, blockers, warnings } on non-200
-      // We need to call the start endpoint readiness check differently
-      // Actually, the readiness is embedded in the start/complete response error
-      // Let's try a different approach: fetch WO detail and run client-side readiness checks
-      // OR, the completion endpoint returns blockers when called prematurely
-      if (!res.success) {
-        // Check if response had blockers (422)
-        const raw = (res as any).blockers || (res as any).data?.blockers;
-        if (raw && Array.isArray(raw)) {
-          setReadiness({ ready: false, blockers: raw, warnings: (res as any).warnings || [] });
-        }
+      if (res.success && res.data) {
+        setReadiness(res.data as ReadinessResult);
       }
     } catch {
-      /* Expected to fail when WO is not in a completable state */
+      /* Read-only readiness is advisory; completion will enforce it again server-side. */
     }
   }, [workOrderId, abortRef]);
 
