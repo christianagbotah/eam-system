@@ -1,11 +1,14 @@
 /**
  * Scenario I — Offline Replay / Idempotency (UAT-10)
  *
- * Pure API tests. Creates a WO, starts it, then tests the offline sync
- * endpoint's idempotency behavior:
- *   - First call with an idempotency key succeeds
- *   - Second call with the SAME key returns success but does NOT duplicate
- *   - Server state shows exactly one record
+ * Pure API staging UAT for the offline sync contract:
+ *   - first mutation succeeds;
+ *   - an EXACT replay succeeds with replayed=true and does not duplicate;
+ *   - reusing the same key for changed payload/timestamp fails closed;
+ *   - a new idempotency key creates a new record;
+ *   - offline labor accepts closed retrospective start/resume rows only;
+ *   - exact labor replay does not duplicate hours;
+ *   - server batch limit remains 100 records.
  */
 import { test, expect } from '@playwright/test';
 import {
@@ -22,7 +25,6 @@ import {
   apiCall,
 } from './helpers/api';
 
-// Generate a UUID-like idempotency key
 function generateIdempotencyKey(): string {
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -32,17 +34,12 @@ test('UAT-10: Scenario I — Offline Replay / Idempotency', async () => {
   let assetId: string;
   let plantId: string;
   let techSingleUserId: string;
-  let idempotencyKey: string;
 
-  // Pre-resolve IDs via API
   const plannerToken = await getToken('planner');
   techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
   assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
   plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
-  // ────────────────────────────────────────────────────────────────────
-  // I1: Create and start WO for offline sync tests
-  // ────────────────────────────────────────────────────────────────────
   await test.step('I1: Create and start WO for offline sync tests', async () => {
     const requesterToken = await getToken('requester');
     const supervisorToken = await getToken('supervisor');
@@ -74,101 +71,83 @@ test('UAT-10: Scenario I — Offline Replay / Idempotency', async () => {
     expect(fetched.status).toBe('in_progress');
   });
 
-  // ────────────────────────────────────────────────────────────────────
-  // I2: First offline sync call with idempotency key succeeds
-  // ────────────────────────────────────────────────────────────────────
-  await test.step('I2: First offline sync call succeeds and creates record', async () => {
+  await test.step('I2: First offline comment succeeds', async () => {
     const techToken = await getToken('tech_single');
-    idempotencyKey = generateIdempotencyKey();
+    const idempotencyKey = generateIdempotencyKey();
+    const uniqueContent = `Offline exact replay comment ${Date.now()}`;
+    const timestamp = new Date().toISOString();
+    const record = {
+      id: `offline-comment-${Date.now()}`,
+      operation: 'create',
+      entityType: 'work_order_comment',
+      entityId: woId,
+      idempotencyKey,
+      data: { content: uniqueContent },
+      timestamp,
+    };
 
-    const uniqueContent = `Offline sync test comment ${Date.now()}`;
+    const first = await apiCall(techToken, 'POST', '/api/sync/offline', { records: [record] });
+    expect(first.status).toBe(200);
+    expect(first.data.success).toBe(true);
+    expect(first.data.results[0]).toMatchObject({ success: true, replayed: false });
 
-    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+    const commentsAfterFirst = await apiCall(
+      techToken,
+      'GET',
+      `/api/work-orders/${woId}/comments`,
+    );
+    const firstMatches = (commentsAfterFirst.data.data as Array<{ content: string }>)
+      .filter((comment) => comment.content === uniqueContent);
+    expect(firstMatches).toHaveLength(1);
+
+    // EXACT same actor/entity/action/data/timestamp + key is a legitimate retry.
+    const replay = await apiCall(techToken, 'POST', '/api/sync/offline', { records: [record] });
+    expect(replay.status).toBe(200);
+    expect(replay.data.results[0]).toMatchObject({ success: true, replayed: true });
+
+    const commentsAfterReplay = await apiCall(
+      techToken,
+      'GET',
+      `/api/work-orders/${woId}/comments`,
+    );
+    const replayMatches = (commentsAfterReplay.data.data as Array<{ content: string }>)
+      .filter((comment) => comment.content === uniqueContent);
+    expect(replayMatches).toHaveLength(1);
+
+    // Same key with changed data is NOT a replay. It must fail closed and must
+    // not silently discard a different field action as "already synced".
+    const conflict = await apiCall(techToken, 'POST', '/api/sync/offline', {
       records: [{
-        id: 'offline-comment-1',
-        operation: 'create',
-        entityType: 'work_order_comment',
-        entityId: woId,
-        data: {
-          content: uniqueContent,
-          idempotencyKey,
-        },
-        timestamp: new Date().toISOString(),
+        ...record,
+        id: `${record.id}-conflict`,
+        data: { content: `${uniqueContent} changed` },
       }],
     });
+    expect(conflict.status).toBe(200);
+    expect(conflict.data.results[0].success).toBe(false);
+    expect(String(conflict.data.results[0].error)).toContain('Idempotency key conflict');
 
-    expect(status).toBe(200);
-    expect(data.success).toBe(true);
-    expect(data.results).toBeDefined();
-    expect(data.results[0].success).toBe(true);
-
-    // Server-state: verify the comment was created
-    const { data: commentsData } = await apiCall(
-      techToken, 'GET', `/api/work-orders/${woId}/comments`,
+    const commentsAfterConflict = await apiCall(
+      techToken,
+      'GET',
+      `/api/work-orders/${woId}/comments`,
     );
-    expect(commentsData.success).toBe(true);
-    const comments = commentsData.data as Array<{ content: string }>;
-    const matchingComment = comments.find((c) => c.content === uniqueContent);
-    expect(matchingComment).toBeDefined();
+    const changedMatches = (commentsAfterConflict.data.data as Array<{ content: string }>)
+      .filter((comment) => comment.content === `${uniqueContent} changed`);
+    expect(changedMatches).toHaveLength(0);
   });
 
-  // ────────────────────────────────────────────────────────────────────
-  // I3: Second offline sync with SAME key is idempotent — no duplicate
-  // ────────────────────────────────────────────────────────────────────
-  await test.step('I3: Duplicate offline sync with same key does not create duplicate', async () => {
+  await test.step('I3: A new idempotency key creates a separate comment', async () => {
     const techToken = await getToken('tech_single');
-
-    const uniqueContent = `Offline sync test comment ${Date.now()}`;
-
-    // Post the SAME idempotency key again with different content
-    // The server should return success (idempotent) but NOT create a new record
-    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
-      records: [{
-        id: 'offline-comment-1-duplicate',
-        operation: 'create',
-        entityType: 'work_order_comment',
-        entityId: woId,
-        data: {
-          content: uniqueContent,
-          idempotencyKey, // SAME key as I2
-        },
-        timestamp: new Date().toISOString(),
-      }],
-    });
-
-    expect(status).toBe(200);
-    expect(data.success).toBe(true);
-    // The result should indicate success (idempotent)
-    expect(data.results[0].success).toBe(true);
-
-    // Server-state: verify NO new comment was created
-    // The new content should NOT appear in the comments
-    const { data: commentsData } = await apiCall(
-      techToken, 'GET', `/api/work-orders/${woId}/comments`,
-    );
-    const comments = commentsData.data as Array<{ content: string }>;
-    const duplicateComment = comments.find((c) => c.content === uniqueContent);
-    expect(duplicateComment).toBeUndefined();
-  });
-
-  // ────────────────────────────────────────────────────────────────────
-  // I4: New idempotency key creates a new record (not blocked by previous)
-  // ────────────────────────────────────────────────────────────────────
-  await test.step('I4: New idempotency key creates a separate record', async () => {
-    const techToken = await getToken('tech_single');
-    const newKey = generateIdempotencyKey();
     const uniqueContent = `Second offline comment ${Date.now()}`;
-
     const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
       records: [{
-        id: 'offline-comment-2',
+        id: `offline-comment-new-${Date.now()}`,
         operation: 'create',
         entityType: 'work_order_comment',
         entityId: woId,
-        data: {
-          content: uniqueContent,
-          idempotencyKey: newKey,
-        },
+        idempotencyKey: generateIdempotencyKey(),
+        data: { content: uniqueContent },
         timestamp: new Date().toISOString(),
       }],
     });
@@ -176,71 +155,109 @@ test('UAT-10: Scenario I — Offline Replay / Idempotency', async () => {
     expect(status).toBe(200);
     expect(data.results[0].success).toBe(true);
 
-    // Server-state: this new comment SHOULD exist
-    const { data: commentsData } = await apiCall(
-      techToken, 'GET', `/api/work-orders/${woId}/comments`,
+    const commentsData = await apiCall(
+      techToken,
+      'GET',
+      `/api/work-orders/${woId}/comments`,
     );
-    const comments = commentsData.data as Array<{ content: string }>;
-    const newComment = comments.find((c) => c.content === uniqueContent);
-    expect(newComment).toBeDefined();
+    const comments = commentsData.data.data as Array<{ content: string }>;
+    expect(comments.some((comment) => comment.content === uniqueContent)).toBe(true);
   });
 
-  // ────────────────────────────────────────────────────────────────────
-  // I5: Offline time log with idempotency — no duplicate time entries
-  // ────────────────────────────────────────────────────────────────────
-  await test.step('I5: Offline time log idempotency prevents duplicate entries', async () => {
+  await test.step('I4: Offline lifecycle completion cannot be smuggled in as a time log', async () => {
     const techToken = await getToken('tech_single');
-    const timeIdempotencyKey = generateIdempotencyKey();
-
-    // First time log via offline sync
-    const { status: s1, data: d1 } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
       records: [{
-        id: 'offline-timelog-1',
+        id: `offline-invalid-complete-${Date.now()}`,
         operation: 'create',
         entityType: 'work_order_time_log',
         entityId: woId,
+        idempotencyKey: generateIdempotencyKey(),
         data: {
           action: 'complete',
           duration: 0.5,
-          notes: 'Offline time entry',
-          idempotencyKey: timeIdempotencyKey,
+          notes: 'Must not bypass the Repairs completion lifecycle',
         },
         timestamp: new Date().toISOString(),
       }],
     });
-    expect(s1).toBe(200);
-    expect(d1.results[0].success).toBe(true);
 
-    // Duplicate time log with same key
-    const { status: s2, data: d2 } = await apiCall(techToken, 'POST', '/api/sync/offline', {
-      records: [{
-        id: 'offline-timelog-1-dup',
-        operation: 'create',
-        entityType: 'work_order_time_log',
-        entityId: woId,
-        data: {
-          action: 'complete',
-          duration: 0.5,
-          notes: 'Duplicate offline time entry',
-          idempotencyKey: timeIdempotencyKey, // SAME key
-        },
-        timestamp: new Date().toISOString(),
-      }],
-    });
-    expect(s2).toBe(200);
-    expect(d2.results[0].success).toBe(true);
+    expect(status).toBe(200);
+    expect(data.results[0].success).toBe(false);
+    expect(String(data.results[0].error)).toContain("must be 'start' or 'resume'");
 
-    // Server-state: check time logs — count entries with 'Offline time entry' note
-    const { data: woData } = await apiCall(techToken, 'GET', `/api/work-orders/${woId}`);
-    // The WO actualHours should reflect only ONE 0.5h entry, not two
-    // (We can't directly count time logs via API, but we verify the WO state)
-    expect(woData.data.actualHours).toBeGreaterThanOrEqual(0.5);
+    const fetched = await getWO(techToken, woId);
+    expect(fetched.status).toBe('in_progress');
   });
 
-  // ────────────────────────────────────────────────────────────────────
-  // I6: Leave the shared UAT technician with no live session
-  // ────────────────────────────────────────────────────────────────────
-  await test.step('I6: Stop the live session after offline replay verification', async () => {
+  await test.step('I5: Closed retrospective labor replays exactly once', async () => {
+    const techToken = await getToken('tech_single');
+    const timestamp = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const idempotencyKey = generateIdempotencyKey();
+    const note = `Offline retrospective labor ${Date.now()}`;
+    const record = {
+      id: `offline-labor-${Date.now()}`,
+      operation: 'create',
+      entityType: 'work_order_time_log',
+      entityId: woId,
+      idempotencyKey,
+      data: {
+        action: 'resume',
+        duration: 0.5,
+        notes: note,
+        activityType: 'maintenance',
+      },
+      timestamp,
+    };
+
+    const before = await apiCall(
+      techToken,
+      'GET',
+      `/api/work-orders/${woId}/time-logs?includeTeamLogs=true`,
+    );
+    const beforeLogs = before.data.data.timeLogs as Array<{ notes?: string; duration?: number }>;
+    const beforeHours = Number(before.data.data.summary.totalHours || 0);
+    expect(beforeLogs.filter((entry) => entry.notes === note)).toHaveLength(0);
+
+    const first = await apiCall(techToken, 'POST', '/api/sync/offline', { records: [record] });
+    expect(first.status).toBe(200);
+    expect(first.data.results[0]).toMatchObject({ success: true, replayed: false });
+
+    const replay = await apiCall(techToken, 'POST', '/api/sync/offline', { records: [record] });
+    expect(replay.status).toBe(200);
+    expect(replay.data.results[0]).toMatchObject({ success: true, replayed: true });
+
+    const after = await apiCall(
+      techToken,
+      'GET',
+      `/api/work-orders/${woId}/time-logs?includeTeamLogs=true`,
+    );
+    const afterLogs = after.data.data.timeLogs as Array<{ notes?: string; duration?: number; action?: string }>;
+    const matching = afterLogs.filter((entry) => entry.notes === note);
+    expect(matching).toHaveLength(1);
+    expect(matching[0].action).toBe('resume');
+    expect(matching[0].duration).toBe(0.5);
+    expect(Number(after.data.data.summary.totalHours || 0)).toBeCloseTo(beforeHours + 0.5, 2);
+  });
+
+  await test.step('I6: Server rejects oversized sync batches so clients must chunk at 100', async () => {
+    const techToken = await getToken('tech_single');
+    const records = Array.from({ length: 101 }, (_, index) => ({
+      id: `oversize-${Date.now()}-${index}`,
+      operation: 'create',
+      entityType: 'unsupported_probe',
+      entityId: woId,
+      data: {},
+      timestamp: new Date().toISOString(),
+    }));
+
+    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', { records });
+    expect(status).toBe(400);
+    expect(data.success).toBe(false);
+    expect(String(data.error)).toContain('Maximum 100 records');
+  });
+
+  await test.step('I7: Stop the original live session after replay verification', async () => {
     const techToken = await getToken('tech_single');
     const { status, data } = await apiCall(
       techToken,
