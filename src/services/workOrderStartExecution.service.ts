@@ -28,8 +28,14 @@ export interface StartExecutionOptions {
 export interface StartExecutionConflict {
   workOrderId: string;
   woNumber?: string;
+  title?: string;
+  status: 'in_progress';
   startedAt: string;
 }
+
+export type StartExecutionConflictReason =
+  | 'ACTIVE_SESSION_CONFLICT'
+  | 'ACTIVE_SESSION_ALREADY_RUNNING';
 
 export type StartExecutionResult = {
   success: boolean;
@@ -37,6 +43,7 @@ export type StartExecutionResult = {
   error?: string;
   readiness?: ReadinessCheckResult;
   conflict?: StartExecutionConflict;
+  reason?: StartExecutionConflictReason;
 };
 
 class StartExecutionTransitionError extends Error {
@@ -110,34 +117,51 @@ export async function startWorkOrderExecution(
       };
     }
 
-    // Preserve the existing admin override semantics. For normal execution
-    // users, a single live start/resume session is a system-wide invariant.
+    // A timer row by itself is not enough to prove that work is still live.
+    // Legacy/aborted flows can leave an unclosed start/resume row behind after
+    // the WO has moved to hold, waiting, handover, completion, verification or
+    // closure. Only a timer whose parent WO is truly in_progress is allowed to
+    // block another start. We deliberately do not auto-close stale rows here,
+    // because inventing an end time would corrupt authoritative labor costing.
     if (!session.roles.includes('admin')) {
       const existingLiveSession = await tx.workOrderTimeLog.findFirst({
         where: {
           userId: session.userId,
           action: { in: ['start', 'resume'] },
           endTime: null,
+          workOrder: { status: 'in_progress' },
         },
         orderBy: { timestamp: 'desc' },
         select: {
           workOrderId: true,
           startTime: true,
           timestamp: true,
-          workOrder: { select: { woNumber: true } },
+          workOrder: {
+            select: {
+              woNumber: true,
+              title: true,
+              status: true,
+            },
+          },
         },
       });
 
       if (existingLiveSession) {
         const existingStartedAt = existingLiveSession.startTime || existingLiveSession.timestamp;
+        const sameWorkOrder = existingLiveSession.workOrderId === workOrderId;
         return {
           success: false as const,
-          error: existingLiveSession.workOrderId === workOrderId
+          reason: sameWorkOrder
+            ? 'ACTIVE_SESSION_ALREADY_RUNNING' as const
+            : 'ACTIVE_SESSION_CONFLICT' as const,
+          error: sameWorkOrder
             ? 'You already have an active work session on this work order'
-            : `You already have an active work session on WO #${existingLiveSession.workOrder?.woNumber || 'unknown'}. Stop or hand over that session before starting another work order.`,
+            : `You already have active work on WO #${existingLiveSession.workOrder?.woNumber || 'unknown'}${existingLiveSession.workOrder?.title ? ` (${existingLiveSession.workOrder.title})` : ''}. Open that work order and pause, hand over, or complete it before starting another.`,
           conflict: {
             workOrderId: existingLiveSession.workOrderId,
             woNumber: existingLiveSession.workOrder?.woNumber || undefined,
+            title: existingLiveSession.workOrder?.title || undefined,
+            status: 'in_progress' as const,
             startedAt: existingStartedAt.toISOString(),
           },
         };
