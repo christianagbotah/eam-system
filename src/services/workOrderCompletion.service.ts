@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderReadiness.service';
 import { calculateAuthoritativeCosts } from '@/services/workExecution.service';
+import { calculateWorkOrderLaborCost } from '@/services/workOrderLaborCost.service';
 import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
 import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { sendRepairNotification } from '@/lib/repair-notifications';
@@ -92,6 +93,10 @@ function checkCompletionAuthority(
     : { allowed: false, error: 'Only the assigned technician can complete this work order' };
 }
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 /**
  * Canonical technician/team-leader completion.
  *
@@ -147,22 +152,36 @@ export async function submitRepairCompletion(
       };
     }
 
+    // Materials/tools/contractors remain server authoritative in the existing
+    // cost engine. Labor is calculated separately per technician because a
+    // multi-tech WO must never price every person's hours at the assignee's rate.
     const costs = await calculateAuthoritativeCosts(workOrderId, tx);
     if (!costs) throw new Error('Failed to calculate authoritative costs during completion');
+
+    const labor = await calculateWorkOrderLaborCost(workOrderId, tx);
+    if (!labor) throw new Error('Failed to calculate authoritative labor cost during completion');
+
+    const totalActualCost = round2(
+      labor.actualLaborCost +
+      costs.actualMaterialCost +
+      costs.actualToolCost +
+      costs.actualContractorCost,
+    );
+    const costWarnings = [...labor.warnings];
 
     const transition = await executeTransition('work_order', workOrderId, 'completed', session, {
       extraData: {
         actualEnd: completedAt,
-        actualHours: costs.laborHours,
+        actualHours: labor.laborHours,
         failureDescription: options.failureDescription || wo.failureDescription,
         causeDescription: options.causeDescription || wo.causeDescription,
         actionDescription: options.actionDescription || wo.actionDescription,
-        laborCost: costs.actualLaborCost,
+        laborCost: labor.actualLaborCost,
         partsCost: costs.actualMaterialCost,
         contractorCost: costs.actualContractorCost,
-        totalCost: costs.totalActualCost,
-        laborRateApplied: costs.appliedLaborRate ?? undefined,
-        laborCurrency: costs.appliedLaborCurrency ?? undefined,
+        totalCost: totalActualCost,
+        laborRateApplied: labor.appliedLaborRate ?? undefined,
+        laborCurrency: labor.appliedLaborCurrency ?? undefined,
       },
       tx,
     });
@@ -230,15 +249,6 @@ export async function submitRepairCompletion(
         0,
       ),
     );
-    const totalToolCost = Math.max(
-      0,
-      Math.round(
-        (costs.totalActualCost
-          - costs.actualLaborCost
-          - costs.actualMaterialCost
-          - costs.actualContractorCost) * 100,
-      ) / 100,
-    );
 
     await tx.repairCompletion.upsert({
       where: { workOrderId },
@@ -248,9 +258,9 @@ export async function submitRepairCompletion(
         findings: options.failureDescription || wo.failureDescription || null,
         rootCause: options.causeDescription || wo.causeDescription || null,
         correctiveAction: options.actionDescription || wo.actionDescription || null,
-        totalLaborHours: costs.laborHours,
+        totalLaborHours: labor.laborHours,
         totalMaterialCost: costs.actualMaterialCost,
-        totalToolCost,
+        totalToolCost: costs.actualToolCost,
         totalDowntimeMinutes,
         supervisorStatus: 'pending_review',
         plannerStatus: 'pending_closure',
@@ -260,9 +270,9 @@ export async function submitRepairCompletion(
         findings: options.failureDescription || wo.failureDescription || undefined,
         rootCause: options.causeDescription || wo.causeDescription || undefined,
         correctiveAction: options.actionDescription || wo.actionDescription || undefined,
-        totalLaborHours: costs.laborHours,
+        totalLaborHours: labor.laborHours,
         totalMaterialCost: costs.actualMaterialCost,
-        totalToolCost,
+        totalToolCost: costs.actualToolCost,
         totalDowntimeMinutes,
         supervisorStatus: 'pending_review',
         supervisorApprovedById: null,
@@ -285,11 +295,15 @@ export async function submitRepairCompletion(
         {
           status: 'completed',
           actualEnd: completedAt.toISOString(),
-          actualHours: costs.laborHours,
-          laborCost: costs.actualLaborCost,
+          actualHours: labor.laborHours,
+          laborCost: labor.actualLaborCost,
           partsCost: costs.actualMaterialCost,
           contractorCost: costs.actualContractorCost,
-          totalCost: costs.totalActualCost,
+          totalCost: totalActualCost,
+          laborCurrency: labor.appliedLaborCurrency,
+          laborRateApplied: labor.appliedLaborRate,
+          laborRateComplete: !labor.incompleteLaborRate,
+          ...(costWarnings.length > 0 ? { costWarnings } : {}),
           ...(authority.isAdminOverride ? { adminOverride: true } : {}),
         },
         options.auditCtx,
@@ -301,9 +315,9 @@ export async function submitRepairCompletion(
       data: {
         status: 'completed' as const,
         actualEnd: completedAt,
-        actualHours: costs.laborHours,
-        totalCost: costs.totalActualCost,
-        ...(costs.incompleteLaborRate ? { costWarnings: costs.warnings } : {}),
+        actualHours: labor.laborHours,
+        totalCost: totalActualCost,
+        ...(costWarnings.length > 0 ? { costWarnings } : {}),
       },
       notify: {
         woNumber: wo.woNumber,
