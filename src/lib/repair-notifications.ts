@@ -16,6 +16,7 @@ export type RepairNotificationEvent =
   | 'planner_closed'
   | 'wo_started'
   | 'wo_on_hold'
+  | 'wo_resumed'
   | 'shift_handover_pending';
 
 interface NotificationPayload {
@@ -44,6 +45,7 @@ const EVENT_TEMPLATES: Record<RepairNotificationEvent, { title: string; messageT
   planner_closed: { title: 'WO Closed', messageTemplate: '{actorName} closed {woNumber}' },
   wo_started: { title: 'WO Started', messageTemplate: '{actorName} started work on {woNumber}' },
   wo_on_hold: { title: 'WO On Hold', messageTemplate: '{woNumber} has been put on hold: {details}' },
+  wo_resumed: { title: 'WO Resumed', messageTemplate: '{actorName} resumed work on {woNumber}' },
   shift_handover_pending: { title: 'Shift Handover Pending', messageTemplate: 'Shift handover pending for {woNumber}' },
 };
 
@@ -57,7 +59,8 @@ export function sendRepairNotification(payload: NotificationPayload): void {
     return;
   }
 
-  const detailsStr = payload.details?.reason || payload.details?.notes || payload.message || '';
+  const rawDetails = payload.details?.reason ?? payload.details?.notes ?? payload.message ?? '';
+  const detailsStr = typeof rawDetails === 'string' ? rawDetails : String(rawDetails ?? '');
 
   const message = template.messageTemplate
     .replace('{woNumber}', payload.woNumber)
