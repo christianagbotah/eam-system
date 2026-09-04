@@ -19,12 +19,15 @@ export async function resumeConfirmedHandover(
 ): Promise<TransitionResult> {
   const wo = await db.workOrder.findUnique({
     where: { id: workOrderId },
-    select: { id: true, status: true, assignedTo: true },
+    select: { id: true, status: true, assignedTo: true, plantId: true },
   });
 
   if (!wo) return { success: false, error: 'Work order not found' };
   if (wo.status !== 'pending_handover') {
     return { success: false, error: `Cannot resume after handover: work order status is '${wo.status}'` };
+  }
+  if (!wo.plantId) {
+    return { success: false, error: 'Operational work order must have a plant before handover resume' };
   }
 
   const now = new Date();
@@ -45,6 +48,22 @@ export async function resumeConfirmedHandover(
       handoverId = handover.id;
       receiverId = handover.receivedById;
 
+      const receiver = await tx.user.findUnique({
+        where: { id: receiverId },
+        select: { id: true, status: true },
+      });
+      if (!receiver || receiver.status !== 'active') {
+        throw new Error('Cannot resume work: designated handover receiver is not an active user');
+      }
+
+      const receiverPlant = await tx.userPlant.findFirst({
+        where: { userId: receiverId, plantId: wo.plantId! },
+        select: { id: true },
+      });
+      if (!receiverPlant) {
+        throw new Error('Cannot resume work: designated handover receiver no longer has access to this plant');
+      }
+
       const isOverride = session.userId !== receiverId;
       const canOverride = session.roles.some((role) =>
         ['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(role),
@@ -55,6 +74,29 @@ export async function resumeConfirmedHandover(
       }
       if (isOverride && !options.reason?.trim()) {
         throw new Error('Supervisor/manager override requires a reason');
+      }
+
+      const executionUserId = isOverride ? session.userId : receiverId;
+      const existingLiveSession = await tx.workOrderTimeLog.findFirst({
+        where: {
+          userId: executionUserId,
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+        },
+        select: {
+          workOrderId: true,
+          workOrder: { select: { woNumber: true } },
+          startTime: true,
+          timestamp: true,
+        },
+      });
+      if (existingLiveSession) {
+        const activeWo = existingLiveSession.workOrder?.woNumber || 'unknown';
+        throw new Error(
+          existingLiveSession.workOrderId === workOrderId
+            ? 'Cannot resume work: an active execution session already exists on this work order'
+            : `Cannot resume work: you already have an active work session on WO #${activeWo}. Stop or hand over that session first.`,
+        );
       }
 
       const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, { tx });
@@ -85,12 +127,13 @@ export async function resumeConfirmedHandover(
       await tx.workOrderTimeLog.create({
         data: {
           workOrderId,
-          userId: isOverride ? session.userId : receiverId,
+          userId: executionUserId,
           action: 'resume',
           notes: isOverride
             ? `Resumed after shift handover override: ${options.reason}`
             : 'Resumed after confirmed shift handover',
           timestamp: now,
+          startTime: now,
         },
       });
 
@@ -106,6 +149,7 @@ export async function resumeConfirmedHandover(
             handoverId,
             receivedById: receiverId,
             assignedTo: receiverId,
+            executionUserId,
             ...(isOverride ? { overrideReason: options.reason } : {}),
           }),
         },
