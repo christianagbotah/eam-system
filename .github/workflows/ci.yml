@@ -223,10 +223,11 @@ jobs:
       - name: Create isolated UAT schema
         run: bunx prisma db push
 
-      - name: Seed Repairs UAT data and canonical RBAC
+      - name: Seed Repairs UAT data, RBAC, and labor costing
         run: |
           bunx tsx scripts/seed-repairs-uat.ts
           bunx tsx scripts/seed-repairs-uat-rbac.ts
+          bunx tsx scripts/seed-repairs-uat-costing.ts
 
       - name: Run Repairs RC1 MariaDB/Redis/BullMQ preflight
         run: bun run test:repairs-rc1-preflight
