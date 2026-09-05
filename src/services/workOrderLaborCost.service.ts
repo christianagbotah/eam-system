@@ -128,6 +128,7 @@ export async function calculateWorkOrderLaborCost(
   const warnings: string[] = [];
   const segments: LaborRateSegment[] = [];
   const tradeCache = new Map<string, string | null>();
+  const workerCache = new Map<string, { fullName: string; primaryTrade: string | null }>();
 
   const resolveTradeId = async (tradeCodeOrName: string | null): Promise<string | null> => {
     if (!tradeCodeOrName) return null;
@@ -150,7 +151,24 @@ export async function calculateWorkOrderLaborCost(
     if (hours <= 0) continue;
 
     const effectiveAt = log.startTime ?? log.timestamp;
-    const workerName = log.user?.fullName ?? log.userId;
+    let worker = log.user
+      ? { fullName: log.user.fullName, primaryTrade: log.user.primaryTrade }
+      : workerCache.get(log.userId);
+
+    // Prisma returns the selected user relation for normal rows. This fallback
+    // keeps historical fixtures/legacy data shapes safe without changing the
+    // production fast path.
+    if (!worker) {
+      const user = await client.user.findUnique({
+        where: { id: log.userId },
+        select: { fullName: true, primaryTrade: true },
+      });
+      worker = {
+        fullName: user?.fullName ?? log.userId,
+        primaryTrade: user?.primaryTrade ?? null,
+      };
+      workerCache.set(log.userId, worker);
+    }
 
     let rate = await findRate(client, {
       userId: log.userId,
@@ -160,7 +178,7 @@ export async function calculateWorkOrderLaborCost(
     let source: LaborRateSegment['source'] = 'user';
 
     if (!rate) {
-      const tradeId = await resolveTradeId(log.user?.primaryTrade ?? wo.tradeActivity);
+      const tradeId = await resolveTradeId(worker.primaryTrade ?? wo.tradeActivity);
       if (tradeId) {
         rate = await findRate(client, {
           tradeId,
@@ -173,11 +191,11 @@ export async function calculateWorkOrderLaborCost(
 
     if (!rate) {
       warnings.push(
-        `No configured labor rate found for ${workerName}; ${hours.toFixed(2)} labor hour(s) are uncosted.`,
+        `No configured labor rate found for ${worker.fullName}; ${hours.toFixed(2)} labor hour(s) are uncosted.`,
       );
       segments.push({
         userId: log.userId,
-        workerName,
+        workerName: worker.fullName,
         hours,
         hourlyRate: null,
         currency: null,
@@ -190,7 +208,7 @@ export async function calculateWorkOrderLaborCost(
 
     segments.push({
       userId: log.userId,
-      workerName,
+      workerName: worker.fullName,
       hours,
       hourlyRate: rate.normalHourlyRate,
       currency: rate.currency,
