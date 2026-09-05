@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000';
+const useProductionServer = process.env.PLAYWRIGHT_USE_PRODUCTION_SERVER === '1';
 
 export default defineConfig({
   testDir: './e2e',
@@ -26,7 +27,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'bun run dev',
+    command: useProductionServer
+      ? 'NODE_ENV=production node .next/standalone/server.js'
+      : 'bun run dev',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
