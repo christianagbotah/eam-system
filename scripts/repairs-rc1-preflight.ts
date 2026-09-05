@@ -5,8 +5,8 @@
  *   bun run test:repairs-rc1-preflight
  *
  * This script is intentionally fail-closed. It proves that the generated
- * Prisma client can execute against the deployed schema and that the queue
- * adapter is genuinely BullMQ backed by Redis rather than the in-memory
+ * Prisma client can execute against the deployed Repairs schema and that the
+ * configured queue is genuinely BullMQ/Redis backed rather than the in-memory
  * development fallback.
  */
 
@@ -50,8 +50,10 @@ async function assertDatabase(): Promise<void> {
     ['maintenance_requests', () => db.maintenanceRequest.count()],
     ['repair_completions', () => db.repairCompletion.count()],
     ['work_order_time_logs', () => db.workOrderTimeLog.count()],
+    ['work_order_components', () => db.workOrderComponent.count()],
     ['repair_material_requests', () => db.repairMaterialRequest.count()],
     ['repair_tool_requests', () => db.repairToolRequest.count()],
+    ['failure_records', () => db.failureRecord.count()],
     ['idempotency_records', () => db.idempotencyRecord.count()],
     ['labor_rates', () => db.laborRate.count()],
   ];
@@ -59,15 +61,23 @@ async function assertDatabase(): Promise<void> {
   for (const [name, probe] of modelChecks) {
     try {
       const count = await probe();
-      check(`Schema table ${name}`, true, `query succeeded (${count} row${count === 1 ? '' : 's'})`);
+      check(
+        `Schema table ${name}`,
+        true,
+        `query succeeded (${count} row${count === 1 ? '' : 's'})`,
+      );
     } catch (error) {
-      check(`Schema table ${name}`, false, error instanceof Error ? error.message : String(error));
+      check(
+        `Schema table ${name}`,
+        false,
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 }
 
 async function waitForRedis(): Promise<boolean> {
-  if (!process.env.REDIS_URL) {
+  if (!process.env.REDIS_URL?.trim()) {
     check('Redis configuration', false, 'REDIS_URL is not configured');
     return false;
   }
@@ -78,7 +88,11 @@ async function waitForRedis(): Promise<boolean> {
       client.ping(),
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000)),
     ]);
-    check('Redis connectivity', pong, pong ? 'PING returned successfully' : 'PING did not succeed within 10 seconds');
+    check(
+      'Redis connectivity',
+      pong,
+      pong ? 'PING returned successfully' : 'PING did not succeed within 10 seconds',
+    );
     return pong;
   } catch (error) {
     check('Redis connectivity', false, error instanceof Error ? error.message : String(error));
@@ -87,11 +101,14 @@ async function waitForRedis(): Promise<boolean> {
 }
 
 async function assertBullMQ(): Promise<void> {
-  const redisOk = await waitForRedis();
-  if (!redisOk) return;
+  if (!process.env.REDIS_URL?.trim()) {
+    check('Queue adapter', false, 'REDIS_URL is required for the RC1 staging queue');
+    return;
+  }
 
-  // Import only after Redis PING has succeeded so the adapter's first-use
-  // detection sees the real Redis client as ready.
+  // Adapter choice is configuration-driven: REDIS_URL must select BullMQ even
+  // while Redis is still establishing its initial connection. Connectivity is
+  // then proved independently with PING and an enqueue/process round-trip.
   const {
     jobQueue,
     getQueueAdapterType,
@@ -103,6 +120,12 @@ async function assertBullMQ(): Promise<void> {
   const adapter = getQueueAdapterType();
   check('Queue adapter', adapter === 'bullmq', `selected adapter: ${adapter}`);
   if (adapter !== 'bullmq') {
+    await closeQueueAdapter();
+    return;
+  }
+
+  const redisOk = await waitForRedis();
+  if (!redisOk) {
     await closeQueueAdapter();
     return;
   }
@@ -144,7 +167,11 @@ async function assertBullMQ(): Promise<void> {
       // Cleanup failure is non-fatal to the functional proof.
     }
   } catch (error) {
-    check('BullMQ enqueue/process round-trip', false, error instanceof Error ? error.message : String(error));
+    check(
+      'BullMQ enqueue/process round-trip',
+      false,
+      error instanceof Error ? error.message : String(error),
+    );
   } finally {
     await closeQueueAdapter();
   }
@@ -156,7 +183,9 @@ async function main(): Promise<void> {
   console.log(`Timestamp: ${new Date().toISOString()}`);
 
   if (process.env.NODE_ENV === 'production') {
-    console.warn('WARNING: This preflight creates one temporary queue job. Prefer running against staging, not live production.');
+    console.warn(
+      'WARNING: This preflight creates one temporary queue job. Prefer running against staging, not live production.',
+    );
   }
 
   await assertDatabase();
