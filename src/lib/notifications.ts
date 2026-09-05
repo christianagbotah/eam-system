@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { enqueueNotificationEmail } from '@/lib/notification-email-queue';
 import { wsNotify } from '@/lib/ws-notify';
 
 // ============================================================================
@@ -181,6 +182,9 @@ export async function notifyUser(
     actionUrl,
   }).catch(() => {});
 
+  // External channels are deliberately detached from the lifecycle mutation.
+  // In-app persistence above remains the authoritative notification record;
+  // email is durably queued and SMS retains its existing best-effort dispatch.
   setImmediate(async () => {
     try {
       const user = await db.user.findUnique({
@@ -213,36 +217,22 @@ export async function notifyUser(
       }
 
       const emailEnabled = options?.forceEmail || prefs?.channels?.email !== false;
-      if (emailEnabled && user.email) {
+      const targetEmail = prefs?.channels?.emailAddr?.trim() || user.email;
+      if (emailEnabled && targetEmail) {
         try {
-          const { sendNotificationEmail } = await import('@/lib/email');
-          const emailAddr = prefs?.channels?.emailAddr || user.email;
-          await sendNotificationEmail(userId, title, message, actionUrl);
-          if (prefs?.channels?.emailAddr && prefs.channels.emailAddr !== user.email) {
-            const { sendEmail } = await import('@/lib/email');
-            const appName = process.env.NEXT_PUBLIC_APP_NAME || 'iAssetsPro EAM';
-            const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || '';
-            const actionLink = actionUrl
-              ? `\n\n<a href="${appUrl}/#/${actionUrl.replace(/^\//, '')}" style="background:#059669;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-top:16px;">View Details</a>`
-              : '';
-            const html = `
-              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e5e7eb;border-radius:8px;">
-                <div style="background:#059669;padding:20px;border-radius:8px 8px 0 0;">
-                  <h1 style="color:white;margin:0;font-size:20px;">${appName}</h1>
-                </div>
-                <div style="padding:24px;">
-                  <h2 style="margin-top:0;color:#111827;">${title}</h2>
-                  <p style="color:#374151;line-height:1.6;">Hello ${user.fullName},</p>
-                  <p style="color:#374151;line-height:1.6;">${message}</p>
-                  ${actionLink}
-                  <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;">
-                  <p style="color:#6b7280;font-size:12px;">This is an automated notification from ${appName}. Please do not reply to this email.</p>
-                </div>
-              </div>`;
-            await sendEmail({ to: emailAddr, subject: `[${appName}] ${title}`, html });
-          }
+          await enqueueNotificationEmail({
+            notificationId: notification?.id,
+            userId,
+            type,
+            title,
+            message,
+            actionUrl,
+            targetEmail,
+          });
         } catch (err) {
-          console.error('[Email] Failed to send notification:', err);
+          // Never fall back to synchronous SMTP here. Queue unavailability must
+          // be visible, but it must not recouple lifecycle writes to email I/O.
+          console.error('[Email] Failed to queue notification delivery:', err);
         }
       }
 
