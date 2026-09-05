@@ -3,10 +3,13 @@
 # Built with Bun runtime for optimal performance
 # ============================================================================
 
+# Keep the application runtime deterministic instead of floating on oven/bun:1.
+ARG BUN_IMAGE=oven/bun:1.4.2
+
 # ---------------------------------------------------------------------------
 # Stage 1: Dependencies
 # ---------------------------------------------------------------------------
-FROM oven/bun:1 AS deps
+FROM ${BUN_IMAGE} AS deps
 
 WORKDIR /app
 
@@ -19,9 +22,16 @@ RUN bun install --frozen-lockfile
 # ---------------------------------------------------------------------------
 # Stage 2: Build
 # ---------------------------------------------------------------------------
-FROM oven/bun:1 AS builder
+FROM ${BUN_IMAGE} AS builder
 
 WORKDIR /app
+
+# Release metadata is passed by CI/deploy and made available to Next.js at
+# build time so the image can report the exact source revision it contains.
+ARG NEXT_PUBLIC_BUILD_VERSION=unknown
+ARG NEXT_PUBLIC_BUILD_TIME=unknown
+ENV NEXT_PUBLIC_BUILD_VERSION=${NEXT_PUBLIC_BUILD_VERSION}
+ENV NEXT_PUBLIC_BUILD_TIME=${NEXT_PUBLIC_BUILD_TIME}
 
 # Copy dependency manifests and node_modules from deps stage
 COPY package.json bun.lock ./
@@ -41,7 +51,7 @@ RUN bun run build:local
 # ---------------------------------------------------------------------------
 # Stage 3: Production Runtime
 # ---------------------------------------------------------------------------
-FROM oven/bun:1 AS runner
+FROM ${BUN_IMAGE} AS runner
 
 WORKDIR /app
 
@@ -50,38 +60,39 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 appuser
+# The official Bun image already provides an unprivileged `bun` user/group.
+# Use Docker's ownership-aware COPY instead of distro-specific adduser/addgroup
+# commands, which are not guaranteed to exist in every Bun base image variant.
+COPY --chown=bun:bun --from=builder /app/.next/standalone ./
+COPY --chown=bun:bun --from=builder /app/.next/static    ./.next/static
+COPY --chown=bun:bun --from=builder /app/public          ./public
 
-# Copy standalone Next.js output from builder
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static    ./.next/static
-COPY --from=builder /app/public          ./public
-
-# Copy Prisma schema for potential runtime migrations
-COPY --from=builder /app/prisma          ./prisma
+# Copy Prisma schema for operational inspection / future controlled migrations.
+COPY --chown=bun:bun --from=builder /app/prisma ./prisma
 
 # Copy necessary runtime Prisma engine files
-COPY --from=builder /app/node_modules/.prisma/client ./node_modules/.prisma/client
-COPY --from=builder /app/node_modules/@prisma/adapter-mariadb ./node_modules/@prisma/adapter-mariadb
-COPY --from=builder /app/node_modules/mariadb ./node_modules/mariadb
+COPY --chown=bun:bun --from=builder /app/node_modules/.prisma/client ./node_modules/.prisma/client
+COPY --chown=bun:bun --from=builder /app/node_modules/@prisma/adapter-mariadb ./node_modules/@prisma/adapter-mariadb
+COPY --chown=bun:bun --from=builder /app/node_modules/mariadb ./node_modules/mariadb
 
-# Copy package.json for script references
-COPY --from=builder /app/package.json ./package.json
+# Copy package.json for runtime metadata/script references
+COPY --chown=bun:bun --from=builder /app/package.json ./package.json
 
-# Change ownership to non-root user
-RUN chown -R appuser:appgroup /app
+# Ensure persistent mount points exist with the runtime user's ownership before
+# Docker creates/populates named volumes on first deployment.
+RUN mkdir -p /app/data /app/public/uploads && \
+    chown -R bun:bun /app/data /app/public/uploads
 
-# Switch to non-root user
-USER appuser
+# Switch to the image's built-in non-root user
+USER bun
 
 # Expose application port
 EXPOSE 3000
 
-# Health check — verify the application is responsive
+# Health check uses Bun itself so the runtime does not depend on wget/curl being
+# present in the base image.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+  CMD bun -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-# Start the application with Bun
-CMD ["bun", "run", ".next/standalone/server.js"]
+# `.next/standalone` is copied into /app, so its server entrypoint is /app/server.js.
+CMD ["bun", "server.js"]
