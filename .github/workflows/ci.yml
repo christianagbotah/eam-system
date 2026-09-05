@@ -14,7 +14,6 @@ on:
   pull_request:
     branches: [main, develop]
 
-# Cancel in-progress runs for the same branch/PR to save resources
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -24,9 +23,6 @@ env:
   NODE_ENV: test
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Job 1: Lint
-  # ---------------------------------------------------------------------------
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -55,14 +51,6 @@ jobs:
       - name: Run ESLint
         run: bun run lint
 
-  # ---------------------------------------------------------------------------
-  # Job 2: TypeScript release gate
-  # ---------------------------------------------------------------------------
-  # Repairs/RWOP and its Work Order execution surface are a hard gate. The
-  # repository also contains substantial pre-existing TypeScript debt in
-  # unrelated Digital Twin, AI, reliability, mobile, tooling and seed modules;
-  # that debt remains visible below as an advisory report instead of being
-  # hidden or incorrectly blocking this scoped Repairs release.
   typecheck:
     name: TypeScript — Repairs Release Gate
     runs-on: ubuntu-latest
@@ -98,9 +86,6 @@ jobs:
         continue-on-error: true
         run: bunx tsc --noEmit
 
-  # ---------------------------------------------------------------------------
-  # Job 3: Unit Tests
-  # ---------------------------------------------------------------------------
   unit-tests:
     name: Unit Tests (Vitest)
     runs-on: ubuntu-latest
@@ -129,9 +114,6 @@ jobs:
       - name: Run unit tests
         run: bun run test
 
-  # ---------------------------------------------------------------------------
-  # Job 4: Build
-  # ---------------------------------------------------------------------------
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -168,12 +150,9 @@ jobs:
           path: .next/standalone
           retention-days: 7
 
-  # ---------------------------------------------------------------------------
-  # Job 5: Repairs/RWOP UAT — hard PR gate
-  # ---------------------------------------------------------------------------
-  # This job uses an isolated MariaDB + Redis pair and the idempotent UAT seed.
-  # It runs the production Repairs API/UI contract, including start readiness,
-  # handover, plant isolation, materials/tools, completion, and closeout flows.
+  # Repairs/RWOP UAT is a hard PR gate. It runs against real MariaDB + Redis
+  # service containers, verifies the deployed schema and BullMQ round-trip, then
+  # exercises the role-based application flows with Playwright.
   repairs-uat:
     name: Repairs UAT (Playwright)
     runs-on: ubuntu-latest
@@ -245,6 +224,9 @@ jobs:
       - name: Seed Repairs UAT data
         run: bunx tsx scripts/seed-repairs-uat.ts
 
+      - name: Run Repairs RC1 MariaDB/Redis/BullMQ preflight
+        run: bun run test:repairs-rc1-preflight
+
       - name: Install Playwright Chromium browser with system dependencies
         run: bunx playwright install --with-deps chromium
 
@@ -261,9 +243,6 @@ jobs:
             test-results/
           retention-days: 14
 
-  # ---------------------------------------------------------------------------
-  # Job 6: Full E2E Tests (pushes to main/develop)
-  # ---------------------------------------------------------------------------
   e2e-tests:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
