@@ -83,10 +83,22 @@ describe('notification email queue', () => {
     );
   });
 
-  it('queues with a stable id, retries, and exponential backoff', async () => {
-    await enqueueNotificationEmail(JOB);
+  it('recovers from a failed worker registration and preserves durable queue policy', async () => {
+    mocks.process
+      .mockRejectedValueOnce(new Error('Redis unavailable during worker startup'))
+      .mockResolvedValueOnce(undefined);
 
-    expect(mocks.process).toHaveBeenCalledWith(
+    await expect(enqueueNotificationEmail(JOB)).rejects.toThrow(
+      'Redis unavailable during worker startup',
+    );
+    expect(mocks.add).not.toHaveBeenCalled();
+
+    await expect(enqueueNotificationEmail(JOB)).resolves.toBe(
+      'notification-email-notification-123',
+    );
+
+    expect(mocks.process).toHaveBeenCalledTimes(2);
+    expect(mocks.process).toHaveBeenLastCalledWith(
       NOTIFICATION_EMAIL_QUEUE,
       expect.any(Function),
     );
