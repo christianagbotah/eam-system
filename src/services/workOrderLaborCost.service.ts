@@ -58,6 +58,11 @@ async function findRate(
     effectiveAt: Date;
   },
 ) {
+  // The delegate exists on the generated Prisma client. The defensive guard is
+  // intentionally retained for historical test fixtures and legacy adapters
+  // that expose only the delegates required by their older contract.
+  if (!client.laborRate?.findFirst) return null;
+
   const effective = {
     effectiveFrom: { lte: params.effectiveAt },
     OR: [{ effectiveTo: null }, { effectiveTo: { gte: params.effectiveAt } }],
@@ -103,6 +108,7 @@ export async function calculateWorkOrderLaborCost(
     select: {
       id: true,
       plantId: true,
+      assignedTo: true,
       tradeActivity: true,
       timeLogs: {
         select: {
@@ -133,6 +139,10 @@ export async function calculateWorkOrderLaborCost(
   const resolveTradeId = async (tradeCodeOrName: string | null): Promise<string | null> => {
     if (!tradeCodeOrName) return null;
     if (tradeCache.has(tradeCodeOrName)) return tradeCache.get(tradeCodeOrName) ?? null;
+    if (!client.trade?.findFirst) {
+      tradeCache.set(tradeCodeOrName, null);
+      return null;
+    }
 
     const trade = await client.trade.findFirst({
       where: {
@@ -150,28 +160,52 @@ export async function calculateWorkOrderLaborCost(
     const hours = resolveLaborLogHours(log);
     if (hours <= 0) continue;
 
-    const effectiveAt = log.startTime ?? log.timestamp;
+    // Production time-log rows always carry userId and timestamp. assignedTo
+    // and the epoch fallback keep historical records/older fixtures readable
+    // without changing the production identity precedence.
+    const workerUserId = log.userId ?? wo.assignedTo;
+    const effectiveAt = log.startTime ?? log.timestamp ?? new Date(0);
+
+    if (!workerUserId) {
+      warnings.push(
+        `${hours.toFixed(2)} labor hour(s) have no technician identity and cannot be authoritatively costed.`,
+      );
+      segments.push({
+        userId: 'unknown',
+        workerName: 'Unknown technician',
+        hours,
+        hourlyRate: null,
+        currency: null,
+        source: 'missing',
+        effectiveAt,
+        cost: 0,
+      });
+      continue;
+    }
+
     let worker = log.user
       ? { fullName: log.user.fullName, primaryTrade: log.user.primaryTrade }
-      : workerCache.get(log.userId);
+      : workerCache.get(workerUserId);
 
-    // Prisma returns the selected user relation for normal rows. This fallback
-    // keeps historical fixtures/legacy data shapes safe without changing the
-    // production fast path.
+    // Prisma returns the selected user relation for normal rows. The guarded
+    // lookup keeps historical fixtures/legacy data shapes safe while still
+    // resolving the real technician whenever the delegate is available.
     if (!worker) {
-      const user = await client.user.findUnique({
-        where: { id: log.userId },
-        select: { fullName: true, primaryTrade: true },
-      });
+      const user = client.user?.findUnique
+        ? await client.user.findUnique({
+            where: { id: workerUserId },
+            select: { fullName: true, primaryTrade: true },
+          })
+        : null;
       worker = {
-        fullName: user?.fullName ?? log.userId,
+        fullName: user?.fullName ?? workerUserId,
         primaryTrade: user?.primaryTrade ?? null,
       };
-      workerCache.set(log.userId, worker);
+      workerCache.set(workerUserId, worker);
     }
 
     let rate = await findRate(client, {
-      userId: log.userId,
+      userId: workerUserId,
       plantId: wo.plantId,
       effectiveAt,
     });
@@ -194,7 +228,7 @@ export async function calculateWorkOrderLaborCost(
         `No configured labor rate found for ${worker.fullName}; ${hours.toFixed(2)} labor hour(s) are uncosted.`,
       );
       segments.push({
-        userId: log.userId,
+        userId: workerUserId,
         workerName: worker.fullName,
         hours,
         hourlyRate: null,
@@ -207,7 +241,7 @@ export async function calculateWorkOrderLaborCost(
     }
 
     segments.push({
-      userId: log.userId,
+      userId: workerUserId,
       workerName: worker.fullName,
       hours,
       hourlyRate: rate.normalHourlyRate,
@@ -226,8 +260,11 @@ export async function calculateWorkOrderLaborCost(
       .filter((currency): currency is string => Boolean(currency)),
   );
   const mixedCurrencies = currencies.size > 1;
+  const noLaborEvidence = wo.timeLogs.length === 0;
 
-  if (laborHours === 0 && wo.timeLogs.length > 0) {
+  if (noLaborEvidence) {
+    warnings.push('No labor execution sessions are recorded; labor costing is incomplete.');
+  } else if (laborHours === 0) {
     warnings.push(
       'Labor hours resolved to 0 despite time log entries; check for missing duration/start/end data.',
     );
@@ -239,7 +276,7 @@ export async function calculateWorkOrderLaborCost(
     );
   }
 
-  const incompleteLaborRate = missingRate || mixedCurrencies;
+  const incompleteLaborRate = noLaborEvidence || missingRate || mixedCurrencies;
   const actualLaborCost = mixedCurrencies
     ? 0
     : round2(segments.reduce((sum, segment) => sum + segment.cost, 0));
