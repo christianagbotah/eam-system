@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 /**
  * POST /api/work-orders/[id]/cancel
@@ -20,11 +21,14 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const { id } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     if (!hasPermission(session, 'work_orders.cancel') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const { id } = await params;
     const body = await request.json();
     const { reason } = body;
 

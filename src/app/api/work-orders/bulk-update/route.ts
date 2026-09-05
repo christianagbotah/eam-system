@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
 /**
  * PUT /api/work-orders/bulk-update
@@ -66,9 +67,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Plant scope filtering — only update WOs the user can access
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     // Reject if any WO in the batch is permanently locked
     const lockedWos = await db.workOrder.findMany({
-      where: { id: { in: ids }, isLocked: true },
+      where: { id: { in: ids }, isLocked: true, ...applyPlantScope({}, plantScope) },
       select: { id: true, woNumber: true },
     });
     if (lockedWos.length > 0) {
@@ -84,8 +91,9 @@ export async function PUT(request: NextRequest) {
     }
 
     // Perform bulk update (only on non-locked WOs, and never on terminal statuses)
+    // Apply plant scope filter to prevent cross-plant bulk mutations
     const result = await db.workOrder.updateMany({
-      where: { id: { in: ids }, status: { notIn: ['verified', 'closed', 'cancelled'] } },
+      where: { id: { in: ids }, status: { notIn: ['verified', 'closed', 'cancelled'] }, ...applyPlantScope({}, plantScope) },
       data: updateData,
     });
 

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { pauseWork, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import {
+  placeWorkOrderInWaitingState,
+  type ExecutionStateSessionContext,
+  type ExecutionStateAuditContext,
+} from '@/services/workOrderExecutionState.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -13,26 +18,34 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const { id } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const { id } = await params;
     const body = await request.json();
-    const { reason } = body;
-
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
     if (!reason) {
       return NextResponse.json(
         { success: false, error: 'A reason is required to place a work order on hold' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const auditCtx = extractAuditContext(request);
-    const result = await pauseWork(id, session as SessionContext, {
-      reason,
-      auditCtx: auditCtx as AuditContext,
-    });
+    const result = await placeWorkOrderInWaitingState(
+      id,
+      'on_hold',
+      session as ExecutionStateSessionContext,
+      {
+        reason,
+        requireExecutionAuthority: true,
+        auditCtx: auditCtx as ExecutionStateAuditContext,
+      },
+    );
 
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });

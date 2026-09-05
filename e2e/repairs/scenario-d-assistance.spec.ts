@@ -3,8 +3,6 @@
  *
  * Tests: technician requests help → supervisor/planner approves →
  * helper joins and logs time → helper appears in team members.
- *
- * Uses the API for assistance request creation and approval.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
 import {
@@ -28,6 +26,7 @@ import {
   lookupUserByKey,
   lookupAssetId,
   lookupPlantId,
+  apiCall,
 } from './helpers/api';
 
 test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
@@ -42,16 +41,12 @@ test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
   let assistanceReqId: string;
 
   try {
-    // Pre-resolve IDs via API
     const plannerToken = await getToken('planner');
     techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
     techAssistantUserId = await lookupUserByKey(plannerToken, 'tech_assistant');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
-    // ────────────────────────────────────────────────────────────────────
-    // D1: Create WO and start it (prerequisite for assistance)
-    // ────────────────────────────────────────────────────────────────────
     await test.step('D1: Create and start WO for assistance scenario', async () => {
       const reqToken = await getToken('requester');
       const mr = await createMR(reqToken, {
@@ -76,7 +71,6 @@ test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
       woId = wo.id;
       expect(woId).toBeTruthy();
 
-      // Start the WO
       const techToken = await getToken('tech_single');
       await startWO(techToken, woId);
 
@@ -84,12 +78,8 @@ test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
       expect(fetched.status).toBe('in_progress');
     });
 
-    // ────────────────────────────────────────────────────────────────────
-    // D2: Technician requests assistance (specific user)
-    // ────────────────────────────────────────────────────────────────────
     await test.step('D2: Technician requests assistance for electrical expertise', async () => {
       const token = await getToken('tech_single');
-
       const req = await requestAssistance(token, woId, {
         requestedUserId: techAssistantUserId,
         reason: 'Need electrical expertise for motor wiring check',
@@ -100,41 +90,29 @@ test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
       expect(assistanceReqId).toBeTruthy();
       expect(req.status).toBe('pending');
 
-      // Server-state: request exists and is pending
       const requests = await getTeamMemberRequests(token, woId);
       const found = requests.find((r: { id: string }) => r.id === assistanceReqId);
       expect(found).toBeTruthy();
       expect(found.status).toBe('pending');
     });
 
-    // ────────────────────────────────────────────────────────────────────
-    // D3: Planner approves assistance request
-    // ────────────────────────────────────────────────────────────────────
     await test.step('D3: Planner approves assistance and assigns assistant', async () => {
       const token = await getToken('planner');
-
-      const result = await approveAssistanceRequest(
-        token,
-        woId,
-        assistanceReqId,
-        techAssistantUserId,
-      );
+      const result = await approveAssistanceRequest(token, woId, assistanceReqId, techAssistantUserId);
 
       expect(result).toBeTruthy();
       expect(result.status).toBe('approved');
 
-      // Server-state: WO should now have the assistant as team member
       const fetched = await getWO(token, woId);
       const teamMemberIds = (fetched.teamMembers || []).map((m: { userId: string }) => m.userId);
       expect(teamMemberIds).toContain(techAssistantUserId);
+      // Assistance turns the single-tech job into a team job. The original
+      // assignee is the deterministic team leader unless one already existed.
+      expect(fetched.teamLeaderId).toBe(techSingleUserId);
     });
 
-    // ────────────────────────────────────────────────────────────────────
-    // D4: Helper joins and logs time
-    // ────────────────────────────────────────────────────────────────────
     await test.step('D4: Assistant logs time on the WO', async () => {
       const token = await getToken('tech_assistant');
-
       const timeLog = await logTime(token, woId, {
         action: 'start',
         manualHours: 1.5,
@@ -144,29 +122,27 @@ test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
       expect(timeLog).toBeTruthy();
       expect(timeLog.id).toBeTruthy();
 
-      // Server-state: WO actual hours should include assistant time
       const fetched = await getWO(token, woId);
       expect(fetched.actualHours).toBeGreaterThanOrEqual(1.5);
     });
 
-    // ────────────────────────────────────────────────────────────────────
-    // D5: Verify assistant appears in team on UI
-    // ────────────────────────────────────────────────────────────────────
     await test.step('D5: UI shows assistant as team member', async () => {
       await authenticateAs(context, 'tech_single');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-
-      // The assistant's name should appear on the page
       await expect(page.locator('body')).toContainText('UAT Tech Assistant', { timeout: 10_000 });
       await page.close();
     });
 
-    // ────────────────────────────────────────────────────────────────────
-    // D6: Complete and close the WO
-    // ────────────────────────────────────────────────────────────────────
     await test.step('D6: Complete, verify, and close WO after assistance', async () => {
       const techToken = await getToken('tech_single');
+
+      // The original technician still owns the live timer opened in D1.
+      // Explicitly stop it before the team leader submits final completion.
+      const stopped = await apiCall(techToken, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
+      expect(stopped.status).toBe(200);
+      expect(stopped.data.success).toBe(true);
+
       await completeWO(techToken, woId, 'Pump wiring complete. All checks passed.');
 
       let fetched = await getWO(techToken, woId);

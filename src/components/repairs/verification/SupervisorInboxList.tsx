@@ -1,28 +1,22 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { format, formatDistanceToNow, differenceInHours } from 'date-fns';
+import { differenceInHours } from 'date-fns';
 import { toast } from 'sonner';
 import { api, useAbortRef } from '@/lib/api';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Search, ShieldCheck, Clock, AlertTriangle, Timer, RotateCcw, Filter, Inbox,
+  Search, ShieldCheck, AlertTriangle, Timer, RotateCcw, Filter, Inbox,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatDate, PriorityBadge } from '@/components/shared/helpers';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface SupervisorInboxItem {
   id: string;
@@ -43,10 +37,6 @@ interface SupervisorInboxItem {
 interface SupervisorInboxListProps {
   onSelectWO: (workOrderId: string) => void;
 }
-
-// ---------------------------------------------------------------------------
-// SLA Indicator
-// ---------------------------------------------------------------------------
 
 function SLARiskBadge({ createdAt, priority, completedAt }: { createdAt: string; priority: string; completedAt?: string | null }) {
   const slaMap: Record<string, number> = { low: 72, medium: 48, high: 24, critical: 8 };
@@ -83,10 +73,6 @@ function SLARiskBadge({ createdAt, priority, completedAt }: { createdAt: string;
   );
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
   const abortRef = useAbortRef();
   const [items, setItems] = useState<SupervisorInboxItem[]>([]);
@@ -105,9 +91,7 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
         toast.error(res.error || 'Failed to load supervisor inbox');
       }
     } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        toast.error('Failed to load supervisor inbox');
-      }
+      if (err?.name !== 'AbortError') toast.error('Failed to load supervisor inbox');
     } finally {
       setLoading(false);
     }
@@ -115,21 +99,17 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  // Filters
   const filtered = items.filter((wo) => {
     if (filterPriority !== 'all' && wo.priority !== filterPriority) return false;
     if (search) {
       const s = search.toLowerCase();
-      return (
-        wo.woNumber?.toLowerCase().includes(s) ||
-        wo.title?.toLowerCase().includes(s) ||
-        wo.assetName?.toLowerCase().includes(s)
-      );
+      return wo.woNumber?.toLowerCase().includes(s)
+        || wo.title?.toLowerCase().includes(s)
+        || wo.assetName?.toLowerCase().includes(s);
     }
     return true;
   });
 
-  // Sort: rework first, then by priority (critical > high > medium > low), then by date
   const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
   const sorted = [...filtered].sort((a, b) => {
     if (a.isRework && !b.isRework) return -1;
@@ -144,7 +124,6 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center">
@@ -163,7 +142,6 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
         )}
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -189,7 +167,6 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
         </Select>
       </div>
 
-      {/* List */}
       {sorted.length === 0 ? (
         <EmptyState
           icon={Inbox}
@@ -198,7 +175,6 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
         />
       ) : (
         <div className="rounded-xl border bg-card">
-          {/* Desktop table */}
           <div className="hidden md:block">
             <Table>
               <TableHeader>
@@ -229,7 +205,7 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
                     <TableCell className="text-sm text-muted-foreground">{wo.assetName}</TableCell>
                     <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
                     <TableCell><SLARiskBadge createdAt={wo.createdAt} priority={wo.priority} completedAt={wo.completedAt} /></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatDate(wo.completedAt)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDate(wo.completedAt ?? undefined)}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                         <ShieldCheck className="h-4 w-4 text-emerald-600" />
@@ -241,7 +217,6 @@ export function SupervisorInboxList({ onSelectWO }: SupervisorInboxListProps) {
             </Table>
           </div>
 
-          {/* Mobile cards */}
           <div className="md:hidden divide-y">
             {sorted.map((wo) => (
               <button

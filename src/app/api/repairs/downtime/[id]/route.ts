@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // GET /api/repairs/downtime/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Plant scope validation
     const plantScope = await getPlantScope(request, session);
     const recordPlantId = record.plantId || record.workOrder?.plantId;
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, recordPlantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, recordPlantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 

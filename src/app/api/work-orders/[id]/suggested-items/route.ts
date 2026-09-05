@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { hasPermission, isAdmin } from '@/lib/permissions';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 // GET /api/work-orders/[id]/suggested-items — Fetch suggested parts & tools
 export async function GET(
@@ -15,6 +16,11 @@ export async function GET(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
+import { authorizeMaintenanceRequestPlant } from '@/lib/plant-auth-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -14,12 +15,15 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const { id } = await params;
+    const auth = await authorizeMaintenanceRequestPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     // Check permission: maintenance_requests.approve or admin role
     if (!hasAnyPermission(session, ['maintenance_requests.approve'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const { id } = await params;
     const body = await request.json();
     const { notes } = body;
 

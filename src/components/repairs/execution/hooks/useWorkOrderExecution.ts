@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { api, useAbortRef } from '@/lib/api';
 import { toast } from 'sonner';
 import { OfflineSyncService } from '@/services/offlineSync.service';
@@ -40,7 +40,6 @@ export interface WODetail {
   assignedSupervisorId: string | null;
   plannerId: string | null;
   isLocked: boolean;
-  // Relations
   assignee: { id: string; fullName: string; username: string; department: string | null } | null;
   teamLeader: { id: string; fullName: string; username: string } | null;
   assignedSupervisor: { id: string; fullName: string; username: string } | null;
@@ -156,6 +155,7 @@ export interface WODetail {
     itemCode: string | null;
     quantityRequested: number;
     quantityIssued: number;
+    quantityReturned: number;
     consumedQty: number | null;
     wastedQty: number | null;
     unit: string | null;
@@ -263,8 +263,6 @@ export interface ReadinessResult {
   warnings: ReadinessItem[];
 }
 
-// ─── Hook ───────────────────────────────────────────────────────────────────
-
 interface UseWorkOrderExecutionReturn {
   workOrder: WODetail | null;
   tasks: WOTask[];
@@ -321,7 +319,6 @@ export function useWorkOrderExecution(
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ─── Fetch work order detail ─────────────────────────────────────────────
   const refetch = useCallback(async () => {
     if (!workOrderId) return;
     setIsLoading(true);
@@ -332,7 +329,19 @@ export function useWorkOrderExecution(
         timeout: 20_000,
       });
       if (res.success && res.data) {
-        setWorkOrder(res.data as WODetail);
+        const data = res.data as WODetail;
+        setWorkOrder({
+          ...data,
+          repairMaterialRequests: (data.repairMaterialRequests || []).map((request) => ({
+            ...request,
+            // RepairMaterialRequest does not persist a quantityReturned column.
+            // Return quantity is the reconciled balance after consumption/waste.
+            quantityReturned: Math.max(
+              0,
+              (request.quantityIssued || 0) - (request.consumedQty ?? 0) - (request.wastedQty ?? 0),
+            ),
+          })),
+        });
       } else {
         setError(res.error || 'Failed to load work order');
       }
@@ -345,83 +354,59 @@ export function useWorkOrderExecution(
     }
   }, [workOrderId, abortRef]);
 
-  // ─── Fetch tasks ──────────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
     if (!workOrderId) return;
     try {
       const res = await api.get<WOTask[]>(`/api/work-orders/${workOrderId}/tasks`, {
         signal: abortRef.current.signal,
       });
-      if (res.success && res.data) {
-        setTasks(res.data as WOTask[]);
-      }
+      if (res.success && res.data) setTasks(res.data as WOTask[]);
     } catch {
       /* silent */
     }
   }, [workOrderId, abortRef]);
 
-  // ─── Fetch time logs ─────────────────────────────────────────────────────
   const fetchTimeLogs = useCallback(async () => {
     if (!workOrderId) return;
     try {
       const res = await api.get<TimeLogSummary>(`/api/work-orders/${workOrderId}/time-logs?includeTeamLogs=true`, {
         signal: abortRef.current.signal,
       });
-      if (res.success && res.data) {
-        setTimeLogSummary(res.data as TimeLogSummary);
-      }
+      if (res.success && res.data) setTimeLogSummary(res.data as TimeLogSummary);
     } catch {
       /* silent */
     }
   }, [workOrderId, abortRef]);
 
-  // ─── Fetch downtimes ─────────────────────────────────────────────────────
   const fetchDowntimes = useCallback(async () => {
     if (!workOrderId) return;
     try {
       const res = await api.get<DowntimeRecord[]>(`/api/repairs/downtime?workOrderId=${workOrderId}&limit=50`, {
         signal: abortRef.current.signal,
       });
-      if (res.success && res.data) {
-        setDowntimes(Array.isArray(res.data) ? res.data : []);
-      }
+      if (res.success && res.data) setDowntimes(Array.isArray(res.data) ? res.data : []);
     } catch {
       /* silent */
     }
   }, [workOrderId, abortRef]);
 
-  // ─── Fetch readiness ─────────────────────────────────────────────────────
   const fetchReadiness = useCallback(async () => {
     if (!workOrderId) return;
     try {
-      const res = await api.post<ReadinessResult>(`/api/work-orders/${workOrderId}/complete`, {}, {
+      const res = await api.get<ReadinessResult>(`/api/work-orders/${workOrderId}/readiness?phase=complete`, {
         signal: abortRef.current.signal,
         timeout: 10_000,
       });
-      // 422 is expected when not ready — parse the response body for blockers
-      // The api client returns { success: false, error, blockers, warnings } on non-200
-      // We need to call the start endpoint readiness check differently
-      // Actually, the readiness is embedded in the start/complete response error
-      // Let's try a different approach: fetch WO detail and run client-side readiness checks
-      // OR, the completion endpoint returns blockers when called prematurely
-      if (!res.success) {
-        // Check if response had blockers (422)
-        const raw = (res as any).blockers || (res as any).data?.blockers;
-        if (raw && Array.isArray(raw)) {
-          setReadiness({ ready: false, blockers: raw, warnings: (res as any).warnings || [] });
-        }
-      }
+      if (res.success && res.data) setReadiness(res.data as ReadinessResult);
     } catch {
-      /* Expected to fail when WO is not in a completable state */
+      /* Read-only readiness is advisory; completion will enforce it again server-side. */
     }
   }, [workOrderId, abortRef]);
 
-  // ─── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
     refetch();
   }, [refetch]);
 
-  // Load related data when WO is available
   useEffect(() => {
     if (workOrder) {
       fetchTasks();
@@ -429,8 +414,6 @@ export function useWorkOrderExecution(
       fetchDowntimes();
     }
   }, [workOrder, fetchTasks, fetchTimeLogs, fetchDowntimes]);
-
-  // ─── Actions ──────────────────────────────────────────────────────────────
 
   const startWork = useCallback(async (params?: { reason?: string; notes?: string }): Promise<boolean> => {
     setIsActionLoading(true);
@@ -547,7 +530,6 @@ export function useWorkOrderExecution(
       toast.error(res.error || 'Failed to add comment');
       return false;
     } catch (err: any) {
-      // Offline fallback: if network error, queue for later sync
       const isNetworkError = !err?.message || err?.message === 'Network error' || err?.message === 'Failed to fetch';
       if (isNetworkError && typeof navigator !== 'undefined' && !navigator.onLine) {
         OfflineSyncService.queueOperation(

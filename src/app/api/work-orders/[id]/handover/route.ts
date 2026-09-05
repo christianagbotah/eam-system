@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
-import { initiateHandover, resumeAfterHandover } from '@/services/workExecution.service';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
+import { resumeConfirmedHandover } from '@/services/repairHandoverResume.service';
 import type { SessionContext } from '@/services/workExecution.service';
 
 export async function POST(
@@ -18,16 +20,16 @@ export async function POST(
     const body = await request.json();
     const action = body.action as string | undefined;
 
-    // Plant scope check (denyAccess + canAccessPlant)
-    const wo = await (await import('@/lib/db')).db.workOrder.findUnique({
-      where: { id }, select: { id: true, plantId: true },
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: { id: true, plantId: true, status: true },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
@@ -41,20 +43,59 @@ export async function POST(
     };
 
     if (action === 'resume') {
-      const result = await resumeAfterHandover(id, sessionCtx, {
+      const result = await resumeConfirmedHandover(id, sessionCtx, {
         reason: body.reason,
-        idempotencyKey: body.idempotencyKey,
       });
       if (!result.success) {
-        return NextResponse.json({ success: false, error: result.error }, { status: result.readiness ? 422 : 400 });
+        return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
       return NextResponse.json({ success: true, data: result.data });
     }
 
-    // Default: initiate handover
-    const result = await initiateHandover(id, sessionCtx, {
+    // Handover initiation must designate a real incoming worker.
+    const receivedById = typeof body.receivedById === 'string' ? body.receivedById.trim() : '';
+    if (!receivedById) {
+      return NextResponse.json({ success: false, error: 'receivedById is required for shift handover' }, { status: 400 });
+    }
+    if (receivedById === session.userId) {
+      return NextResponse.json({ success: false, error: 'Handover receiver must be different from the outgoing worker' }, { status: 400 });
+    }
+    if (!wo.plantId) {
+      return NextResponse.json({ success: false, error: 'Operational work order must have a plant before handover' }, { status: 400 });
+    }
+
+    const receiver = await db.user.findUnique({
+      where: { id: receivedById },
+      select: { id: true, status: true },
+    });
+    if (!receiver || receiver.status !== 'active') {
+      return NextResponse.json({ success: false, error: 'Designated handover receiver is not an active user' }, { status: 400 });
+    }
+
+    const receiverPlant = await db.userPlant.findFirst({
+      where: { userId: receivedById, plantId: wo.plantId },
+      select: { id: true },
+    });
+    if (!receiverPlant) {
+      return NextResponse.json({ success: false, error: 'Designated handover receiver does not have access to this plant' }, { status: 400 });
+    }
+
+    // Canonical handover initiation closes all live team sessions without
+    // rewriting their start/resume action, then transitions + creates the
+    // ShiftHandover record atomically.
+    const result = await initiateCanonicalHandover(id, sessionCtx, {
       reason: body.reason,
       idempotencyKey: body.idempotencyKey,
+      shiftType: body.shiftType,
+      shiftDate: body.shiftDate,
+      fromShift: body.fromShift,
+      toShift: body.toShift,
+      receivedById,
+      tasksSummary: body.tasksSummary,
+      pendingIssues: body.pendingIssues,
+      safetyNotes: body.safetyNotes,
+      equipmentStatus: body.equipmentStatus,
+      notes: body.notes,
     });
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });

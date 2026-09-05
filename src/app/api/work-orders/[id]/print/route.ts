@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { generateWODetailPDF } from '@/lib/generate-wo-detail-pdf';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 // GET /api/work-orders/[id]/print
 // Returns enriched WO data as JSON (default) or PDF binary (?format=pdf)
@@ -15,12 +16,21 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
-    // Permission gate: require WO view/export or admin
-    if (!hasAnyPermission(session, ['work_orders.view', 'work_orders.export', 'reports.export', 'reports.view']) && !isAdmin(session)) {
+    const hasBroadAccess =
+      isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.view', 'work_orders.view_all', 'work_orders.export', 'reports.export', 'reports.view']);
+    const hasOwnAccess = hasAnyPermission(session, ['work_orders.view_own']);
+
+    if (!hasBroadAccess && !hasOwnAccess) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format');
 
@@ -91,6 +101,17 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
+    // `work_orders.view_own` is deliberately scoped to execution ownership.
+    // It must never become a broad WO export permission.
+    if (!hasBroadAccess) {
+      const isAssigned = wo.assignedTo === session.userId;
+      const isTeamLeader = wo.teamLeaderId === session.userId;
+      const isTeamMember = wo.teamMembers.some((member) => member.userId === session.userId);
+      if (!isAssigned && !isTeamLeader && !isTeamMember) {
+        return NextResponse.json({ success: false, error: 'You do not have access to print this work order' }, { status: 403 });
+      }
+    }
+
     // ── Fetch Asset separately (no Prisma relation) ──
     let asset = null;
     let assetCategory = null;
@@ -110,9 +131,9 @@ export async function GET(
     // ── Fetch InventoryItems for materials ──
     const materialItemIds = wo.materials
       .map((m) => m.itemId)
-      .filter((id): id is string => !!id);
+      .filter((itemId): itemId is string => !!itemId);
 
-    let inventoryItemMap: Record<string, {
+    const inventoryItemMap: Record<string, {
       itemCode: string | null;
       unitOfMeasure: string;
       supplier: string | null;
@@ -223,7 +244,7 @@ export async function GET(
             phone: '',
             email: '',
             website: '',
-            currency: 'USD',
+            currency: 'GHS',
           },
     };
 

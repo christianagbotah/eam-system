@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
-import { submitCompletion, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import {
+  submitRepairCompletion,
+  type CompletionSessionContext,
+  type CompletionAuditContext,
+} from '@/services/workOrderCompletion.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
 
 export async function POST(
@@ -20,30 +23,32 @@ export async function POST(
     }
 
     const { id } = await params;
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
-    // Plant scope check (denyAccess + canAccessPlant)
-    const woForScope = await db.workOrder.findUnique({ where: { id }, select: { id: true, plantId: true } });
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, woForScope?.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
 
-    const result = await submitCompletion(id, session as SessionContext, {
-      notes: body.notes,
-      failureDescription: body.failureDescription,
-      causeDescription: body.causeDescription,
-      actionDescription: body.actionDescription,
-      auditCtx: auditCtx as AuditContext,
-    });
+    const result = await submitRepairCompletion(
+      id,
+      session as CompletionSessionContext,
+      {
+        notes: body.notes,
+        failureDescription: body.failureDescription,
+        causeDescription: body.causeDescription,
+        actionDescription: body.actionDescription,
+        auditCtx: auditCtx as CompletionAuditContext,
+      },
+    );
 
     if (!result.success) {
       const status = result.readiness ? 422 : 400;
       return NextResponse.json({
         success: false,
         error: result.error,
-        ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
+        ...(result.readiness
+          ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings }
+          : {}),
       }, { status });
     }
 

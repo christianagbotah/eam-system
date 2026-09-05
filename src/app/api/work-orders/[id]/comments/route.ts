@@ -2,6 +2,90 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+
+function hasBroadWorkOrderView(session: NonNullable<ReturnType<typeof getSession>>): boolean {
+  return (
+    isAdmin(session) ||
+    hasPermission(session, 'work_orders.view') ||
+    hasPermission(session, 'work_orders.view_all')
+  );
+}
+
+function canViewWorkOrderComments(session: NonNullable<ReturnType<typeof getSession>>): boolean {
+  return hasBroadWorkOrderView(session) || hasPermission(session, 'work_orders.view_own');
+}
+
+async function authorizeCommentAccess(
+  request: NextRequest,
+  session: NonNullable<ReturnType<typeof getSession>>,
+  workOrderId: string,
+) {
+  if (!canViewWorkOrderComments(session)) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+
+  const plantAuth = await authorizeWorkOrderPlant(request, session, workOrderId);
+  if (!plantAuth.ok) return plantAuth.response;
+
+  if (hasBroadWorkOrderView(session)) return null;
+
+  // view_own is narrower than plant access: a technician/requester may only read
+  // comments for a WO they are assigned to, participate in, or originally requested.
+  const wo = await db.workOrder.findUnique({
+    where: { id: workOrderId },
+    select: {
+      assignedTo: true,
+      teamMembers: { select: { userId: true } },
+      maintenanceRequest: { select: { requestedBy: true } },
+    },
+  });
+  if (!wo) {
+    return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+  }
+
+  const isAssignee = wo.assignedTo === session.userId;
+  const isTeamMember = wo.teamMembers.some((member) => member.userId === session.userId);
+  const isRequester = wo.maintenanceRequest?.requestedBy === session.userId;
+  if (!isAssignee && !isTeamMember && !isRequester) {
+    return NextResponse.json(
+      { success: false, error: 'Access denied — you can only view comments for work orders assigned to you' },
+      { status: 403 },
+    );
+  }
+
+  return null;
+}
+
+// GET /api/work-orders/[id]/comments
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const authError = await authorizeCommentAccess(request, session, id);
+    if (authError) return authError;
+
+    const comments = await db.workOrderComment.findMany({
+      where: { workOrderId: id },
+      include: {
+        user: { select: { id: true, fullName: true, username: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return NextResponse.json({ success: true, data: comments });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load comments';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -13,11 +97,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
     const { id } = await params;
+    const authError = await authorizeCommentAccess(request, session, id);
+    if (authError) return authError;
+
     const body = await request.json();
     const { content } = body;
 

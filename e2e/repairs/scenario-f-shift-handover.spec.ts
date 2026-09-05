@@ -1,15 +1,9 @@
 /**
  * Scenario F — Shift Handover Lifecycle (UAT-08)
  *
- * Tests the REAL POST /api/work-orders/[id]/handover endpoint:
- *   F1: Create MR → supervisor approve → planner convert → assign tech → start work
- *   F2: Technician initiates handover → verify pending_handover status
- *   F3: Attempt to start work BEFORE confirmation — must be blocked
- *   F4: Incoming technician confirms handover (resume)
- *   F5: Original outgoing technician cannot self-resume
- *
- * ALL assertions are server-state based (API responses), never UI text.
- * Uses single test() with test.step() pattern — no describe/beforeAll/afterAll.
+ * Proves the real successful handover path:
+ * outgoing technician → atomic handover creation → designated receiver confirms
+ * → outgoing worker cannot resume → receiver resumes and becomes execution lead.
  */
 import { test, expect } from '@playwright/test';
 import {
@@ -25,25 +19,25 @@ import {
   lookupPlantId,
   apiCall,
   expectFailure,
-  initiateHandoverWO,
 } from './helpers/api';
 
-test('UAT-08: Scenario F — Shift Handover Lifecycle', async ({ page, browser }) => {
+test('UAT-08: Scenario F — Shift Handover Lifecycle', async () => {
   let woId = '';
+  let handoverId = '';
+  let outgoingUserId = '';
+  let incomingUserId = '';
 
-  // ── F1: Create MR → approve → convert → assign → start ─────────────────
-  await test.step('F1: Create WO and start work', async () => {
+  await test.step('F1: Create WO and start work with outgoing technician', async () => {
     const requesterToken = await getToken('requester');
     const supervisorToken = await getToken('supervisor');
     const plannerToken = await getToken('planner');
     const techToken = await getToken('tech_single');
 
-    // Pre-resolve IDs
-    const techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    outgoingUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    incomingUserId = await lookupUserByKey(plannerToken, 'tech_assistant');
     const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
-    // Create MR
     const mr = await createMR(requesterToken, {
       title: 'UAT-ShiftHandover-Pump-Repair',
       description: 'Pump bearing replacement — will cross shift boundary.',
@@ -52,12 +46,9 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async ({ page, browser }
       plantId,
     });
 
-    // Supervisor approves
     await approveMR(supervisorToken, mr.id);
-
-    // Planner converts to WO and assigns to tech_single
     const wo = await convertMR(plannerToken, mr.id, {
-      assignedTo: techSingleUserId,
+      assignedTo: outgoingUserId,
       tradeActivity: 'mechanical',
       workOrderType: 'corrective',
       priority: 'high',
@@ -65,114 +56,153 @@ test('UAT-08: Scenario F — Shift Handover Lifecycle', async ({ page, browser }
     woId = wo.id;
     expect(woId).toBeTruthy();
 
-    // Assign and start
-    await assignWO(plannerToken, woId, { assignedTo: techSingleUserId });
+    await assignWO(plannerToken, woId, { assignedTo: outgoingUserId });
     await startWO(techToken, woId);
 
-    // Server-state: WO is in_progress
     const fetched = await getWO(techToken, woId);
     expect(fetched.status).toBe('in_progress');
+    expect(fetched.assignedTo).toBe(outgoingUserId);
   });
 
-  // ── F2: Technician initiates handover ───────────────────────────────────
-  await test.step('F2: Technician initiates handover via POST /api/work-orders/[id]/handover', async () => {
+  await test.step('F2: Outgoing technician initiates atomic handover with receiver', async () => {
     const techToken = await getToken('tech_single');
     const plannerToken = await getToken('planner');
 
-    // Initiate handover
-    const result = await initiateHandoverWO(techToken, woId, 'End of shift — bearing partially removed');
-    expect(result).toBeTruthy();
-
-    // Verify WO status is now pending_handover via API GET
-    const fetched = await getWO(plannerToken, woId);
-    expect(fetched.status).toBe('pending_handover');
-
-    // Check for ShiftHandover records linked to this WO.
-    // initiateHandover transitions WO status but does NOT create a ShiftHandover record.
-    // ShiftHandover records are managed separately via POST /api/shift-handovers.
     const { status, data } = await apiCall(
-      plannerToken, 'GET', `/api/shift-handovers?workOrderId=${woId}`,
+      techToken,
+      'POST',
+      `/api/work-orders/${woId}/handover`,
+      {
+        action: 'initiate',
+        receivedById: incomingUserId,
+        shiftType: 'morning',
+        tasksSummary: [{ task: 'Bearing partially removed, continue installation' }],
+        pendingIssues: [{ issue: 'Confirm replacement bearing fit' }],
+        safetyNotes: 'LOTO remains applied',
+        reason: 'End of outgoing shift',
+      },
     );
+
     expect(status).toBe(200);
     expect(data.success).toBe(true);
-    const handovers = data.data as unknown[];
-    expect(Array.isArray(handovers)).toBe(true);
+    expect(data.data.status).toBe('pending_handover');
+    expect(data.data.handoverId).toBeTruthy();
+    handoverId = data.data.handoverId;
+
+    const { status: shStatus, data: shData } = await apiCall(
+      plannerToken,
+      'GET',
+      `/api/shift-handovers/${handoverId}`,
+    );
+    expect(shStatus).toBe(200);
+    expect(shData.data.status).toBe('pending');
+    expect(shData.data.handedOverById).toBe(outgoingUserId);
+    expect(shData.data.receivedById).toBe(incomingUserId);
+    expect(shData.data.workOrderId).toBe(woId);
   });
 
-  // ── F3: Attempt to start work BEFORE confirmation ───────────────────────
-  await test.step('F3: Cannot start work while pending_handover', async () => {
-    const techToken = await getToken('tech_single');
+  await test.step('F3: Work cannot resume before handover confirmation', async () => {
+    const incomingToken = await getToken('tech_assistant');
     const plannerToken = await getToken('planner');
 
-    // POST /api/work-orders/[id]/start should FAIL (status >= 400)
     const { status } = await expectFailure(
-      techToken, 'POST', `/api/work-orders/${woId}/start`, {},
+      incomingToken,
+      'POST',
+      `/api/work-orders/${woId}/handover`,
+      { action: 'resume' },
     );
     expect(status).toBeGreaterThanOrEqual(400);
 
-    // WO should still be pending_handover
     const fetched = await getWO(plannerToken, woId);
     expect(fetched.status).toBe('pending_handover');
   });
 
-  // ── F4: Incoming technician (tech_assistant) attempts to confirm handover ─
-  await test.step('F4: Incoming technician (tech_assistant) attempts resume', async () => {
-    const techAssistantToken = await getToken('tech_assistant');
-    const plannerToken = await getToken('planner');
-
-    // POST /api/work-orders/[id]/handover with action='resume'
-    // resumeAfterHandover requires:
-    //   1. A confirmed ShiftHandover record for this WO
-    //   2. Team authority (assignedTo or team_leader)
-    // tech_assistant is NOT on the WO team, so this should fail with 400.
-    const { status, data } = await expectFailure(
-      techAssistantToken, 'POST', `/api/work-orders/${woId}/handover`,
-      { action: 'resume', reason: 'Taking over from previous shift' },
+  await test.step('F4: Wrong user cannot confirm handover', async () => {
+    const outgoingToken = await getToken('tech_single');
+    const { status } = await expectFailure(
+      outgoingToken,
+      'POST',
+      `/api/shift-handovers/${handoverId}/confirm`,
+      {},
     );
-    expect(status).toBeGreaterThanOrEqual(400);
-    expect(data.success).toBe(false);
-
-    // Verify WO is still pending_handover (resume did not succeed)
-    const fetched = await getWO(plannerToken, woId);
-    expect(fetched.status).toBe('pending_handover');
+    expect(status).toBe(403);
   });
 
-  // ── F5: Original outgoing technician cannot self-resume ────────────────
-  await test.step('F5: Original technician (tech_single) cannot resume their own handover', async () => {
-    const techToken = await getToken('tech_single');
-    const plannerToken = await getToken('planner');
-
-    // The original technician (who initiated the handover) should NOT be able
-    // to resume. Even though they have team authority (assignedTo), the
-    // resumeAfterHandover service requires a confirmed ShiftHandover record
-    // which does not exist (initiateHandover only changes WO status).
-    const { status, data } = await expectFailure(
-      techToken, 'POST', `/api/work-orders/${woId}/handover`,
-      { action: 'resume', reason: 'Attempting to self-resume' },
-    );
-    expect(status).toBeGreaterThanOrEqual(400);
-    expect(data.success).toBe(false);
-
-    // WO should remain pending_handover
-    const fetched = await getWO(plannerToken, woId);
-    expect(fetched.status).toBe('pending_handover');
-  });
-
-  // ── Verify handover audit trail via ShiftHandover records ──────────────
-  await test.step('Verify handover audit exists via ShiftHandover records', async () => {
-    const plannerToken = await getToken('planner');
-
-    // Query shift-handovers list for this WO
+  await test.step('F5: Designated receiver confirms handover', async () => {
+    const incomingToken = await getToken('tech_assistant');
     const { status, data } = await apiCall(
-      plannerToken, 'GET', `/api/shift-handovers?workOrderId=${woId}`,
+      incomingToken,
+      'POST',
+      `/api/shift-handovers/${handoverId}/confirm`,
+      {},
     );
     expect(status).toBe(200);
     expect(data.success).toBe(true);
-    expect(data.kpis).toBeDefined();
-    expect(typeof data.kpis.total).toBe('number');
+    expect(data.data.status).toBe('confirmed');
+    expect(data.data.confirmedAt).toBeTruthy();
+  });
 
-    // Confirm the WO ended in pending_handover (no resume succeeded during this test)
+  await test.step('F6: Outgoing technician cannot resume confirmed handover', async () => {
+    const outgoingToken = await getToken('tech_single');
+    const plannerToken = await getToken('planner');
+
+    const { status } = await expectFailure(
+      outgoingToken,
+      'POST',
+      `/api/work-orders/${woId}/handover`,
+      { action: 'resume' },
+    );
+    expect(status).toBeGreaterThanOrEqual(400);
+
     const fetched = await getWO(plannerToken, woId);
     expect(fetched.status).toBe('pending_handover');
+    expect(fetched.assignedTo).toBe(outgoingUserId);
+  });
+
+  await test.step('F7: Designated receiver resumes and becomes execution lead', async () => {
+    const incomingToken = await getToken('tech_assistant');
+    const { status, data } = await apiCall(
+      incomingToken,
+      'POST',
+      `/api/work-orders/${woId}/handover`,
+      { action: 'resume' },
+    );
+    expect(status).toBe(200);
+    expect(data.success).toBe(true);
+    expect(data.data.status).toBe('in_progress');
+    expect(data.data.assignedTo).toBe(incomingUserId);
+  });
+
+  await test.step('F8: Server state proves authority transfer and incoming resume log', async () => {
+    const plannerToken = await getToken('planner');
+    const incomingToken = await getToken('tech_assistant');
+
+    const fetched = await getWO(plannerToken, woId);
+    expect(fetched.status).toBe('in_progress');
+    expect(fetched.assignedTo).toBe(incomingUserId);
+
+    const { status: tlStatus, data: tlData } = await apiCall(
+      incomingToken,
+      'GET',
+      `/api/work-orders/${woId}/time-logs`,
+    );
+    expect(tlStatus).toBe(200);
+    const logs = (tlData.data?.timeLogs || []) as Array<{ userId: string; action: string }>;
+    expect(logs.some((log) => log.userId === incomingUserId && log.action === 'resume')).toBe(true);
+
+    const { data: shData } = await apiCall(
+      plannerToken,
+      'GET',
+      `/api/shift-handovers/${handoverId}`,
+    );
+    expect(shData.data.status).toBe('confirmed');
+    expect(shData.data.receivedById).toBe(incomingUserId);
+
+    // F validates an ongoing handover lifecycle rather than completion. Close
+    // the receiver's live timer after proving the resume so later scenarios
+    // do not inherit an unrelated active-session conflict.
+    const stopped = await apiCall(incomingToken, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
+    expect(stopped.status).toBe(200);
+    expect(stopped.data.success).toBe(true);
   });
 });

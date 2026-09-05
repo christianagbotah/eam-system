@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 // Valid target statuses a task can transition TO
 const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'skipped', 'failed'] as const;
@@ -35,6 +36,9 @@ export async function PATCH(
     }
 
     const { id, taskId } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
     const { status, notes, findings } = body;
 

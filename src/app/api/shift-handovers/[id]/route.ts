@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -28,9 +28,9 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
     }
 
-    // Plant scope validation (through linked work order)
+    // Plant scope validation (through linked work order) — strict for operational entities
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, handover.workOrder?.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, handover.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
@@ -65,14 +65,21 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
     }
 
-    // Phase 3G: Plant scope for update
+    // Phase 3G: Plant scope for update — strict for operational entities
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes', 'status'];
+    // Whitelist: status/confirmedAt/overriddenBy/overriddenAt are NOT in allowedFields
+    // and can NEVER be set via generic PUT — only via the dedicated confirm endpoint.
+    const allowedFields = ['shiftType', 'shiftDate', 'fromShift', 'toShift', 'receivedById', 'tasksSummary', 'pendingIssues', 'safetyNotes', 'equipmentStatus', 'notes'];
+
+    // Confirmed immutability: once confirmed, no further updates via PUT
+    if (existing.status === 'confirmed') {
+      return NextResponse.json({ success: false, error: 'Confirmed handover is immutable' }, { status: 400 });
+    }
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -137,10 +144,15 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
     }
 
-    // Phase 3G: Plant scope for delete
+    // Phase 3G: Plant scope for delete — strict for operational entities
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.workOrder?.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    // Confirmed handovers cannot be deleted
+    if (existing.status === 'confirmed') {
+      return NextResponse.json({ success: false, error: 'Confirmed handover cannot be deleted' }, { status: 400 });
     }
 
     await db.shiftHandover.delete({ where: { id } });

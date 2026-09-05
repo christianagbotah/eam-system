@@ -27,9 +27,9 @@ export interface SessionLike {
 /** Payload accepted by the conversion service. */
 export interface ConvertMRToWOPayload {
   title?: string;
-  priority?: string; // low, medium, high, urgent, critical
-  workOrderType?: string; // breakdown, preventive, corrective, predictive, inspection, project, emergency
-  tradeActivity?: string; // mechanical, electrical, civil, facility, workshop, other
+  priority?: string;
+  workOrderType?: string;
+  tradeActivity?: string;
   technicalDescription?: string;
   assignmentType?: 'direct' | 'via_supervisor';
   assignedTo?: string;
@@ -67,31 +67,16 @@ export interface ConvertMRToWOResult {
   success: boolean;
   workOrder?: any; // WorkOrder with includes
   error?: string;
-  conflictWoNumber?: string; // populated on 409-like idempotency conflict
+  conflictWoNumber?: string;
   notifications?: ConversionNotification[];
 }
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-/** Maximum retries when a P2002 unique constraint violation occurs during WO number generation. */
 const WO_NUMBER_MAX_RETRIES = 3;
 
-// ============================================================================
-// HELPERS (file-private)
-// ============================================================================
-
-/**
- * Build a WO number string from a month prefix and sequence number.
- * @param monthStr - YYYYMM format (e.g. "202506")
- * @param seq     - Sequential number to pad to 4 digits
- */
 function buildWoNumber(monthStr: string, seq: number): string {
   return `WO-${monthStr}-${String(seq).padStart(4, '0')}`;
 }
 
-/** Determine the base sequence and month prefix for WO number generation. */
 async function determineBaseSequence(
   tx: Prisma.TransactionClient,
 ): Promise<{ monthStr: string; baseSeq: number }> {
@@ -106,7 +91,6 @@ async function determineBaseSequence(
   return { monthStr, baseSeq: (parseInt(parts[2] || '0', 10) + 1) };
 }
 
-/** Build a `ConversionNotification` for the MR requester. */
 function buildRequesterNotification(
   mr: { requestedBy: string },
   wo: { woNumber: string; id: string },
@@ -124,7 +108,6 @@ function buildRequesterNotification(
   };
 }
 
-/** Build notifications for assigned team members (team leader, assignee, members, supervisor). */
 function buildAssignmentNotifications(
   payload: ConvertMRToWOPayload,
   wo: { woNumber: string; id: string; title: string },
@@ -148,7 +131,6 @@ function buildAssignmentNotifications(
     });
   };
 
-  // Team leader
   add(
     payload.teamLeaderId,
     'wo_assigned',
@@ -157,7 +139,6 @@ function buildAssignmentNotifications(
     { forceSms: true },
   );
 
-  // Direct assignee (skip if also the team leader)
   if (payload.assignedTo && payload.assignedTo !== payload.teamLeaderId) {
     add(
       payload.assignedTo,
@@ -168,7 +149,6 @@ function buildAssignmentNotifications(
     );
   }
 
-  // Team members (skip duplicates)
   if (payload.teamMembers) {
     for (const member of payload.teamMembers) {
       add(
@@ -181,7 +161,6 @@ function buildAssignmentNotifications(
     }
   }
 
-  // Supervisor
   add(
     payload.assignedSupervisorId,
     'wo_assigned',
@@ -193,35 +172,6 @@ function buildAssignmentNotifications(
   return notifications;
 }
 
-// ============================================================================
-// MAIN EXPORT
-// ============================================================================
-
-/**
- * Convert a Maintenance Request into a Work Order.
- *
- * This function encapsulates the **entire** MR→WO conversion in a single
- * database transaction, including:
- * - Idempotency checks (forward + reverse MR↔WO link)
- * - Plant-scope access validation
- * - WO number generation with P2002 retry
- * - WO creation with field defaults from the MR
- * - Team member creation (with correct access levels)
- * - Material planning (parts → WorkOrderMaterial, status 'planned')
- * - Tool planning (tools → RepairToolRequest + RepairToolRequestItem, source 'planner_suggested')
- * - MR state machine transition (approved → converted)
- * - MR workOrderId link update
- * - Audit log creation
- *
- * Notifications are **not** dispatched inside the transaction. Instead, an
- * array of notification payloads is returned for the caller to send after
- * the transaction commits.
- *
- * @param mrId    - The maintenance request primary key
- * @param payload - Conversion parameters from the frontend
- * @param session - The acting user's session (permissions assumed pre-checked)
- * @returns A result object indicating success/failure, the created WO, and any notifications
- */
 export async function convertMRToWorkOrder(
   mrId: string,
   payload: ConvertMRToWOPayload,
@@ -229,13 +179,11 @@ export async function convertMRToWorkOrder(
 ): Promise<ConvertMRToWOResult> {
   const isAdmin = session.roles.includes('admin');
 
-  // ── Phase 0: Fetch MR outside the transaction (read-only, needed for early validation) ──
   const mr = await db.maintenanceRequest.findUnique({ where: { id: mrId } });
   if (!mr) {
     return { success: false, error: 'Maintenance request not found' };
   }
 
-  // ── Phase 1: Validate team members if provided ──
   if (payload.teamMembers && Array.isArray(payload.teamMembers)) {
     for (const member of payload.teamMembers) {
       if (!member.userId || !member.role) {
@@ -244,10 +192,8 @@ export async function convertMRToWorkOrder(
     }
   }
 
-  // ── Phase 2: Execute the entire conversion atomically ──
   try {
     const result = await db.$transaction(async (tx) => {
-      // ---- 2a. Idempotency: forward link check (mr.workOrderId) ----
       if (mr.workOrderId) {
         const linkedWO = await tx.workOrder.findUnique({ where: { id: mr.workOrderId } });
         if (linkedWO) {
@@ -257,13 +203,10 @@ export async function convertMRToWorkOrder(
             conflictWoNumber: linkedWO.woNumber,
           };
         }
-        // Stale link — will clear below
       }
 
-      // ---- 2b. Idempotency: reverse lookup (WO → maintenanceRequestId) ----
       const existingWO = await tx.workOrder.findFirst({ where: { maintenanceRequestId: mrId } });
       if (existingWO) {
-        // Repair the stale link
         await tx.maintenanceRequest.update({
           where: { id: mrId },
           data: { workOrderId: existingWO.id },
@@ -275,7 +218,6 @@ export async function convertMRToWorkOrder(
         };
       }
 
-      // ---- 2c. Plant scope validation ----
       if (mr.plantId && !isAdmin) {
         const plantAccess = await tx.userPlant.findUnique({
           where: { userId_plantId: { userId: session.userId, plantId: mr.plantId } },
@@ -288,19 +230,16 @@ export async function convertMRToWorkOrder(
         }
       }
 
-      // ---- 2d. Clear stale workOrderId if present ----
       if (mr.workOrderId) {
         await tx.maintenanceRequest.update({ where: { id: mrId }, data: { workOrderId: null } });
       }
 
-      // ---- 2e. Determine WO initial status ----
       const hasAssignment = payload.assignedTo || (payload.teamMembers && payload.teamMembers.length > 0);
       const woStatus = hasAssignment ? 'assigned' : 'approved';
       const now = new Date();
 
-      // ---- 2f. WO number generation with P2002 retry ----
       const { monthStr, baseSeq } = await determineBaseSequence(tx);
-      let workOrder: Awaited<ReturnType<typeof tx.workOrder.create>>;
+      let workOrder!: Awaited<ReturnType<typeof tx.workOrder.create>>;
 
       const woInclude = {
         assignee: { select: { id: true, fullName: true, username: true } },
@@ -356,15 +295,13 @@ export async function convertMRToWorkOrder(
             'code' in err &&
             (err as { code: string }).code === 'P2002'
           ) {
-            // Unique constraint violation on woNumber — increment and retry
             continue;
           }
-          throw err; // non-P2002 error — let it propagate
+          throw err;
         }
       }
 
       if (!created) {
-        // All retries exhausted — look up the conflicting WO for a helpful message
         const conflictWO = await tx.workOrder.findFirst({ where: { maintenanceRequestId: mrId } });
         const woRef = conflictWO ? conflictWO.woNumber : 'an existing work order';
         return {
@@ -374,7 +311,6 @@ export async function convertMRToWorkOrder(
         };
       }
 
-      // ---- 2h. Create team member records ----
       if (payload.teamMembers && payload.teamMembers.length > 0) {
         const teamMemberData = payload.teamMembers.map((member) => {
           const isTeamLeader = member.userId === payload.teamLeaderId;
@@ -389,7 +325,6 @@ export async function convertMRToWorkOrder(
         await tx.workOrderTeamMember.createMany({ data: teamMemberData });
       }
 
-      // If assignedTo is not already in teamMembers, add them as well
       if (
         payload.assignedTo &&
         !(payload.teamMembers && payload.teamMembers.some((m) => m.userId === payload.assignedTo))
@@ -406,7 +341,6 @@ export async function convertMRToWorkOrder(
         });
       }
 
-      // ---- 2i. Create material planning records (parts → WorkOrderMaterial) ----
       if (payload.requiredParts && Array.isArray(payload.requiredParts) && payload.requiredParts.length > 0) {
         for (const partEntry of payload.requiredParts) {
           const partId = typeof partEntry === 'object' && partEntry !== null ? partEntry.itemId : partEntry;
@@ -429,14 +363,12 @@ export async function convertMRToWorkOrder(
         }
       }
 
-      // ---- 2j. Create tool planning records (tools → RepairToolRequest + RepairToolRequestItem) ----
       if (payload.requiredTools && Array.isArray(payload.requiredTools) && payload.requiredTools.length > 0) {
         for (const toolEntry of payload.requiredTools) {
           const toolId = typeof toolEntry === 'object' && toolEntry !== null ? toolEntry.toolId : toolEntry;
           const toolQty = typeof toolEntry === 'object' && toolEntry !== null ? toolEntry.quantity : 1;
           const tool = await tx.tool.findUnique({ where: { id: toolId } });
           if (tool) {
-            // Create the tool request header
             const toolRequest = await tx.repairToolRequest.create({
               data: {
                 workOrderId: workOrder.id,
@@ -450,7 +382,6 @@ export async function convertMRToWorkOrder(
               },
             });
 
-            // Create the line item
             await tx.repairToolRequestItem.create({
               data: {
                 repairToolRequestId: toolRequest.id,
@@ -466,12 +397,11 @@ export async function convertMRToWorkOrder(
         }
       }
 
-      // ---- 2k. State machine transition (MR: approved → converted) ----
       const transitionResult = await executeTransition(
         'maintenance_request',
         mrId,
         'converted',
-        { ...session, permissions: [] }, // executeTransition needs permissions but we assume pre-checked
+        { ...session, permissions: [] },
         {
           extraData: {
             workOrderId: workOrder.id,
@@ -482,8 +412,6 @@ export async function convertMRToWorkOrder(
         },
       );
 
-      // If the transition failed, we still return the WO (it's in the tx)
-      // but flag it with a warning via the notifications array
       const warnings: ConversionNotification[] = [];
       if (!transitionResult.success) {
         warnings.push({
@@ -497,7 +425,6 @@ export async function convertMRToWorkOrder(
         });
       }
 
-      // ---- 2l. Audit log ----
       await tx.auditLog.create({
         data: {
           userId: session.userId,
@@ -516,9 +443,7 @@ export async function convertMRToWorkOrder(
         },
       });
 
-      // ---- 2m. Build notification payloads ----
       const notifications: ConversionNotification[] = [];
-
       const requesterNotif = buildRequesterNotification(mr, workOrder, session);
       if (requesterNotif) notifications.push(requesterNotif);
 
@@ -535,7 +460,6 @@ export async function convertMRToWorkOrder(
     return result;
 
   } catch (error: unknown) {
-    // Handle race condition: another request already converted this MR
     if (
       error &&
       typeof error === 'object' &&

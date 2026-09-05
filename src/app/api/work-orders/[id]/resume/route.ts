@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { resumeWork, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import {
+  resumeWaitingWorkOrder,
+  type ExecutionStateSessionContext,
+  type ExecutionStateAuditContext,
+} from '@/services/workOrderExecutionState.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -13,18 +18,25 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const { id } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const { id } = await params;
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
 
-    const result = await resumeWork(id, session as SessionContext, {
-      reason: body.notes,
-      auditCtx: auditCtx as AuditContext,
-    });
+    const result = await resumeWaitingWorkOrder(
+      id,
+      session as ExecutionStateSessionContext,
+      {
+        reason: typeof body.notes === 'string' ? body.notes : undefined,
+        auditCtx: auditCtx as ExecutionStateAuditContext,
+      },
+    );
 
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });

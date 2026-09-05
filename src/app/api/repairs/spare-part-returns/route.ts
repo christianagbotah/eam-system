@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 // Helper: generate auto-number SPR-YYYYMM-NNNN
 async function generateReturnNumber(): Promise<string> {
@@ -157,6 +158,12 @@ export async function POST(request: NextRequest) {
       refurbishmentNeeded,
       isConsumed,
     } = body;
+
+    // Plant authorization via linked WO
+    if (workOrderId) {
+      const plantAuth = await authorizeWorkOrderPlant(request, session, workOrderId);
+      if (!plantAuth.ok) return plantAuth.response;
+    }
 
     if (!workOrderId || !itemName) {
       return NextResponse.json(

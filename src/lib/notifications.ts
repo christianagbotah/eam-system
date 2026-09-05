@@ -40,8 +40,9 @@ interface UserNotificationProfile {
   notificationPreferences: NotificationPreferences | null;
 }
 
-// Map notification types to preference keys for opt-out control
-const TYPE_TO_PREF_KEY: Record<string, keyof NotificationPreferences['types']> = {
+// Map notification types to preference keys for opt-out control. `types` is an
+// optional preference group, so strip `undefined` before taking keyof.
+const TYPE_TO_PREF_KEY: Record<string, keyof NonNullable<NotificationPreferences['types']>> = {
   wo_assigned: 'woAssigned',
   wo_started: 'woStatusChange',
   wo_completed: 'woStatusChange',
@@ -67,16 +68,11 @@ const TYPE_TO_PREF_KEY: Record<string, keyof NotificationPreferences['types']> =
   escalation_l2: 'woStatusChange',
 };
 
-// Urgent types that bypass quiet hours
 const URGENT_TYPES = new Set([
   'safety_incident',
   'safety_alert',
   'escalation_l2',
 ]);
-
-// ============================================================================
-// Core Functions
-// ============================================================================
 
 export async function createNotification(params: {
   userId: string;
@@ -104,9 +100,6 @@ export async function createNotification(params: {
   }
 }
 
-/**
- * Check if we're inside the user's quiet hours.
- */
 function isQuietHours(prefs: NotificationPreferences | null): boolean {
   if (!prefs?.quietHours?.enabled) return false;
 
@@ -123,30 +116,19 @@ function isQuietHours(prefs: NotificationPreferences | null): boolean {
   const startMinutes = startHour * 60 + startMin;
   const endMinutes = endHour * 60 + endMin;
 
-  // Handle overnight quiet hours (e.g. 22:00 → 07:00)
   if (startMinutes > endMinutes) {
     return currentMinutes >= startMinutes || currentMinutes < endMinutes;
   }
-  // Same-day quiet hours (e.g. 12:00 → 14:00)
   return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 }
 
-/**
- * Check if the notification type is opted-in by the user.
- * If no preferences are set, default to true (all types enabled).
- */
 function isTypeEnabled(prefs: NotificationPreferences | null, type: string): boolean {
-  if (!prefs?.types) return true; // Default: all types enabled
+  if (!prefs?.types) return true;
   const prefKey = TYPE_TO_PREF_KEY[type];
-  if (!prefKey) return true; // Unknown types always enabled
+  if (!prefKey) return true;
   return prefs.types[prefKey] !== false;
 }
 
-/**
- * Send an SMS notification to a user.
- * Includes a clickable link to the action page if actionUrl is provided.
- * Hubtel handles SMS concatenation for longer messages.
- */
 async function sendNotificationSms(phone: string, title: string, message: string, actionUrl?: string | null): Promise<{ success: boolean; error?: string }> {
   try {
     const { sendSms } = await import('@/lib/sms');
@@ -156,7 +138,6 @@ async function sendNotificationSms(phone: string, title: string, message: string
       const fullLink = `${appUrl}/#/${actionUrl.replace(/^\//, '')}`;
       smsContent += `\n\nView: ${fullLink}`;
     }
-    // Hubtel handles concatenation for longer messages, but cap at 500 chars
     smsContent = smsContent.substring(0, 500);
     const result = await sendSms(phone, smsContent);
     return { success: result.success, error: result.error };
@@ -167,24 +148,6 @@ async function sendNotificationSms(phone: string, title: string, message: string
   }
 }
 
-/**
- * Primary notification dispatch function.
- *
- * Sends notifications via ALL channels (in-app, email, SMS) based on user preferences.
- * - In-app: Always sent (creates DB record + WebSocket push)
- * - Email: Sent unless user explicitly opts out
- * - SMS: Sent if user has opted in AND has a phone number configured
- * - Quiet hours: Non-urgent notifications are suppressed during quiet hours
- *
- * @param userId      - Target user ID
- * @param type        - Notification type (e.g. 'wo_assigned', 'mr_approved')
- * @param title       - Notification title
- * @param message     - Notification body/message
- * @param entityType  - Entity type (e.g. 'work_order', 'maintenance_request')
- * @param entityId    - Entity ID
- * @param actionUrl   - SPA navigation URL
- * @param options     - Override options (force channels, skip preference checks)
- */
 export async function notifyUser(
   userId: string,
   type: string,
@@ -194,15 +157,11 @@ export async function notifyUser(
   entityId?: string,
   actionUrl?: string,
   options?: {
-    /** Force SMS even if user preference is off (for critical alerts) */
     forceSms?: boolean;
-    /** Force email even if user preference is off */
     forceEmail?: boolean;
-    /** Skip quiet hours check */
     skipQuietHours?: boolean;
   },
 ) {
-  // 1. Always create in-app notification (DB + WebSocket push)
   const notification = await createNotification({
     userId,
     type,
@@ -213,7 +172,6 @@ export async function notifyUser(
     actionUrl,
   });
 
-  // Fire-and-forget: push real-time notification via WebSocket
   wsNotify(userId, 'notification', {
     type,
     title,
@@ -221,12 +179,8 @@ export async function notifyUser(
     entityType,
     entityId,
     actionUrl,
-  }).catch(() => {
-    // Silently ignore WS failures
-  });
+  }).catch(() => {});
 
-  // 2. Fetch user profile for email/SMS dispatch
-  //    This is done in a fire-and-forget pattern to avoid blocking the main response
   setImmediate(async () => {
     try {
       const user = await db.user.findUnique({
@@ -247,28 +201,23 @@ export async function notifyUser(
 
       const prefs = (user.notificationPreferences as NotificationPreferences) || null;
 
-      // Check type opt-out (in-app was already sent, this only affects email/SMS)
       if (!isTypeEnabled(prefs, type)) {
         console.log(`[Notification] User ${userId} opted out of type "${type}"`);
         return;
       }
 
-      // Check quiet hours (skip for urgent types or forced)
       const isUrgent = URGENT_TYPES.has(type);
       if (!options?.skipQuietHours && !isUrgent && isQuietHours(prefs)) {
         console.log(`[Notification] Quiet hours active for user ${userId}, skipping email/SMS`);
         return;
       }
 
-      // 3. Send Email (default: enabled unless explicitly opted out)
       const emailEnabled = options?.forceEmail || prefs?.channels?.email !== false;
       if (emailEnabled && user.email) {
         try {
           const { sendNotificationEmail } = await import('@/lib/email');
-          // Use the user's custom email address if set in preferences, otherwise use their account email
           const emailAddr = prefs?.channels?.emailAddr || user.email;
           await sendNotificationEmail(userId, title, message, actionUrl);
-          // If custom email address is different from account email, send to that too
           if (prefs?.channels?.emailAddr && prefs.channels.emailAddr !== user.email) {
             const { sendEmail } = await import('@/lib/email');
             const appName = process.env.NEXT_PUBLIC_APP_NAME || 'iAssetsPro EAM';
@@ -297,9 +246,6 @@ export async function notifyUser(
         }
       }
 
-      // 4. Send SMS — enabled by default if user has a phone number,
-      //    unless they explicitly opted out (sms: false in preferences).
-      //    forceSms overrides everything.
       const phone = prefs?.channels?.phone || user.phone;
       const userOptedOut = prefs?.channels?.sms === false;
       const smsEnabled = !!phone && !userOptedOut;
@@ -323,13 +269,6 @@ export async function notifyUser(
   return notification;
 }
 
-// ============================================================================
-// Convenience Helpers
-// ============================================================================
-
-/**
- * Notify multiple users at once. Used for broadcasts like admin alerts.
- */
 export async function notifyMultipleUsers(
   userIds: string[],
   type: string,
@@ -340,16 +279,12 @@ export async function notifyMultipleUsers(
   actionUrl?: string,
   options?: Parameters<typeof notifyUser>[7],
 ) {
-  // Send in-app notifications in parallel (DB + WS)
   const promises = userIds.map(userId =>
     notifyUser(userId, type, title, message, entityType, entityId, actionUrl, options)
   );
   await Promise.allSettled(promises);
 }
 
-/**
- * Find all admin users and notify them. Used for critical alerts.
- */
 export async function notifyAdmins(
   type: string,
   title: string,
@@ -391,9 +326,6 @@ export async function notifyAdmins(
   }
 }
 
-/**
- * Notify the supervisor of a department.
- */
 export async function notifyDepartmentSupervisor(
   departmentId: string,
   type: string,

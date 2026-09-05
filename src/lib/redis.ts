@@ -151,7 +151,7 @@ class RealRedis implements RedisLike {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Redis = require('ioredis');
 
-    const retryStrategy = (times: number): number => {
+    const retryStrategy = (times: number): number | null => {
       if (times > 20) {
         logger.error('Redis max retry attempts reached, giving up');
         return null; // Stop retrying
@@ -368,7 +368,7 @@ export function getRedisClient(_type: RedisClientType = 'cache'): RedisLike {
 }
 
 /**
- * Close the Redis connection gracefully. Useful for process shutdown.
+ * Close the Redis connection gracefully. Useful on process shutdown.
  * No-op when using in-memory fallback.
  */
 export async function closeRedisClient(): Promise<void> {

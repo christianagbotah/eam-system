@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
   reactStrictMode: false, // Disable strict mode — double-mounting in dev causes duplicate effects
   productionBrowserSourceMaps: true,
   typescript: { ignoreBuildErrors: true },
+  // PDFKit resolves its built-in AFM font data relative to its runtime package
+  // directory. Bundling it into Turbopack server chunks rewrites those paths to
+  // the virtual /ROOT build path, which fails in standalone production builds.
+  serverExternalPackages: ['pdfkit'],
   allowedDevOrigins: [
     '*.space.z.ai',
     '*.space.chatglm.site',

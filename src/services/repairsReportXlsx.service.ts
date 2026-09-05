@@ -25,10 +25,6 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('repairsReportXlsx');
 
-// ============================================================================
-// SHARED TYPES
-// ============================================================================
-
 export interface ReportFilters {
   plantId?: string;
   dateFrom?: string;
@@ -46,10 +42,6 @@ export interface ReportResult {
   buffer: Buffer;
   filename: string;
 }
-
-// ============================================================================
-// 1. WORK ORDER REPORT
-// ============================================================================
 
 const WORK_ORDER_COLUMNS: ReportColumn[] = [
   { key: 'woNumber', header: 'WO Number', width: 22 },
@@ -103,7 +95,7 @@ export async function exportWorkOrderReport(
     type: wo.type,
     priority: wo.priority,
     status: wo.status,
-    assetName: wo.asset?.name || wo.assetName || '',
+    assetName: wo.assetName || '',
     assigneeName: wo.assignee?.fullName || '',
     teamLeaderName: wo.teamLeader?.fullName || '',
     tradeActivity: wo.tradeActivity || '',
@@ -130,7 +122,7 @@ export async function exportWorkOrderReport(
       { label: 'Total WOs', value: workOrders.length },
       { label: 'Completed', value: workOrders.filter((w) => w.status === 'completed' || w.status === 'verified' || w.status === 'closed').length },
       { label: 'In Progress', value: workOrders.filter((w) => ['assigned', 'in_progress', 'waiting_parts'].includes(w.status)).length },
-      { label: 'Total Cost', value: `$${workOrders.reduce((s, w) => s + (w.totalCost ?? 0), 0).toFixed(2)}` },
+      { label: 'Total Cost', value: `GHS ${workOrders.reduce((s, w) => s + (w.totalCost ?? 0), 0).toFixed(2)}` },
     ],
   });
 
@@ -142,10 +134,6 @@ export async function exportWorkOrderReport(
     filename: buildFilename('work-order-report'),
   };
 }
-
-// ============================================================================
-// 2. MAINTENANCE REQUEST REPORT
-// ============================================================================
 
 const MR_COLUMNS: ReportColumn[] = [
   { key: 'requestNumber', header: 'MR Number', width: 22 },
@@ -174,7 +162,7 @@ export async function exportMaintenanceRequestReport(
   const requests = await db.maintenanceRequest.findMany({
     where: Object.keys(where).length > 0 ? where : undefined,
     include: {
-      requestedByUser: { select: { id: true, fullName: true } },
+      requester: { select: { id: true, fullName: true } },
       supervisor: { select: { id: true, fullName: true } },
       workOrder: { select: { id: true, woNumber: true } },
     },
@@ -192,7 +180,7 @@ export async function exportMaintenanceRequestReport(
     assetName: mr.assetName || '',
     location: mr.location || '',
     machineDown: mr.machineDownStatus ? 'Yes' : 'No',
-    requestedByName: mr.requestedByUser?.fullName || '',
+    requestedByName: mr.requester?.fullName || '',
     supervisorName: mr.supervisor?.fullName || '',
     woNumber: mr.workOrder?.woNumber || '',
     plannedStart: mr.plannedStart?.toISOString() ?? '',
@@ -221,10 +209,6 @@ export async function exportMaintenanceRequestReport(
     filename: buildFilename('maintenance-request-report'),
   };
 }
-
-// ============================================================================
-// 3. LABOR / TIME REPORT
-// ============================================================================
 
 const LABOR_COLUMNS: ReportColumn[] = [
   { key: 'woNumber', header: 'WO Number', width: 22 },
@@ -294,10 +278,6 @@ export async function exportLaborReport(
   };
 }
 
-// ============================================================================
-// 4. DOWNTIME REPORT
-// ============================================================================
-
 const DOWNTIME_COLUMNS: ReportColumn[] = [
   { key: 'woNumber', header: 'WO Number', width: 22 },
   { key: 'assetName', header: 'Asset', width: 25 },
@@ -356,7 +336,7 @@ export async function exportDowntimeReport(
     kpis: [
       { label: 'Total Events', value: downtimes.length },
       { label: 'Total Downtime (hrs)', value: (totalMinutes / 60).toFixed(1) },
-      { label: 'Total Prod. Loss', value: `$${totalLoss.toFixed(2)}` },
+      { label: 'Total Prod. Loss', value: `GHS ${totalLoss.toFixed(2)}` },
     ],
   });
 
@@ -368,10 +348,6 @@ export async function exportDowntimeReport(
     filename: buildFilename('downtime-report'),
   };
 }
-
-// ============================================================================
-// 5. MATERIAL REPORT
-// ============================================================================
 
 const MATERIAL_COLUMNS: ReportColumn[] = [
   { key: 'requestNumber', header: 'Req #', width: 10 },
@@ -439,7 +415,7 @@ export async function exportMaterialReport(
       { label: 'Total Requests', value: materials.length },
       { label: 'Issued', value: materials.filter((m) => m.status === 'issued').length },
       { label: 'Pending', value: materials.filter((m) => m.status === 'pending').length },
-      { label: 'Est. Total Cost', value: `$${totalCost.toFixed(2)}` },
+      { label: 'Est. Total Cost', value: `GHS ${totalCost.toFixed(2)}` },
     ],
   });
 
@@ -450,10 +426,6 @@ export async function exportMaterialReport(
     filename: buildFilename('material-usage-report'),
   };
 }
-
-// ============================================================================
-// 6. TOOL REPORT
-// ============================================================================
 
 const TOOL_COLUMNS: ReportColumn[] = [
   { key: 'requestNumber', header: 'Req #', width: 22 },
@@ -523,10 +495,6 @@ export async function exportToolReport(
   };
 }
 
-// ============================================================================
-// 7. FAILURE ANALYSIS REPORT
-// ============================================================================
-
 const FAILURE_COLUMNS: ReportColumn[] = [
   { key: 'id', header: 'ID', width: 28 },
   { key: 'assetName', header: 'Asset', width: 25 },
@@ -590,7 +558,7 @@ export async function exportFailureAnalysisReport(
     kpis: [
       { label: 'Total Failures', value: failures.length },
       { label: 'Total Downtime (hrs)', value: (totalDowntime / 60).toFixed(1) },
-      { label: 'Total Repair Cost', value: `$${totalCost.toFixed(2)}` },
+      { label: 'Total Repair Cost', value: `GHS ${totalCost.toFixed(2)}` },
     ],
   });
 
@@ -602,10 +570,6 @@ export async function exportFailureAnalysisReport(
     filename: buildFilename('failure-analysis-report'),
   };
 }
-
-// ============================================================================
-// 8. COST REPORT
-// ============================================================================
 
 const COST_COLUMNS: ReportColumn[] = [
   { key: 'woNumber', header: 'WO Number', width: 22 },
@@ -628,7 +592,6 @@ export async function exportCostReport(
   session: SessionData,
 ): Promise<ReportResult> {
   const where = buildBaseWhere(filters);
-  // Focus on completed / closed WOs for cost analysis
   (where as Record<string, unknown>).status = { in: ['completed', 'verified', 'closed'] };
 
   const workOrders = await db.workOrder.findMany({
@@ -675,11 +638,11 @@ export async function exportCostReport(
     generatedBy: session.fullName,
     kpis: [
       { label: 'Total WOs', value: workOrders.length },
-      { label: 'Total Labor', value: `$${totals.labor.toFixed(2)}` },
-      { label: 'Total Parts', value: `$${totals.parts.toFixed(2)}` },
-      { label: 'Total Contractor', value: `$${totals.contractor.toFixed(2)}` },
-      { label: 'Total Tools', value: `$${totals.tools.toFixed(2)}` },
-      { label: 'Grand Total', value: `$${totals.total.toFixed(2)}` },
+      { label: 'Total Labor', value: `GHS ${totals.labor.toFixed(2)}` },
+      { label: 'Total Parts', value: `GHS ${totals.parts.toFixed(2)}` },
+      { label: 'Total Contractor', value: `GHS ${totals.contractor.toFixed(2)}` },
+      { label: 'Total Tools', value: `GHS ${totals.tools.toFixed(2)}` },
+      { label: 'Grand Total', value: `GHS ${totals.total.toFixed(2)}` },
     ],
   });
 
@@ -691,10 +654,6 @@ export async function exportCostReport(
     filename: buildFilename('cost-analysis-report'),
   };
 }
-
-// ============================================================================
-// 9. BACKLOG / AGING REPORT
-// ============================================================================
 
 const BACKLOG_COLUMNS: ReportColumn[] = [
   { key: 'woNumber', header: 'WO Number', width: 22 },
@@ -717,7 +676,6 @@ export async function exportBacklogAgingReport(
   session: SessionData,
 ): Promise<ReportResult> {
   const where = buildBaseWhere(filters);
-  // Only open (not closed/cancelled/completed/verified) WOs
   (where as Record<string, unknown>).status = {
     notIn: ['completed', 'verified', 'closed', 'cancelled'],
   };
@@ -787,10 +745,6 @@ export async function exportBacklogAgingReport(
   };
 }
 
-// ============================================================================
-// 10. SLA COMPLIANCE REPORT
-// ============================================================================
-
 const SLA_COLUMNS: ReportColumn[] = [
   { key: 'woNumber', header: 'WO Number', width: 22 },
   { key: 'title', header: 'Title', width: 30 },
@@ -809,7 +763,6 @@ const SLA_COLUMNS: ReportColumn[] = [
   { key: 'createdAt', header: 'Created', format: 'date', width: 14 },
 ];
 
-/** SLA targets in hours by priority */
 const SLA_TARGETS: Record<string, number> = {
   critical: 4,
   high: 24,
@@ -822,7 +775,6 @@ export async function exportSLAReport(
   session: SessionData,
 ): Promise<ReportResult> {
   const where = buildBaseWhere(filters);
-  // Focus on WOs that have been completed or are old enough to evaluate
   (where as Record<string, unknown>).status = {
     in: ['completed', 'verified', 'closed'],
   };
@@ -838,14 +790,11 @@ export async function exportSLAReport(
 
   const rows = workOrders.map((wo) => {
     const slaTarget = SLA_TARGETS[wo.priority] ?? 72;
-    const actualHrs =
-      wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0;
+    const actualHrs = wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0;
 
-    // Also calculate wall-clock hours from creation to actual end
     let wallClockHours = 0;
     if (wo.createdAt && wo.actualEnd) {
-      wallClockHours =
-        (wo.actualEnd.getTime() - wo.createdAt.getTime()) / (1000 * 60 * 60);
+      wallClockHours = (wo.actualEnd.getTime() - wo.createdAt.getTime()) / (1000 * 60 * 60);
     }
     const effectiveHours = wallClockHours > 0 ? wallClockHours : actualHrs;
 
@@ -897,10 +846,6 @@ export async function exportSLAReport(
   };
 }
 
-// ============================================================================
-// WHERE-BUILDERS — shared filter logic
-// ============================================================================
-
 function buildBaseWhere(filters: ReportFilters): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (filters.plantId) where.plantId = filters.plantId;
@@ -946,7 +891,6 @@ function buildLaborWhere(filters: ReportFilters): Record<string, unknown> {
     if (filters.dateTo) df.lte = new Date(filters.dateTo + 'T23:59:59');
     where.timestamp = df;
   }
-  // If WO-level filters, find matching WO IDs first
   if (filters.plantId || filters.status || filters.type || filters.assigneeId) {
     const woWhere: Record<string, unknown> = {};
     if (filters.plantId) woWhere.plantId = filters.plantId;
@@ -1010,24 +954,24 @@ function buildFailureWhere(filters: ReportFilters): Record<string, unknown> {
     where.detectedAt = df;
   }
 
-  // Apply plant scope through asset relation
   if (filters.plantId) {
     where.asset = { plantId: filters.plantId };
   }
   return where;
 }
 
-// ============================================================================
-// ANALYTICS HELPERS — build analytics row arrays
-// ============================================================================
-
 function buildStatusBreakdown(
-  items: Array<{ status?: string; workflowStatus?: string; activityType?: string; category?: string }>,
+  items: Array<{
+    status?: string | null;
+    workflowStatus?: string | null;
+    activityType?: string | null;
+    category?: string | null;
+  }>,
   field: string,
 ): AnalyticsRow[] {
   const counts = new Map<string, number>();
   for (const item of items) {
-    const val = (item as Record<string, string | undefined>)[field] || 'Unknown';
+    const val = (item as Record<string, string | null | undefined>)[field] || 'Unknown';
     counts.set(val, (counts.get(val) ?? 0) + 1);
   }
   return [...counts.entries()]
@@ -1115,15 +1059,10 @@ function buildSlaByPriority(rows: Array<{ priority: string; slaMet: string }>): 
     }));
 }
 
-// ============================================================================
-// UTILITIES
-// ============================================================================
-
 function flattenFilters(filters: ReportFilters): Record<string, string | undefined> {
   return { ...filters };
 }
 
-/** Supported report type identifiers */
 export const SUPPORTED_REPORT_TYPES = [
   'work-order',
   'maintenance-request',
@@ -1139,9 +1078,6 @@ export const SUPPORTED_REPORT_TYPES = [
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];
 
-/**
- * Dispatch to the correct report generator based on reportType.
- */
 export async function generateReport(
   reportType: ReportType,
   filters: ReportFilters,
@@ -1169,6 +1105,7 @@ export async function generateReport(
     case 'sla':
       return exportSLAReport(filters, session);
     default:
+      logger.error('Unsupported repairs report type', { reportType });
       throw new Error(`Unsupported report type: ${reportType}`);
   }
 }

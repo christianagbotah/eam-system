@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 // ============================================================================
 // GET — check if the current user has an active (running) time session
@@ -13,6 +14,11 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Find the user's most recent time log entry across ALL work orders

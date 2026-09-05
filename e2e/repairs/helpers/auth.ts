@@ -30,6 +30,8 @@ const USERS: Record<string, UatUser> = {
   plant_b_user:           { username: 'uat_plant_b_user',   password: UAT_PASSWORD },
 };
 
+const DEFAULT_BASE_URL = (process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+
 /** Login via the API and return the session token */
 async function loginViaApi(user: UatUser, baseURL: string): Promise<string> {
   const res = await fetch(`${baseURL}/api/auth/login`, {
@@ -53,12 +55,13 @@ async function loginViaApi(user: UatUser, baseURL: string): Promise<string> {
 
 /**
  * Inject auth state into the browser context so the SPA is already logged in.
- * Sets localStorage items that the Zustand auth store reads on mount.
+ * The auth store will read eam_token on mount and populate the remaining user,
+ * role, permission and plant state through /api/auth/me.
  */
 export async function authenticateAs(
   context: BrowserContext,
   userKey: string,
-  baseURL: string = 'http://localhost:3000',
+  baseURL: string = DEFAULT_BASE_URL,
 ): Promise<void> {
   const user = USERS[userKey];
   if (!user) throw new Error(`Unknown UAT user key: ${userKey}`);
@@ -100,7 +103,7 @@ export async function switchUser(
   page: Page,
   context: BrowserContext,
   userKey: string,
-  baseURL: string = 'http://localhost:3000',
+  baseURL: string = DEFAULT_BASE_URL,
 ): Promise<void> {
   // Clear existing auth
   await page.evaluate(() => {
@@ -126,26 +129,39 @@ export async function switchUser(
 /** Navigate to the maintenance requests page (hash-based SPA routing) */
 export async function navigateToMRList(page: Page): Promise<void> {
   await page.goto('/#/maintenance-requests');
-  await expect(page.locator('text=Maintenance Request, text=Requests').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Maintenance Request|Requests/i).first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Navigate to the work orders page */
 export async function navigateToWOList(page: Page): Promise<void> {
   await page.goto('/#/maintenance-work-orders');
-  await expect(page.locator('text=Work Order').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Work Order/i).first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Navigate to a specific work order detail by ID */
 export async function navigateToWODetail(page: Page, woId: string): Promise<void> {
   await page.goto(`/#/wo-detail?id=${woId}`);
-  // Wait for the WO ID or status badge to appear
-  await expect(page.locator(`[data-testid="wo-status"], text=${woId}`).first()).toBeVisible({ timeout: 15_000 });
+
+  // The wo-detail hash route renders the normal Work Orders page and opens a
+  // shadcn Sheet containing WODetailPage. The UI displays woNumber (WO-...)
+  // rather than the raw database UUID, so wait for the real sheet/header.
+  const detailSheet = page.getByRole('dialog').first();
+  await expect(detailSheet).toBeVisible({ timeout: 15_000 });
+  await expect(detailSheet.getByText(/^WO-[A-Z0-9-]+$/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(detailSheet).not.toContainText('Work order not found');
+}
+
+/** Assert the human-visible WO status rendered by StatusBadge */
+export async function expectWODetailStatus(page: Page, status: string): Promise<void> {
+  const expectedLabel = status.replace(/_/g, ' ').toUpperCase();
+  const detailSheet = page.getByRole('dialog').first();
+  await expect(detailSheet.getByText(expectedLabel, { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 }
 
 /** Navigate to the repairs dashboard */
 export async function navigateToRepairsDashboard(page: Page): Promise<void> {
   await page.goto('/#/repairs-dashboard');
-  await expect(page.locator('text=Repairs, text=Maintenance').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Repairs|Maintenance/i).first()).toBeVisible({ timeout: 15_000 });
 }
 
 /** Wait for the app to be in a loaded state (login page or dashboard) */

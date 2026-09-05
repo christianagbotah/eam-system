@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin as isAdminCheck } from '@/lib/auth';
 import { executeTransition } from '@/lib/state-machine';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import type { Prisma } from '@prisma/client';
 
 type TeamMemberInput = {
@@ -28,12 +29,13 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.assign_supervisor'])) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-    }
-
     const { id } = await params;
     const body: AssignmentBody = await request.json();
+
+    // Plant authorization for caller
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const {
       assignedTo,
       teamLeaderId,
@@ -47,6 +49,16 @@ export async function POST(
     const isViaSupervisor = assignmentType === 'via_supervisor';
     const isDirect = assignmentType === 'direct';
     const isUserAdmin = isAdminCheck(session);
+    const canAssignSupervisor = isUserAdmin || hasAnyPermission(session, ['work_orders.assign_supervisor']);
+    const canAssignTechnician = isUserAdmin || hasAnyPermission(session, ['work_orders.assign_technician']);
+
+    // Keep delegation and execution-assignment privileges distinct.
+    if (isViaSupervisor && !canAssignSupervisor) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to assign a supervisor' }, { status: 403 });
+    }
+    if (isDirect && !canAssignTechnician) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to assign technicians' }, { status: 403 });
+    }
 
     // ── Validation ─────────────────────────────────────────────────────────
 
@@ -70,7 +82,6 @@ export async function POST(
         );
       }
 
-      // Validate teamLeaderId rules
       if (hasTeamMembers && teamMembers!.length > 1) {
         if (!teamLeaderId) {
           return NextResponse.json(
@@ -87,7 +98,6 @@ export async function POST(
         }
       }
 
-      // Validate each team member has userId
       if (hasTeamMembers) {
         for (const m of teamMembers!) {
           if (!m.userId) {
@@ -115,7 +125,13 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Capture actual old values for audit log
+    if (wo.isLocked || ['verified', 'closed', 'cancelled'].includes(wo.status)) {
+      return NextResponse.json(
+        { success: false, error: `Work order cannot be reassigned in status '${wo.status}'` },
+        { status: 400 },
+      );
+    }
+
     const oldValues = {
       assignedTo: wo.assignedTo,
       teamLeaderId: wo.teamLeaderId,
@@ -142,7 +158,6 @@ export async function POST(
       plantScopeUserIds.push(assignedSupervisorId);
     }
 
-    // Deduplicate
     const uniqueUserIds = [...new Set(plantScopeUserIds)];
 
     if (wo.plantId && uniqueUserIds.length > 0) {
@@ -200,74 +215,71 @@ export async function POST(
 
     // ── Determine effective assignment values ──────────────────────────────
 
-    let effectiveAssignedTo = wo.assignedTo; // preserve existing
-    let effectiveTeamLeaderId = wo.teamLeaderId; // preserve existing
+    let effectiveAssignedTo = wo.assignedTo;
+    let effectiveTeamLeaderId = wo.teamLeaderId;
+    const effectiveAssignedSupervisorId = assignedSupervisorId ?? wo.assignedSupervisorId;
 
     if (isDirect) {
       const hasAssignedTo = !!assignedTo;
       const hasTeamMembers = Array.isArray(teamMembers) && teamMembers!.length > 0;
 
       if (hasAssignedTo && !hasTeamMembers) {
-        // Single assignee, no team array → they are both assignedTo and team leader
         effectiveAssignedTo = assignedTo!;
         effectiveTeamLeaderId = assignedTo!;
       } else if (hasTeamMembers && !hasAssignedTo) {
-        // Team members only, no explicit assignedTo
         effectiveAssignedTo = teamMembers![0].userId;
         effectiveTeamLeaderId = teamMembers!.length === 1
           ? teamMembers![0].userId
           : teamLeaderId!;
       } else if (hasAssignedTo && hasTeamMembers) {
-        // Both provided
         effectiveAssignedTo = assignedTo!;
         effectiveTeamLeaderId = teamMembers!.length === 1
           ? teamMembers![0].userId
           : teamLeaderId!;
       }
     }
-    // For via_supervisor: assignedTo/teamLeaderId stay as-is (preserved above)
 
     const now = new Date();
 
     // ── Execute everything inside a transaction ────────────────────────────
 
     const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-      // 1. Execute status transition via state machine
-      const transitionResult = await executeTransition(
-        'work_order',
-        id,
-        'assigned',
-        session,
-        {
-          extraData: {
-            assignedTo: effectiveAssignedTo,
-            teamLeaderId: effectiveTeamLeaderId,
-            assignedSupervisorId: assignedSupervisorId || null,
-            assignedBy: session.userId,
-            assignmentType,
-          },
-          tx,
-        },
-      );
+      const assignmentData = {
+        assignedTo: effectiveAssignedTo,
+        teamLeaderId: effectiveTeamLeaderId,
+        assignedSupervisorId: effectiveAssignedSupervisorId,
+        assignedBy: session.userId,
+        assignmentType,
+      };
 
-      if (!transitionResult.success) {
-        throw new Error(transitionResult.error);
+      // A WO may already be `assigned` after MR conversion. Reassignment is a
+      // resource-planning change, not a lifecycle status change, so never create
+      // a fake assigned→assigned transition/history row.
+      let transitionResult: { success: boolean; error?: string; data?: Record<string, unknown> };
+      if (wo.status === 'assigned') {
+        await tx.workOrder.update({ where: { id }, data: assignmentData });
+        transitionResult = { success: true, data: { status: 'assigned', reassigned: true } };
+      } else {
+        transitionResult = await executeTransition(
+          'work_order',
+          id,
+          'assigned',
+          session,
+          { extraData: assignmentData, tx },
+        );
+        if (!transitionResult.success) {
+          throw new Error(transitionResult.error);
+        }
       }
 
-      // 2. Create/upsert team members
+      // Create/upsert team members for direct assignment.
       if (isDirect) {
         const membersToAdd: { userId: string; role: string; isLeader: boolean }[] = [];
-
         const hasAssignedTo = !!assignedTo;
         const hasTeamMembers = Array.isArray(teamMembers) && teamMembers!.length > 0;
 
         if (hasAssignedTo && !hasTeamMembers) {
-          // Single assignee
-          membersToAdd.push({
-            userId: assignedTo!,
-            role: 'team_leader',
-            isLeader: true,
-          });
+          membersToAdd.push({ userId: assignedTo!, role: 'team_leader', isLeader: true });
         } else if (hasTeamMembers) {
           for (const m of teamMembers!) {
             const isLeader = m.userId === effectiveTeamLeaderId;
@@ -279,7 +291,6 @@ export async function POST(
           }
         }
 
-        // Also add assignedTo to team if they're not already in the list
         if (hasAssignedTo && hasTeamMembers && !teamMembers!.some((m) => m.userId === assignedTo)) {
           const isLeader = assignedTo === effectiveTeamLeaderId;
           membersToAdd.push({
@@ -289,16 +300,11 @@ export async function POST(
           });
         }
 
-        // Upsert each member
         for (const m of membersToAdd) {
           const accessLevel = m.isLeader ? 'full' : 'execution';
-
           await tx.workOrderTeamMember.upsert({
             where: {
-              workOrderId_userId: {
-                workOrderId: id,
-                userId: m.userId,
-              },
+              workOrderId_userId: { workOrderId: id, userId: m.userId },
             },
             update: {
               role: m.role,
@@ -320,16 +326,14 @@ export async function POST(
         }
       }
 
-      // 3. Domain-specific audit log
       const newValues: Record<string, unknown> = {
         assignmentType,
+        reassignment: wo.status === 'assigned',
       };
       if (effectiveAssignedTo) newValues.assignedTo = effectiveAssignedTo;
       if (effectiveTeamLeaderId) newValues.teamLeaderId = effectiveTeamLeaderId;
-      if (assignedSupervisorId) newValues.assignedSupervisorId = assignedSupervisorId;
-      if (teamMembers && teamMembers.length > 0) {
-        newValues.teamMembersCount = teamMembers.length;
-      }
+      if (effectiveAssignedSupervisorId) newValues.assignedSupervisorId = effectiveAssignedSupervisorId;
+      if (teamMembers && teamMembers.length > 0) newValues.teamMembersCount = teamMembers.length;
 
       await tx.auditLog.create({
         data: {
@@ -349,9 +353,6 @@ export async function POST(
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // ── Fire-and-forget notifications ──────────────────────────────────────
-
-    // Notify assigned technician (direct assignment only)
     if (isDirect && effectiveAssignedTo && effectiveAssignedTo !== session.userId) {
       notifyUser(
         effectiveAssignedTo,
@@ -365,7 +366,6 @@ export async function POST(
       ).catch(() => {});
     }
 
-    // Notify team members
     if (isDirect && Array.isArray(teamMembers) && teamMembers.length > 0) {
       for (const member of teamMembers) {
         if (member.userId !== session.userId && member.userId !== effectiveAssignedTo) {
@@ -383,13 +383,12 @@ export async function POST(
       }
     }
 
-    // Notify supervisor (both paths)
-    if (assignedSupervisorId && assignedSupervisorId !== session.userId) {
+    if (effectiveAssignedSupervisorId && effectiveAssignedSupervisorId !== session.userId) {
       const supervisorMsg = isViaSupervisor
         ? `${session.fullName} delegated ${wo.woNumber} to you for assignment: "${wo.title}"`
         : `${session.fullName} assigned ${wo.woNumber} with you as supervisor: "${wo.title}"`;
       notifyUser(
-        assignedSupervisorId,
+        effectiveAssignedSupervisorId,
         'wo_assigned',
         isViaSupervisor ? 'Work Order Delegated' : 'Work Order Supervisor Assignment',
         supervisorMsg,
@@ -399,8 +398,6 @@ export async function POST(
         { forceSms: true },
       ).catch(() => {});
     }
-
-    // ── Re-fetch with includes for response ────────────────────────────────
 
     const updated = await db.workOrder.findUnique({
       where: { id },

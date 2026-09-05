@@ -293,17 +293,17 @@ describe('applyPlantScope', () => {
     expect(result).toEqual({ status: 'active', plantId: 'plant-001' });
   });
 
-  it('should NOT mutate the original where object', () => {
-    const where = { status: 'active' };
+  it('should mutate the original where object as a fail-safe for legacy callers', () => {
+    const where: Record<string, unknown> = { status: 'active' };
     const scope = makeScope({
       plantId: 'plant-001',
       isScoped: true,
       accessiblePlantIds: ['plant-001'],
     });
     const result = applyPlantScope(where, scope);
-    expect(where).toEqual({ status: 'active' });
-    expect(Object.keys(where)).toHaveLength(1);
-    expect(Object.keys(result)).toHaveLength(2);
+    expect(where).toEqual({ status: 'active', plantId: 'plant-001' });
+    expect(result).toBe(where);
+    expect(Object.keys(where)).toHaveLength(2);
   });
 
   it('should apply sentinel filter on denyAccess (fail-closed)', () => {

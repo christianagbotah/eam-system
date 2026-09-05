@@ -39,7 +39,6 @@ export async function GET(
         assignedSupervisor: { select: { id: true, fullName: true } },
         assigner: { select: { id: true, fullName: true } },
         planner: { select: { id: true, fullName: true } },
-        plant: { select: { id: true, name: true, code: true, location: true, city: true, country: true } },
         maintenanceRequest: {
           select: {
             id: true, requestNumber: true, title: true, description: true,
@@ -93,7 +92,7 @@ export async function GET(
         },
         teamMemberRequests: {
           include: {
-            requestedBy: { select: { id: true, fullName: true } },
+            requestedByUser: { select: { id: true, fullName: true } },
             requestedUser: { select: { id: true, fullName: true } },
           },
           orderBy: { createdAt: 'asc' as const },
@@ -155,6 +154,16 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not in your plant scope' }, { status: 403 });
     }
 
+    // WorkOrder stores plantId as a scalar and has no Prisma plant relation.
+    // Resolve the plant explicitly so the Closed WO Pack receives the expected
+    // descriptive plant shape without inventing a schema relation.
+    const plant: ClosedWOPackData['plant'] = wo.plantId
+      ? await db.plant.findUnique({
+          where: { id: wo.plantId },
+          select: { name: true, code: true, location: true, city: true, country: true },
+        })
+      : null;
+
     // ── Fetch Asset separately ──
     let asset: Record<string, unknown> | null = null;
     if (wo.assetId) {
@@ -192,15 +201,34 @@ export async function GET(
       orderBy: { uploadedAt: 'asc' as const },
     });
 
-    // ── Fetch Work Instruction Executions ──
-    const wiExecutions = await db.workInstructionExecution.findMany({
+    // WorkInstructionExecution stores technicianId as a scalar and has no
+    // Prisma technician relation. Resolve technician names explicitly and map
+    // them back into the shape expected by the PDF generator.
+    const wiExecutionsRaw = await db.workInstructionExecution.findMany({
       where: { workOrderId: wo.id },
       include: {
         workInstruction: { select: { id: true, title: true } },
-        technician: { select: { id: true, fullName: true } },
       },
-      orderBy: { createdAt: 'asc' as const },
+      orderBy: { startedAt: 'asc' as const },
     });
+    const wiTechnicianIds = [
+      ...new Set(
+        wiExecutionsRaw
+          .map((execution) => execution.technicianId)
+          .filter((technicianId): technicianId is string => Boolean(technicianId)),
+      ),
+    ];
+    const wiTechnicians = wiTechnicianIds.length > 0
+      ? await db.user.findMany({
+          where: { id: { in: wiTechnicianIds } },
+          select: { id: true, fullName: true },
+        })
+      : [];
+    const wiTechnicianMap = new Map(wiTechnicians.map((technician) => [technician.id, technician]));
+    const wiExecutions = wiExecutionsRaw.map((execution) => ({
+      ...execution,
+      technician: wiTechnicianMap.get(execution.technicianId) ?? null,
+    }));
 
     // ── Fetch Company Profile ──
     const companyProfile = await db.companyProfile.findFirst({
@@ -219,7 +247,7 @@ export async function GET(
       supervisor: wo.assignedSupervisor ? { fullName: wo.assignedSupervisor.fullName } : null,
       planner: wo.planner ? { fullName: wo.planner.fullName } : null,
       assigner: wo.assigner ? { fullName: wo.assigner.fullName } : null,
-      plant: wo.plant,
+      plant,
       asset,
       components: wo.workOrderComponents.map((wc) => ({
         ...wc,
@@ -254,7 +282,10 @@ export async function GET(
       failureRecords: wo.failureRecords,
       repairCompletion: wo.repairCompletion,
       shiftHandovers: wo.shiftHandovers,
-      assistanceRequests: wo.teamMemberRequests,
+      assistanceRequests: wo.teamMemberRequests.map(({ requestedByUser, ...request }) => ({
+        ...request,
+        requestedBy: requestedByUser,
+      })),
       attachments,
       statusHistory: wo.statusHistory,
       workInstructionExecutions: wiExecutions,

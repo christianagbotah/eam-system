@@ -3,6 +3,7 @@ import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { convertMRToWorkOrder } from '@/services/repairPlanning.service';
 import type { ConvertMRToWOPayload } from '@/services/repairPlanning.service';
+import { authorizeMaintenanceRequestPlant } from '@/lib/plant-auth-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -21,6 +22,11 @@ export async function POST(
 
     // ── 2. Parse params & body ──
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeMaintenanceRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body: ConvertMRToWOPayload = await request.json();
 
     // ── 3. Delegate to domain service ──

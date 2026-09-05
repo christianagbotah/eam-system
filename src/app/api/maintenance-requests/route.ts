@@ -4,12 +4,10 @@ import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
-// Helper: generate request number MR-YYYYMM-NNNN
 async function generateRequestNumber(): Promise<string> {
   const now = new Date();
   const prefix = `MR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  // Find the latest MR with the same prefix
   const latest = await db.maintenanceRequest.findFirst({
     where: { requestNumber: { startsWith: prefix } },
     orderBy: { requestNumber: 'desc' },
@@ -32,13 +30,20 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'maintenance_requests.view') && !hasPermission(session, 'maintenance_requests.view_own') && !isAdmin(session)) {
+    if (
+      !hasPermission(session, 'maintenance_requests.view') &&
+      !hasPermission(session, 'maintenance_requests.view_own') &&
+      !isAdmin(session)
+    ) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
-    const hasViewAll = hasPermission(session, 'maintenance_requests.view') || hasPermission(session, 'maintenance_requests.view_all') || isAdmin(session);
+
+    const hasViewAll =
+      hasPermission(session, 'maintenance_requests.view') ||
+      hasPermission(session, 'maintenance_requests.view_all') ||
+      isAdmin(session);
 
     const { searchParams } = new URL(request.url);
-
     const status = searchParams.get('status');
     const priority = searchParams.get('priority');
     const category = searchParams.get('category');
@@ -46,57 +51,43 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const search = searchParams.get('search');
 
-    // Resolve plant scope (validates X-Plant-ID against user's plant access)
     const plantScope = await getPlantScope(request, session);
-
-    // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
+
     if (status) {
-      // Support comma-separated status values (e.g. "pending,approved")
-      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      const statuses = status.split(',').map((s) => s.trim()).filter(Boolean);
       where.status = statuses.length > 1 ? { in: statuses } : statuses[0];
     }
     if (priority) where.priority = priority;
     if (category) where.category = category;
-    if (search) {
-      where.title = { contains: search };
-    }
+    if (search) where.title = { contains: search };
 
-    // Users with only view_own should only see their own requests
     if (!hasViewAll) {
       where.requestedBy = session.userId;
     } else if (!isAdmin(session)) {
       if (session.roles.includes('maintenance_supervisor')) {
-        // Supervisors see MRs from departments where they are the supervisor
-        // OR MRs explicitly assigned to them (backward compatibility)
         const supervisedDepts = await db.department.findMany({
           where: { supervisorId: session.userId },
           select: { id: true },
         });
-        const supervisedDeptIds = supervisedDepts.map(d => d.id);
+        const supervisedDeptIds = supervisedDepts.map((d) => d.id);
         if (supervisedDeptIds.length > 0) {
           where.OR = [
             { supervisorId: session.userId },
             { departmentId: { in: supervisedDeptIds } },
           ];
         } else {
-          // No supervised departments — fall back to explicitly assigned only
           where.supervisorId = session.userId;
         }
       } else if (session.roles.includes('maintenance_technician')) {
-        // Technicians see WOs linked to them via maintenance requests
         where.OR = [
           { requestedBy: session.userId },
           { workOrder: { assignedTo: session.userId } },
         ];
       }
-      // Planners, admins, and users with view_all see everything
     }
 
-    // Apply plant scoping filter
-    if (plantScope) {
-      applyPlantScope(where, plantScope);
-    }
+    if (plantScope) applyPlantScope(where, plantScope);
 
     const [requests, total] = await Promise.all([
       db.maintenanceRequest.findMany({
@@ -121,12 +112,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: requests,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load maintenance requests';
@@ -140,7 +126,6 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-
     if (!hasPermission(session, 'maintenance_requests.create') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
@@ -169,30 +154,139 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
     }
 
-    const requestNumber = await generateRequestNumber();
-
-    // Get user's primary plant if not provided
-    let resolvedPlantId = plantId;
+    let resolvedPlantId: string | null = plantId || null;
     if (!resolvedPlantId) {
-      const userPlant = await db.userPlant.findFirst({
+      const primaryPlant = await db.userPlant.findFirst({
         where: { userId: session.userId, isPrimary: true },
+        select: { plantId: true },
       });
-      resolvedPlantId = userPlant?.plantId ?? null;
+      resolvedPlantId = primaryPlant?.plantId ?? null;
+    }
+    if (!resolvedPlantId && !isAdmin(session)) {
+      const anyPlant = await db.userPlant.findFirst({
+        where: { userId: session.userId },
+        select: { plantId: true },
+      });
+      resolvedPlantId = anyPlant?.plantId ?? null;
+    }
+    if (!resolvedPlantId) {
+      return NextResponse.json(
+        { success: false, error: 'Plant selection required. You must specify a plant for maintenance requests.' },
+        { status: 400 },
+      );
     }
 
-    // Use explicitly provided supervisorId, or auto-detect from department
-    let resolvedSupervisorId = explicitSupervisorId || null;
-    const resolvedDepartmentId = departmentId || null;
-    if (!resolvedSupervisorId && resolvedDepartmentId) {
-      const department = await db.department.findUnique({
-        where: { id: resolvedDepartmentId },
-        select: { supervisorId: true },
+    if (!isAdmin(session)) {
+      const plantAccess = await db.userPlant.findUnique({
+        where: { userId_plantId: { userId: session.userId, plantId: resolvedPlantId } },
+        select: { id: true },
       });
-      if (department?.supervisorId) {
-        resolvedSupervisorId = department.supervisorId;
+      if (!plantAccess) {
+        return NextResponse.json(
+          { success: false, error: 'You do not have access to the selected plant' },
+          { status: 403 },
+        );
       }
     }
 
+    if (assetId) {
+      const asset = await db.asset.findUnique({
+        where: { id: assetId },
+        select: { id: true, plantId: true, name: true },
+      });
+      if (!asset) {
+        return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
+      }
+      if (asset.plantId !== resolvedPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Asset does not belong to the selected plant' },
+          { status: 400 },
+        );
+      }
+    }
+
+    let resolvedDepartmentId: string | null = departmentId || null;
+    let resolvedSupervisorId: string | null = explicitSupervisorId || null;
+
+    if (resolvedDepartmentId) {
+      const department = await db.department.findUnique({
+        where: { id: resolvedDepartmentId },
+        select: { id: true, plantId: true, supervisorId: true },
+      });
+      if (!department) {
+        return NextResponse.json({ success: false, error: 'Department not found' }, { status: 404 });
+      }
+      if (department.plantId !== resolvedPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Department does not belong to the selected plant' },
+          { status: 400 },
+        );
+      }
+      if (!resolvedSupervisorId) resolvedSupervisorId = department.supervisorId ?? null;
+    } else {
+      // Backward-compatible bridge: User.department is currently a legacy string,
+      // while MaintenanceRequest uses Department.id. Resolve it by id/code/name
+      // inside the selected plant when possible.
+      const requester = await db.user.findUnique({
+        where: { id: session.userId },
+        select: { department: true },
+      });
+      const legacyDepartment = requester?.department?.trim();
+      if (legacyDepartment) {
+        const department = await db.department.findFirst({
+          where: {
+            plantId: resolvedPlantId,
+            OR: [
+              { id: legacyDepartment },
+              { code: legacyDepartment },
+              { name: legacyDepartment },
+            ],
+          },
+          select: { id: true, supervisorId: true },
+        });
+        if (department) {
+          resolvedDepartmentId = department.id;
+          if (!resolvedSupervisorId) resolvedSupervisorId = department.supervisorId ?? null;
+        }
+      }
+    }
+
+    if (resolvedSupervisorId) {
+      const supervisor = await db.user.findUnique({
+        where: { id: resolvedSupervisorId },
+        select: {
+          status: true,
+          userRoles: { select: { role: { select: { slug: true } } } },
+          plantAccess: { where: { plantId: resolvedPlantId }, select: { id: true } },
+        },
+      });
+      const supervisorRoles = supervisor?.userRoles.map((ur) => ur.role.slug) ?? [];
+      const isMaintenanceSupervisor = supervisorRoles.some((slug) =>
+        ['maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'admin'].includes(slug),
+      );
+      if (!supervisor || supervisor.status !== 'active' || !isMaintenanceSupervisor) {
+        return NextResponse.json(
+          { success: false, error: 'Selected supervisor is not an active maintenance approver' },
+          { status: 400 },
+        );
+      }
+      if (supervisor.plantAccess.length === 0 && !supervisorRoles.includes('admin')) {
+        return NextResponse.json(
+          { success: false, error: 'Selected supervisor does not have access to the selected plant' },
+          { status: 400 },
+        );
+      }
+    } else if (!isAdmin(session)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Supervisor assignment required. Configure the requester department supervisor or select an authorized supervisor.',
+        },
+        { status: 400 },
+      );
+    }
+
+    const requestNumber = await generateRequestNumber();
     const mr = await db.maintenanceRequest.create({
       data: {
         requestNumber,
@@ -220,7 +314,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send notification to the auto-detected supervisor with full details
     if (resolvedSupervisorId && resolvedSupervisorId !== session.userId) {
       const desc = description ? description.substring(0, 120) : '';
       const assetInfo = assetName || '';
@@ -237,7 +330,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Also notify all admins about the new maintenance request
     await notifyAdmins(
       'mr_assigned',
       `New MR: ${mr.requestNumber}`,

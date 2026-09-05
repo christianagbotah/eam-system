@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // GET /api/repairs/damaged-tools/[id]
 export async function GET(
@@ -28,9 +29,9 @@ export async function GET(
         },
         workOrder: {
           select: {
-            id: true, woNumber: true, title: true, status: true,
+            id: true, plantId: true, woNumber: true, title: true, status: true,
+            assetId: true, assetName: true,
             assignee: { select: { id: true, fullName: true } },
-            asset: { select: { id: true, name: true, assetTag: true } },
           },
         },
         toolRequest: { select: { id: true } },
@@ -45,7 +46,32 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Damaged tool report not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: report });
+    const plantScope = await getPlantScope(request, session);
+    const reportPlantId = report.workOrder?.plantId;
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, reportPlantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const asset = report.workOrder?.assetId
+      ? await db.asset.findUnique({
+          where: { id: report.workOrder.assetId },
+          select: { id: true, name: true, assetTag: true },
+        })
+      : null;
+
+    const data = {
+      ...report,
+      workOrder: report.workOrder
+        ? {
+            ...report.workOrder,
+            asset: asset ?? (report.workOrder.assetName
+              ? { id: report.workOrder.assetId, name: report.workOrder.assetName, assetTag: null }
+              : null),
+          }
+        : null,
+    };
+
+    return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch damaged tool report';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -64,9 +90,17 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.damagedToolReport.findUnique({ where: { id } });
+    const existing = await db.damagedToolReport.findUnique({
+      where: { id },
+      include: { workOrder: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Damaged tool report not found' }, { status: 404 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const terminalStatuses = ['repaired', 'written_off', 'replaced'];
@@ -81,7 +115,7 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        (updateData as Record<string, unknown>)[field] = body[field];
+        updateData[field] = body[field];
       }
     }
 
@@ -123,7 +157,6 @@ export async function POST(
     const body = await request.json();
     const { action } = body;
 
-    // Role-based access for workflow actions
     const isStoreRole = isAdmin(session) || hasRole(session, 'inventory_manager') || hasRole(session, 'store_keeper') || hasRole(session, 'tools_shop_attendant');
     const isMaintRole = isAdmin(session) || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_supervisor') || hasRole(session, 'maintenance_planner');
 
@@ -159,7 +192,6 @@ export async function POST(
 
     const now = new Date();
 
-    // ── ASSESS ──
     if (action === 'assess') {
       if (existing.status !== 'reported') {
         return NextResponse.json({ success: false, error: `Cannot assess: current status is '${existing.status}', expected 'reported'` }, { status: 400 });
@@ -195,7 +227,6 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── QUOTE_REPAIR ──
     if (action === 'quote_repair') {
       if (existing.status !== 'assessed') {
         return NextResponse.json({ success: false, error: `Cannot quote repair: current status is '${existing.status}', expected 'assessed'` }, { status: 400 });
@@ -223,7 +254,6 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── START_REPAIR ──
     if (action === 'start_repair') {
       if (existing.status !== 'repair_quoted') {
         return NextResponse.json({ success: false, error: `Cannot start repair: current status is '${existing.status}', expected 'repair_quoted'` }, { status: 400 });
@@ -247,7 +277,6 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── COMPLETE_REPAIR ──
     if (action === 'complete_repair') {
       if (existing.status !== 'repair_in_progress') {
         return NextResponse.json({ success: false, error: `Cannot complete repair: current status is '${existing.status}', expected 'repair_in_progress'` }, { status: 400 });
@@ -270,12 +299,10 @@ export async function POST(
             reportedBy: { select: { id: true, fullName: true } },
           },
         }),
-        // Update Tool status to 'available'
         db.tool.update({
           where: { id: existing.toolId },
           data: { status: 'available', condition: 'good' },
         }),
-        // Create tool transaction for repair completion
         db.toolTransaction.create({
           data: {
             toolId: existing.toolId,
@@ -290,7 +317,6 @@ export async function POST(
         newValues: { status: 'repaired', actualRepairCost },
       });
 
-      // Notify reporter and technician
       const notifyIds = [existing.reportedById, existing.technicianId].filter(Boolean) as string[];
       for (const uid of notifyIds) {
         await notifyUser(
@@ -305,7 +331,6 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── WRITE_OFF ──
     if (action === 'write_off') {
       if (!['reported', 'assessed', 'repair_quoted', 'repair_in_progress'].includes(existing.status)) {
         return NextResponse.json({ success: false, error: `Cannot write off: current status is '${existing.status}'` }, { status: 400 });
@@ -331,12 +356,10 @@ export async function POST(
             reportedBy: { select: { id: true, fullName: true } },
           },
         }),
-        // Update Tool status to 'retired'
         db.tool.update({
           where: { id: existing.toolId },
           data: { status: 'retired' },
         }),
-        // Create tool transaction for retirement
         db.toolTransaction.create({
           data: {
             toolId: existing.toolId,
@@ -354,7 +377,6 @@ export async function POST(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ── REPLACE ──
     if (action === 'replace') {
       if (!['reported', 'assessed', 'repair_quoted', 'repair_in_progress'].includes(existing.status)) {
         return NextResponse.json({ success: false, error: `Cannot replace: current status is '${existing.status}'` }, { status: 400 });
@@ -374,12 +396,10 @@ export async function POST(
             reportedBy: { select: { id: true, fullName: true } },
           },
         }),
-        // Update original Tool status to 'retired'
         db.tool.update({
           where: { id: existing.toolId },
           data: { status: 'retired' },
         }),
-        // Create tool transaction for retirement
         db.toolTransaction.create({
           data: {
             toolId: existing.toolId,
@@ -390,7 +410,6 @@ export async function POST(
         }),
       ]);
 
-      // If a replacement tool is specified, update its status
       if (replacedWithToolId) {
         try {
           await db.tool.update({

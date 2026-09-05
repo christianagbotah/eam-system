@@ -74,6 +74,9 @@ export async function atomicIssueTools(
           throw new Error('issuedItems array is required for multi-tool requests');
         }
 
+        // Track total actually issued to decide final status
+        let actualIssuedTotal = 0;
+
         // Process all items atomically
         for (const issuedItem of issuedItems) {
           const lineItem = toolReq.items.find((i: any) => i.id === issuedItem.itemId);
@@ -127,6 +130,8 @@ export async function atomicIssueTools(
             // Prevent negative quantity
             if (actualIssued <= 0) continue;
 
+            actualIssuedTotal += actualIssued;
+
             // Deduct from tool within transaction
             await tx.tool.update({
               where: { id: lineItem.toolId },
@@ -162,6 +167,7 @@ export async function atomicIssueTools(
             });
           } else {
             // No toolId — just update the line item
+            actualIssuedTotal += qtyToIssue;
             await tx.repairToolRequestItem.update({
               where: { id: lineItem.id },
               data: {
@@ -172,6 +178,44 @@ export async function atomicIssueTools(
             });
           }
         }
+
+        // CRITICAL: If nothing was actually issued (e.g. all items calibration-blocked),
+        // do NOT mark the request as 'issued'. Return early with warnings.
+        if (actualIssuedTotal === 0) {
+          warnings.push('No items were actually issued (all blocked or unavailable). Request status unchanged.')
+          const unchanged = await tx.repairToolRequest.findUnique({
+            where: { id: toolRequestId },
+            include: {
+              requestedBy: { select: { id: true, fullName: true, username: true } },
+              supervisorApprovedBy: { select: { id: true, fullName: true } },
+              storekeeperApprovedBy: { select: { id: true, fullName: true } },
+              issuedByUser: { select: { id: true, fullName: true } },
+              returnedByUser: { select: { id: true, fullName: true } },
+              workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
+              tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
+              items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } } }, orderBy: { createdAt: 'asc' } },
+            },
+          });
+          return unchanged;
+        }
+
+        // Update request status to issued (only when at least one item was actually issued)
+        const updated = await tx.repairToolRequest.update({
+          where: { id: toolRequestId },
+          data: { status: 'issued', issuedById: session.userId, issuedAt: now },
+          include: {
+            requestedBy: { select: { id: true, fullName: true, username: true } },
+            supervisorApprovedBy: { select: { id: true, fullName: true } },
+            storekeeperApprovedBy: { select: { id: true, fullName: true } },
+            issuedByUser: { select: { id: true, fullName: true } },
+            returnedByUser: { select: { id: true, fullName: true } },
+            workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
+            tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
+            items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } } }, orderBy: { createdAt: 'asc' } },
+          },
+        });
+
+        return updated;
       } else if (toolReq.toolId) {
         // Legacy single-tool request
         const tool = toolReq.tool;
@@ -211,10 +255,10 @@ export async function atomicIssueTools(
         });
       }
 
-      // Update request status to issued
+      // Single-tool path: update request status to issued (only reaches here for non-blocked single-tool)
       const updated = await tx.repairToolRequest.update({
         where: { id: toolRequestId },
-        data: { status: 'issued', issuedById: session.userId, issuedAt: now },
+        data: { status: 'issued', issuedById: session.userId, issuedAt: now, ...(toolReq.toolId ? { toolConditionAtIssue: toolReq.tool?.condition || toolReq.toolConditionAtIssue } : {}) },
         include: {
           requestedBy: { select: { id: true, fullName: true, username: true } },
           supervisorApprovedBy: { select: { id: true, fullName: true } },

@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 /**
  * PUT /api/work-orders/[id]/team-member-requests/[reqId]
  * Approve or reject a team member request.
- * - Only the assigner, admin, or users with work_orders.assign permission can review
- * - Trade-based requests: on approve, the planner selects which technician to assign
- * - User-based requests: on approve, automatically adds the specified team member to the WO
  */
 export async function PUT(
   request: NextRequest,
@@ -21,48 +19,50 @@ export async function PUT(
     }
 
     const { id, reqId } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
-    const { action, reviewNotes, assignUserId } = body; // action: "approve" | "reject", assignUserId: technician to assign when approving trade request
+    const { action, reviewNotes, assignUserId } = body;
 
     if (!action || !['approve', 'reject'].includes(action)) {
       return NextResponse.json({ success: false, error: 'action must be "approve" or "reject"' }, { status: 400 });
     }
 
-    // Fetch WO
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
         id: true,
         woNumber: true,
         title: true,
+        plantId: true,
+        assignedTo: true,
+        teamLeaderId: true,
         assignedBy: true,
         plannerId: true,
         isLocked: true,
-        teamMembers: { select: { userId: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
       },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
-    // Permission check: only planner, assigner, admin, or users with assign permission can review
     const canReview = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician']) ||
       wo.plannerId === session.userId ||
       wo.assignedBy === session.userId;
 
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'Only the person who assigned this work order or an admin/planner can review team member requests.' },
-        { status: 403 }
+        { success: false, error: 'Only the assigner, planner, or an authorized assignment user can review team member requests.' },
+        { status: 403 },
       );
     }
 
-    // Fetch the request
     const teamRequest = await db.woTeamMemberRequest.findUnique({
       where: { id: reqId },
       include: {
@@ -73,30 +73,24 @@ export async function PUT(
     if (!teamRequest) {
       return NextResponse.json({ success: false, error: 'Team member request not found' }, { status: 404 });
     }
-
     if (teamRequest.workOrderId !== id) {
       return NextResponse.json({ success: false, error: 'Request does not belong to this work order' }, { status: 400 });
     }
-
     if (teamRequest.status !== 'pending') {
       return NextResponse.json(
         { success: false, error: `Request has already been ${teamRequest.status}` },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
-    const newStatus = action === 'approve' ? 'approved' : 'rejected';
-
     if (action === 'approve') {
-      // Determine which user to assign
-      let userIdToAssign = teamRequest.requestedUserId; // from user-based request
+      let userIdToAssign = teamRequest.requestedUserId;
 
-      // Trade-based request: planner must specify which technician to assign
       if (!userIdToAssign && teamRequest.requestedTrade) {
         if (!assignUserId) {
           return NextResponse.json(
             { success: false, error: 'Please select a technician to assign for this trade request.' },
-            { status: 400 }
+            { status: 400 },
           );
         }
         userIdToAssign = assignUserId;
@@ -105,14 +99,20 @@ export async function PUT(
       if (!userIdToAssign) {
         return NextResponse.json(
           { success: false, error: 'No user to assign. Either the request must specify a user, or you must select one.' },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
-      // Verify the assignee exists and is active
       const assignee = await db.user.findUnique({
         where: { id: userIdToAssign },
-        select: { id: true, fullName: true, status: true },
+        select: {
+          id: true,
+          fullName: true,
+          status: true,
+          plantAccess: wo.plantId
+            ? { where: { plantId: wo.plantId }, select: { id: true } }
+            : { select: { id: true } },
+        },
       });
       if (!assignee) {
         return NextResponse.json({ success: false, error: 'Selected technician not found.' }, { status: 400 });
@@ -120,52 +120,93 @@ export async function PUT(
       if (assignee.status !== 'active') {
         return NextResponse.json({ success: false, error: 'Selected technician is not active.' }, { status: 400 });
       }
+      if (wo.plantId && assignee.plantAccess.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Selected technician does not have access to the work order plant.' },
+          { status: 403 },
+        );
+      }
 
-      // Check not already a team member (could have been added since request was created)
-      const alreadyMember = wo.teamMembers?.some(tm => tm.userId === userIdToAssign);
-      if (alreadyMember) {
-        // Still mark as approved but don't create duplicate
-        await db.woTeamMemberRequest.update({
+      // When assistance turns a single-tech WO into a team WO, the original
+      // assignee becomes team leader unless a leader was already designated.
+      const effectiveLeaderId = wo.teamLeaderId || wo.assignedTo || userIdToAssign;
+      const alreadyMember = wo.teamMembers.some((tm) => tm.userId === userIdToAssign);
+      const now = new Date();
+
+      await db.$transaction(async (tx) => {
+        if (effectiveLeaderId && wo.teamLeaderId !== effectiveLeaderId) {
+          await tx.workOrder.update({
+            where: { id },
+            data: { teamLeaderId: effectiveLeaderId },
+          });
+        }
+
+        if (effectiveLeaderId) {
+          await tx.workOrderTeamMember.upsert({
+            where: { workOrderId_userId: { workOrderId: id, userId: effectiveLeaderId } },
+            update: { role: 'team_leader', accessLevel: 'full' },
+            create: {
+              workOrderId: id,
+              userId: effectiveLeaderId,
+              role: 'team_leader',
+              accessLevel: 'full',
+              addedById: session.userId,
+              addedVia: 'direct',
+              assignedAt: now,
+            },
+          });
+        }
+
+        const isLeader = userIdToAssign === effectiveLeaderId;
+        await tx.workOrderTeamMember.upsert({
+          where: { workOrderId_userId: { workOrderId: id, userId: userIdToAssign } },
+          update: {
+            role: isLeader ? 'team_leader' : (teamRequest.role || 'assistant'),
+            accessLevel: isLeader ? 'full' : 'execution',
+            addedById: session.userId,
+            addedVia: 'request',
+          },
+          create: {
+            workOrderId: id,
+            userId: userIdToAssign,
+            role: isLeader ? 'team_leader' : (teamRequest.role || 'assistant'),
+            accessLevel: isLeader ? 'full' : 'execution',
+            addedById: session.userId,
+            addedVia: 'request',
+          },
+        });
+
+        await tx.woTeamMemberRequest.update({
           where: { id: reqId },
           data: {
             status: 'approved',
-            requestedUserId: userIdToAssign, // record who was actually assigned
+            requestedUserId: userIdToAssign,
             reviewedBy: session.userId,
-            reviewedAt: new Date(),
-            reviewNotes: reviewNotes || 'Already a team member',
+            reviewedAt: now,
+            reviewNotes: reviewNotes || (alreadyMember ? 'Already a team member; execution access confirmed' : null),
           },
         });
-        return NextResponse.json({
-          success: true,
-          data: { ...teamRequest, status: 'approved', message: 'User is already a team member' },
+
+        await tx.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'approve',
+            entityType: 'wo_team_member_request',
+            entityId: reqId,
+            newValues: JSON.stringify({
+              workOrderId: id,
+              requestedTrade: teamRequest.requestedTrade || null,
+              assignedUser: assignee.fullName,
+              assignedUserId: userIdToAssign,
+              effectiveLeaderId,
+              accessLevel: isLeader ? 'full' : 'execution',
+              status: 'approved',
+              reviewNotes: reviewNotes || null,
+            }),
+          },
         });
-      }
-
-      // Add the team member
-      await db.workOrderTeamMember.create({
-        data: {
-          workOrderId: id,
-          userId: userIdToAssign,
-          role: teamRequest.role,
-          accessLevel: 'read_only',
-          addedById: session.userId,
-          addedVia: 'request',
-        },
       });
 
-      // Update the request with the assigned user
-      await db.woTeamMemberRequest.update({
-        where: { id: reqId },
-        data: {
-          status: 'approved',
-          requestedUserId: userIdToAssign, // record who was actually assigned (important for trade-based)
-          reviewedBy: session.userId,
-          reviewedAt: new Date(),
-          reviewNotes: reviewNotes || null,
-        },
-      });
-
-      // Notify the new team member
       if (userIdToAssign !== session.userId) {
         await notifyUser(
           userIdToAssign,
@@ -178,39 +219,18 @@ export async function PUT(
         );
       }
 
-      // Notify the requester
       if (teamRequest.requestedBy !== session.userId) {
-        const assignedName = assignee?.fullName || 'a technician';
         await notifyUser(
           teamRequest.requestedBy,
           'wo_team_request_approved',
           'Team Request Approved',
-          `Your request for ${teamRequest.requestedTrade || 'a team member'} on WO ${wo.woNumber || 'Work Order'} has been approved. ${assignedName} has been assigned.`,
+          `Your request for ${teamRequest.requestedTrade || 'a team member'} on WO ${wo.woNumber || 'Work Order'} has been approved. ${assignee.fullName} has been assigned.`,
           'work_order',
           id,
           `wo-detail?id=${id}`,
         );
       }
 
-      // Audit log
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'approve',
-          entityType: 'wo_team_member_request',
-          entityId: reqId,
-          newValues: JSON.stringify({
-            workOrderId: id,
-            requestedTrade: teamRequest.requestedTrade || null,
-            assignedUser: assignee?.fullName || null,
-            assignedUserId: userIdToAssign,
-            status: 'approved',
-            reviewNotes: reviewNotes || null,
-          }),
-        },
-      });
-
-      // Fetch the updated request for response
       const updated = await db.woTeamMemberRequest.findUnique({
         where: { id: reqId },
         include: {
@@ -234,7 +254,6 @@ export async function PUT(
       },
     });
 
-    // Notify the requester about the rejection
     if (teamRequest.requestedBy !== session.userId) {
       const targetDesc = teamRequest.requestedTrade || teamRequest.requestedUser?.fullName || 'a team member';
       await notifyUser(
@@ -248,7 +267,6 @@ export async function PUT(
       );
     }
 
-    // Audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -265,7 +283,6 @@ export async function PUT(
       },
     });
 
-    // Fetch the updated request for response
     const updated = await db.woTeamMemberRequest.findUnique({
       where: { id: reqId },
       include: {
@@ -297,31 +314,28 @@ export async function DELETE(
     }
 
     const { id, reqId } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
 
-    const teamRequest = await db.woTeamMemberRequest.findUnique({
-      where: { id: reqId },
-    });
+    const teamRequest = await db.woTeamMemberRequest.findUnique({ where: { id: reqId } });
     if (!teamRequest) {
       return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
     }
-
     if (teamRequest.workOrderId !== id) {
       return NextResponse.json({ success: false, error: 'Request does not belong to this work order' }, { status: 400 });
     }
 
-    // Only the requester can cancel, or admin/planner
     const canCancel = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician']) ||
       teamRequest.requestedBy === session.userId;
 
     if (!canCancel) {
       return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
     }
-
     if (teamRequest.status !== 'pending') {
       return NextResponse.json(
         { success: false, error: `Cannot cancel a ${teamRequest.status} request` },
-        { status: 400 }
+        { status: 400 },
       );
     }
 

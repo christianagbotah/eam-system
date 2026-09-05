@@ -26,8 +26,15 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
 
     // Plant scope: filter handovers by linked work order's plant
-    if (plantScope.isScoped && plantScope.plantId) {
-      where.workOrder = { plantId: plantScope.plantId };
+    if (!plantScope.isSystemWide) {
+      if (plantScope.plantId) {
+        where.workOrder = { plantId: plantScope.plantId };
+      } else if (plantScope.accessiblePlantIds.length > 0) {
+        where.workOrder = { plantId: { in: plantScope.accessiblePlantIds } };
+      } else {
+        // No plant assignments — deny access
+        where.workOrder = { plantId: '__ACCESS_DENIED__' };
+      }
     }
 
     if (workOrderId) where.workOrderId = workOrderId;
@@ -66,8 +73,14 @@ export async function GET(request: NextRequest) {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const kpiWhere: Record<string, unknown> = {};
-    if (plantScope.isScoped && plantScope.plantId) {
-      kpiWhere.workOrder = { plantId: plantScope.plantId };
+    if (!plantScope.isSystemWide) {
+      if (plantScope.plantId) {
+        kpiWhere.workOrder = { plantId: plantScope.plantId };
+      } else if (plantScope.accessiblePlantIds.length > 0) {
+        kpiWhere.workOrder = { plantId: { in: plantScope.accessiblePlantIds } };
+      } else {
+        kpiWhere.workOrder = { plantId: '__ACCESS_DENIED__' };
+      }
     }
 
     const [totalCount, todayCount, pendingCount, confirmedCount] = await Promise.all([

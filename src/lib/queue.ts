@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { createLogger } from '@/lib/logger';
-import { getRedisClient, closeRedisClient } from '@/lib/redis';
+import { closeRedisClient } from '@/lib/redis';
 
 const logger = createLogger('queue');
 
@@ -35,7 +35,6 @@ export interface JobRecord<T = unknown> {
   failedAt?: string;
 }
 
-// Queue name constants — aligned with iAssetsPro EAM domain
 export const QUEUES = {
   NOTIFICATION: 'notifications',
   TELEMETRY: 'telemetry-processing',
@@ -51,7 +50,6 @@ export const QUEUES = {
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
-// Human-readable labels for UI display
 export const QUEUE_LABELS: Record<QueueName, string> = {
   [QUEUES.NOTIFICATION]: 'Notifications',
   [QUEUES.TELEMETRY]: 'Telemetry Processing',
@@ -103,11 +101,9 @@ class InMemoryQueue {
     if (!this.queues.has(queueName)) {
       this.queues.set(queueName, new Map());
     }
-
     this.queues.get(queueName)!.set(id, job);
 
     if (job.status === 'waiting') {
-      // Process async to not block
       setImmediate(() => this.processQueue(queueName));
     } else if (definition.delay) {
       setTimeout(() => {
@@ -129,17 +125,13 @@ class InMemoryQueue {
 
     try {
       const processors = this.processors.get(queueName);
-      if (!processors || processors.size === 0) {
-        return;
-      }
+      if (!processors || processors.size === 0) return;
 
       const queue = this.queues.get(queueName);
       if (!queue) return;
 
       for (const [id, job] of queue.entries()) {
         if (job.status !== 'waiting') continue;
-
-        // Find first processor
         const processor = [...processors][0];
         if (!processor) continue;
 
@@ -156,21 +148,26 @@ class InMemoryQueue {
           logger.info(`Job completed [${queueName}]`, { jobId: id, jobName: job.name });
         } catch (error) {
           job.error = error instanceof Error ? error.message : String(error);
-
           if (job.attempts < job.maxAttempts) {
             job.status = 'waiting';
-            const backoff = (job.attempts - 1) * 5000; // 5s, 10s, 15s...
-            logger.warn(`Job failed, retrying [${queueName}]`, { jobId: id, attempt: job.attempts, nextRetryInMs: backoff });
+            const backoff = Math.max(0, (job.attempts - 1) * 5000);
+            logger.warn(`Job failed, retrying [${queueName}]`, {
+              jobId: id,
+              attempt: job.attempts,
+              nextRetryInMs: backoff,
+            });
             setTimeout(() => {
               const retryJob = this.queues.get(queueName)?.get(id);
-              if (retryJob && retryJob.status === 'waiting') {
-                this.processQueue(queueName);
-              }
+              if (retryJob && retryJob.status === 'waiting') this.processQueue(queueName);
             }, backoff);
           } else {
             job.status = 'failed';
             job.failedAt = new Date().toISOString();
-            logger.error(`Job failed permanently [${queueName}]`, { jobId: id, jobName: job.name, error: job.error });
+            logger.error(`Job failed permanently [${queueName}]`, {
+              jobId: id,
+              jobName: job.name,
+              error: job.error,
+            });
           }
         }
       }
@@ -180,12 +177,8 @@ class InMemoryQueue {
   }
 
   async process<T>(queueName: string, handler: (job: JobRecord<T>) => Promise<unknown>): Promise<void> {
-    if (!this.processors.has(queueName)) {
-      this.processors.set(queueName, new Set());
-    }
+    if (!this.processors.has(queueName)) this.processors.set(queueName, new Set());
     this.processors.get(queueName)!.add(handler as (job: JobRecord) => Promise<unknown>);
-
-    // Start processing any waiting jobs
     this.processQueue(queueName);
   }
 
@@ -195,17 +188,18 @@ class InMemoryQueue {
 
   async getQueueStatus(queueName: string) {
     const queue = this.queues.get(queueName);
-    if (!queue) return { name: queueName, total: 0, waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
-
+    if (!queue) {
+      return { name: queueName, total: 0, waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
+    }
     const jobs = [...queue.values()];
     return {
       name: queueName,
       total: jobs.length,
-      waiting: jobs.filter(j => j.status === 'waiting').length,
-      active: jobs.filter(j => j.status === 'active').length,
-      completed: jobs.filter(j => j.status === 'completed').length,
-      failed: jobs.filter(j => j.status === 'failed').length,
-      delayed: jobs.filter(j => j.status === 'delayed').length,
+      waiting: jobs.filter((job) => job.status === 'waiting').length,
+      active: jobs.filter((job) => job.status === 'active').length,
+      completed: jobs.filter((job) => job.status === 'completed').length,
+      failed: jobs.filter((job) => job.status === 'failed').length,
+      delayed: jobs.filter((job) => job.status === 'delayed').length,
     };
   }
 
@@ -253,62 +247,91 @@ class InMemoryQueue {
 }
 
 // ============================================================================
-// BullMQ Adapter — production queue backed by Redis via BullMQ
+// BullMQ Adapter — production queue backed by Redis
 // ============================================================================
 
-/**
- * Shared connection options derived from REDIS_URL.
- * Each BullMQ Queue/Worker needs its own ioredis instance.
- */
-function createBullMQConnection() {
-  const url = process.env.REDIS_URL;
-  if (!url) throw new Error('REDIS_URL is required for BullMQ');
-  return { connection: { url } };
-}
+type BullMQConnectionOptions = {
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  db?: number;
+  tls?: Record<string, never>;
+  maxRetriesPerRequest: null;
+};
 
 /**
- * Adapter that wraps BullMQ Queue + Worker into the same API surface
- * as InMemoryQueue, allowing seamless switching at the jobQueue facade.
+ * Parse REDIS_URL into connection options understood by BullMQ/ioredis.
+ *
+ * BullMQ is deliberately selected from configuration, not from an instantaneous
+ * Redis "ready" flag. ioredis owns connection establishment and retry behavior;
+ * this prevents a production process from becoming permanently pinned to the
+ * in-memory adapter merely because Redis was still connecting on first use.
  */
+export function getBullMQConnectionOptions(redisUrl = process.env.REDIS_URL): BullMQConnectionOptions {
+  if (!redisUrl?.trim()) throw new Error('REDIS_URL is required for BullMQ');
+
+  const parsed = new URL(redisUrl);
+  if (parsed.protocol !== 'redis:' && parsed.protocol !== 'rediss:') {
+    throw new Error(`Unsupported Redis protocol: ${parsed.protocol}`);
+  }
+
+  const dbSegment = parsed.pathname.replace(/^\//, '');
+  const db = dbSegment ? Number.parseInt(dbSegment, 10) : 0;
+  if (!Number.isFinite(db) || db < 0) {
+    throw new Error('REDIS_URL contains an invalid database index');
+  }
+
+  return {
+    host: parsed.hostname,
+    port: Number.parseInt(parsed.port || '6379', 10),
+    ...(parsed.username ? { username: decodeURIComponent(parsed.username) } : {}),
+    ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
+    ...(db > 0 ? { db } : {}),
+    ...(parsed.protocol === 'rediss:' ? { tls: {} } : {}),
+    // BullMQ Workers require this setting so blocking commands are not limited
+    // by the normal command retry cap.
+    maxRetriesPerRequest: null,
+  };
+}
+
+function createBullMQConnection() {
+  return { connection: getBullMQConnectionOptions() };
+}
+
 class BullMQQueueAdapter {
-  private queues = new Map<string, any>(); // BullMQ Queue instances
-  private workers = new Map<string, any>(); // BullMQ Worker instances
+  private queues = new Map<string, any>();
+  private workers = new Map<string, any>();
   private eventListeners = new Map<string, Set<{
     event: 'completed' | 'failed' | 'progress';
     callback: (...args: unknown[]) => void;
   }>>();
 
   private getOrCreateQueue(queueName: string): any {
-    let q = this.queues.get(queueName);
-    if (!q) {
+    let queue = this.queues.get(queueName);
+    if (!queue) {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { Queue } = require('bullmq');
-      q = new Queue(queueName, {
+      queue = new Queue(queueName, {
         ...createBullMQConnection(),
         defaultJobOptions: {
           removeOnComplete: { count: 200 },
           removeOnFail: { count: 100 },
         },
       });
-      this.queues.set(queueName, q);
+      this.queues.set(queueName, queue);
     }
-    return q;
+    return queue;
   }
 
   async add<T>(queueName: string, definition: JobDefinition<T>): Promise<string> {
     const queue = this.getOrCreateQueue(queueName);
-
-    const opts: Record<string, any> = {};
+    const opts: Record<string, unknown> = {};
     if (definition.id) opts.jobId = definition.id;
     if (definition.priority) opts.priority = definition.priority;
     if (definition.attempts) opts.attempts = definition.attempts;
     if (definition.delay && definition.delay > 0) opts.delay = definition.delay;
-    if (definition.backoff) {
-      opts.backoff = {
-        type: 'exponential',
-        delay: definition.backoff,
-      };
-    }
+    if (definition.backoff) opts.backoff = { type: 'exponential', delay: definition.backoff };
 
     const job = await queue.add(definition.name, definition.data, opts);
     logger.info(`BullMQ job added to queue [${queueName}]`, {
@@ -319,7 +342,6 @@ class BullMQQueueAdapter {
   }
 
   async process<T>(queueName: string, handler: (job: JobRecord<T>) => Promise<unknown>): Promise<void> {
-    // Prevent duplicate workers for the same queue
     if (this.workers.has(queueName)) {
       logger.warn(`Worker already registered for [${queueName}], skipping`);
       return;
@@ -327,47 +349,40 @@ class BullMQQueueAdapter {
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Worker } = require('bullmq');
+    const worker = new Worker(
+      queueName,
+      async (bullJob: any) => {
+        const jobRecord: JobRecord<T> = {
+          id: bullJob.id ?? '',
+          name: bullJob.name,
+          data: bullJob.data as T,
+          status: 'active',
+          progress: 0,
+          attempts: bullJob.attemptsMade,
+          maxAttempts: bullJob.opts?.attempts ?? 3,
+          createdAt: new Date(bullJob.timestamp ?? Date.now()).toISOString(),
+          startedAt: new Date(bullJob.processedOn ?? Date.now()).toISOString(),
+        };
+        return handler(jobRecord);
+      },
+      {
+        ...createBullMQConnection(),
+        concurrency: 5,
+        autorun: true,
+      },
+    );
 
-    const worker = new Worker(queueName, async (bullJob: any) => {
-      // Adapt BullMQ job → JobRecord shape for the handler
-      const jobRecord: JobRecord = {
-        id: bullJob.id ?? '',
-        name: bullJob.name,
-        data: bullJob.data as T,
-        status: 'active',
-        progress: 0,
-        attempts: bullJob.attemptsMade,
-        maxAttempts: bullJob.opts?.attempts ?? 3,
-        createdAt: new Date(bullJob.timestamp ?? Date.now()).toISOString(),
-        startedAt: new Date(bullJob.processedOn ?? Date.now()).toISOString(),
-      };
-
-      const result = await handler(jobRecord);
-      return result;
-    }, {
-      ...createBullMQConnection(),
-      concurrency: 5,
-      autorun: true,
-    });
-
-    // --- Wire up event listeners ---
     worker.on('completed', (bullJob: any) => {
       logger.info(`BullMQ job completed [${queueName}]`, { jobId: bullJob.id });
       this.fireEvent(queueName, 'completed', bullJob);
     });
-
     worker.on('failed', (bullJob: any, err: Error) => {
-      logger.error(`BullMQ job failed [${queueName}]`, {
-        jobId: bullJob?.id,
-        error: err.message,
-      });
+      logger.error(`BullMQ job failed [${queueName}]`, { jobId: bullJob?.id, error: err.message });
       this.fireEvent(queueName, 'failed', bullJob, err);
     });
-
     worker.on('progress', (bullJob: any, progress: number) => {
       this.fireEvent(queueName, 'progress', bullJob, progress);
     });
-
     worker.on('error', (err: Error) => {
       logger.error(`BullMQ worker error [${queueName}]`, { error: err.message });
     });
@@ -378,10 +393,13 @@ class BullMQQueueAdapter {
 
   private fireEvent(queueName: string, event: string, ...args: unknown[]) {
     const listeners = this.eventListeners.get(queueName);
-    if (listeners) {
-      for (const listener of listeners) {
-        if (listener.event === event) {
-          try { listener.callback(...args); } catch (e) { /* skip */ }
+    if (!listeners) return;
+    for (const listener of listeners) {
+      if (listener.event === event) {
+        try {
+          listener.callback(...args);
+        } catch {
+          // A monitoring callback must never fail queue processing.
         }
       }
     }
@@ -391,7 +409,6 @@ class BullMQQueueAdapter {
     const queue = this.getOrCreateQueue(queueName);
     const bullJob = await queue.getJob(jobId);
     if (!bullJob) return null;
-
     const state = await bullJob.getState();
     return this.bullJobToRecord(bullJob, state);
   }
@@ -401,12 +418,11 @@ class BullMQQueueAdapter {
     const states: Array<'waiting' | 'active' | 'completed' | 'failed' | 'delayed'> = [
       'waiting', 'active', 'completed', 'failed', 'delayed',
     ];
-
     const jobs: JobRecord[] = [];
     for (const state of states) {
       const bullJobs = await queue.getJobs([state], 0, 200);
-      for (const bj of bullJobs) {
-        jobs.push(this.bullJobToRecord(bj, state));
+      for (const bullJob of bullJobs) {
+        jobs.push(this.bullJobToRecord(bullJob, state));
       }
     }
     return jobs;
@@ -414,7 +430,6 @@ class BullMQQueueAdapter {
 
   async getQueueStatus(queueName: string) {
     const queue = this.getOrCreateQueue(queueName);
-
     const [waiting, active, completed, failed, delayed] = await Promise.all([
       queue.getWaitingCount(),
       queue.getActiveCount(),
@@ -422,7 +437,6 @@ class BullMQQueueAdapter {
       queue.getFailedCount(),
       queue.getDelayedCount(),
     ]);
-
     return {
       name: queueName,
       total: waiting + active + completed + failed + delayed,
@@ -446,7 +460,7 @@ class BullMQQueueAdapter {
     const queue = this.getOrCreateQueue(queueName);
     await queue.drain();
     await queue.obliterate({ force: true });
-    return 0; // obliterate doesn't return count
+    return 0;
   }
 
   async retryJob(queueName: string, jobId: string): Promise<boolean> {
@@ -473,9 +487,6 @@ class BullMQQueueAdapter {
     }
   }
 
-  /**
-   * Gracefully shut down all workers and queues. Call on process exit.
-   */
   async close(): Promise<void> {
     for (const [, worker] of this.workers) {
       try { await worker.close(); } catch { /* ignore */ }
@@ -488,16 +499,14 @@ class BullMQQueueAdapter {
     logger.info('BullMQ connections closed gracefully');
   }
 
-  // ------- Internal helpers -------
-
   private bullJobToRecord(bullJob: any, state: string): JobRecord {
     return {
       id: bullJob.id ?? '',
       name: bullJob.name,
       data: bullJob.data,
-      status: this.mapBullState(state) as JobStatus,
+      status: this.mapBullState(state),
       progress: bullJob.progress ?? 0,
-      result: undefined, // Not trivially available from BullMQ after the fact
+      result: bullJob.returnvalue ?? undefined,
       error: bullJob.failedReason ?? undefined,
       attempts: bullJob.attemptsMade,
       maxAttempts: bullJob.opts?.attempts ?? 3,
@@ -508,7 +517,7 @@ class BullMQQueueAdapter {
     };
   }
 
-  private mapBullState(state: string): string {
+  private mapBullState(state: string): JobStatus {
     switch (state) {
       case 'waiting': return 'waiting';
       case 'active': return 'active';
@@ -521,38 +530,29 @@ class BullMQQueueAdapter {
 }
 
 // ============================================================================
-// Queue Singleton & Public API — lazy detection of Redis availability
+// Queue Singleton & Public API
 // ============================================================================
 
 const memoryInstance = new InMemoryQueue();
-
-/**
- * Determine whether Redis is available right now.
- * Returns true if REDIS_URL is set and the client reports it is available.
- */
-function isRedisAvailable(): boolean {
-  if (!process.env.REDIS_URL) return false;
-  try {
-    const client = getRedisClient();
-    return client.isAvailable() && client.getType() === 'redis';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Internal adapter reference — lazily initialized on first call.
- * Once chosen (BullMQ or in-memory), it stays that way for the process lifetime.
- */
 let adapterInstance: InMemoryQueue | BullMQQueueAdapter | null = null;
 let adapterInitialized = false;
 
+/**
+ * Adapter choice is configuration-driven and immutable for the process:
+ *   REDIS_URL configured -> BullMQ
+ *   REDIS_URL absent     -> in-memory development/sandbox queue
+ *
+ * We intentionally do NOT check whether Redis reports "ready" here. Real Redis
+ * may still be connecting during application startup; BullMQ/ioredis handles
+ * that lifecycle. Checking readiness once and caching the result would create a
+ * permanent durability downgrade for the process.
+ */
 function getAdapter(): InMemoryQueue | BullMQQueueAdapter {
   if (!adapterInitialized) {
     adapterInitialized = true;
-    if (isRedisAvailable()) {
+    if (process.env.REDIS_URL?.trim()) {
       adapterInstance = new BullMQQueueAdapter();
-      logger.info('Job queue using BullMQ adapter (production)');
+      logger.info('Job queue using BullMQ adapter (REDIS_URL configured)');
     } else {
       adapterInstance = memoryInstance;
       logger.info('Job queue using in-memory adapter (development/sandbox)');
@@ -561,14 +561,6 @@ function getAdapter(): InMemoryQueue | BullMQQueueAdapter {
   return adapterInstance!;
 }
 
-/**
- * Backward-compatible facade. All existing code that imports `jobQueue`
- * and calls `.add()`, `.process()`, etc. will continue to work.
- *
- * On first use the adapter is chosen:
- *   - REDIS_URL set + client available → BullMQQueueAdapter
- *   - Otherwise                        → InMemoryQueue
- */
 export const jobQueue = {
   add: (...args: Parameters<InMemoryQueue['add']>) => getAdapter().add(...args),
   process: (...args: Parameters<InMemoryQueue['process']>) => getAdapter().process(...args),
@@ -581,21 +573,15 @@ export const jobQueue = {
   remove: (...args: Parameters<InMemoryQueue['removeJob']>) => getAdapter().removeJob(...args),
 };
 
-/**
- * Returns which adapter is in use: 'bullmq' or 'memory'.
- */
 export function getQueueAdapterType(): 'bullmq' | 'memory' {
-  const adapter = getAdapter();
-  return adapter instanceof BullMQQueueAdapter ? 'bullmq' : 'memory';
+  return getAdapter() instanceof BullMQQueueAdapter ? 'bullmq' : 'memory';
 }
 
-/**
- * Gracefully shut down the queue adapter. Useful on process exit.
- */
 export async function closeQueueAdapter(): Promise<void> {
   if (adapterInstance instanceof BullMQQueueAdapter) {
     await adapterInstance.close();
   }
+  await closeRedisClient();
 }
 
 // ============================================================================
@@ -603,9 +589,9 @@ export async function closeQueueAdapter(): Promise<void> {
 // ============================================================================
 
 export function registerDefaultProcessors() {
-  // Notification queue processor — dispatches via notifyUser (in-app, WebSocket, email, SMS)
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { notifyUser } = require('@/lib/notifications');
+
   jobQueue.process(QUEUES.NOTIFICATION, async (job) => {
     const { userId, title, message, type, entityType, entityId, actionUrl, forceSms } = job.data as {
       userId: string;
@@ -621,66 +607,60 @@ export function registerDefaultProcessors() {
     return { delivered: true, timestamp: new Date().toISOString() };
   });
 
-  // Telemetry processing queue
   jobQueue.process(QUEUES.TELEMETRY, async (job) => {
     const { sourceId, readings } = job.data as { sourceId: string; readings: unknown[] };
     logger.info('Processing telemetry batch', { sourceId, count: readings.length });
     return { processed: readings.length };
   });
 
-  // Audit logging queue
   jobQueue.process(QUEUES.AUDIT_LOGGING, async (job) => {
     const { action, entityType, entityId, userId } = job.data as Record<string, unknown>;
     logger.info('Audit log entry', { action, entityType, entityId, userId });
     return { logged: true };
   });
 
-  // Email delivery queue
   jobQueue.process(QUEUES.EMAIL, async (job) => {
     const { to, subject, template } = job.data as { to: string; subject: string; template: string };
     logger.info('Processing email job', { to, subject, template });
-    // In production: use nodemailer or external email service
     return { sent: true, to };
   });
 
-  // Report generation queue
   jobQueue.process(QUEUES.REPORT_GENERATION, async (job) => {
-    const { reportType, params } = job.data as { reportType: string; params: Record<string, unknown> };
+    const { reportType } = job.data as { reportType: string; params: Record<string, unknown> };
     logger.info('Generating report', { reportType });
     return { generated: true, reportType };
   });
 
-  // Asset indexing queue
   jobQueue.process(QUEUES.ASSET_INDEXING, async (job) => {
     const { assetId, operation } = job.data as { assetId: string; operation: string };
     logger.info('Indexing asset', { assetId, operation });
     return { indexed: true };
   });
 
-  // Maintenance scheduling queue
   jobQueue.process(QUEUES.MAINTENANCE_SCHEDULING, async (job) => {
     const { scheduleId, action } = job.data as { scheduleId: string; action: string };
     logger.info('Processing maintenance schedule', { scheduleId, action });
     return { scheduled: true };
   });
 
-  // Predictive analysis queue
   jobQueue.process(QUEUES.PREDICTIVE_ANALYSIS, async (job) => {
     const { modelId, assetId } = job.data as { modelId: string; assetId: string };
     logger.info('Running predictive analysis', { modelId, assetId });
     return { completed: true };
   });
 
-  // Cache warming queue
   jobQueue.process(QUEUES.CACHE_WARMING, async (job) => {
     const { cacheKey, source } = job.data as { cacheKey: string; source: string };
     logger.info('Warming cache', { cacheKey, source });
     return { warmed: true };
   });
 
-  // Workflow orchestration queue
   jobQueue.process(QUEUES.WORKFLOW, async (job) => {
-    const { workflowId, step, payload } = job.data as { workflowId: string; step: string; payload: Record<string, unknown> };
+    const { workflowId, step } = job.data as {
+      workflowId: string;
+      step: string;
+      payload: Record<string, unknown>;
+    };
     logger.info('Processing workflow step', { workflowId, step });
     return { executed: true };
   });

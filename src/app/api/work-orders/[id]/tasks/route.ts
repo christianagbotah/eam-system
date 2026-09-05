@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 export async function GET(
   request: NextRequest,
@@ -13,6 +14,10 @@ export async function GET(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
     // Verify work order exists
     const wo = await db.workOrder.findUnique({

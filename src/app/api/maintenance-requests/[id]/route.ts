@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { authorizeMaintenanceRequestPlant } from '@/lib/plant-auth-helpers';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: check if user can edit/delete a pending request (must be requester or admin)
@@ -71,7 +72,7 @@ export async function GET(
     // IDOR protection: ensure user has access to this MR's plant
     if (!isAdmin(session)) {
       const plantScope = await getPlantScope(request, session);
-      if (plantScope.denyAccess || !canAccessPlant(plantScope, mr.plantId)) {
+      if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, mr.plantId)) {
         // Check if user has access to the MR's plant via their userPlant records
         const hasPlantAccess = await db.userPlant.findFirst({
           where: { userId: session.userId, plantId: mr.plantId },
@@ -107,6 +108,11 @@ export async function PUT(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeMaintenanceRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
 
     const existing = await db.maintenanceRequest.findUnique({ where: { id } });
@@ -231,6 +237,10 @@ export async function DELETE(
     }
 
     const { id } = await params;
+
+    // Plant authorization
+    const plantAuth = await authorizeMaintenanceRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
     // Check: only pending requests, and only by requester or admin
     const check = await canModifyPendingRequest(id, session);

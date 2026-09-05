@@ -250,6 +250,33 @@ export async function POST(request: NextRequest) {
       });
       resolvedPlantId = userPlant?.plantId ?? null;
     }
+    // Fallback: if still null, try any single plant the user has access to
+    if (!resolvedPlantId && !isAdmin(session)) {
+      const anyPlant = await db.userPlant.findFirst({
+        where: { userId: session.userId },
+        select: { plantId: true },
+      });
+      if (anyPlant) {
+        resolvedPlantId = anyPlant.plantId;
+      }
+    }
+    // Null-plant guard: operational WOs must have a plant for non-system users
+    if (!resolvedPlantId && !isAdmin(session)) {
+      const userPlants = await db.userPlant.findMany({
+        where: { userId: session.userId },
+        select: { plantId: true },
+      });
+      if (userPlants.length > 1) {
+        return NextResponse.json(
+          { success: false, error: 'Plant selection required. You have access to multiple plants — specify X-Plant-ID header or plantId in the request body.' },
+          { status: 400 },
+        );
+      }
+      return NextResponse.json(
+        { success: false, error: 'No plant assigned. Contact your administrator to assign a plant.' },
+        { status: 400 },
+      );
+    }
 
     // Validate team members if provided
     if (teamMembers && Array.isArray(teamMembers)) {

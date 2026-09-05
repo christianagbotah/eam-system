@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { authorizeMaterialRequestPlant } from '@/lib/plant-auth-helpers';
 
 // POST /api/repairs/material-requests/reconcile
 // Records consumption data for an issued material request
@@ -23,6 +24,10 @@ export async function POST(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ success: false, error: 'Material request ID is required' }, { status: 400 });
     }
+
+    // Plant authorization
+    const plantAuth = await authorizeMaterialRequestPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
     if (consumedQty === undefined || consumedQty === null) {
       return NextResponse.json({ success: false, error: 'consumedQty is required' }, { status: 400 });

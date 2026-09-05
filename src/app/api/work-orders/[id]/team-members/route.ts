@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+
+const VALID_TEAM_ROLES = ['assistant', 'technician', 'team_leader'];
 
 /**
  * POST /api/work-orders/[id]/team-members
  * Directly add a team member to a work order.
  *
- * PERMISSION RULES:
- * - Admin: Always allowed
- * - Users with work_orders.assign / work_orders.*: Allowed
- * - The person who assigned the WO (wo.assignedBy): Allowed
- * - Technicians / regular team members: BLOCKED — must use /team-member-requests instead
+ * Technicians cannot self-expand a team through this route; they must use the
+ * assistance-request workflow. Direct assignment remains available to admins,
+ * assignment-capable planners/supervisors and the original WO assigner.
  */
 export async function POST(
   request: NextRequest,
@@ -23,98 +24,148 @@ export async function POST(
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const { userId, role } = body;
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
 
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'userId is required' },
-        { status: 400 }
-      );
+    const woPlantId = plantAuth.entity.plantId;
+    if (!woPlantId) {
+      return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
     }
 
-    // Fetch WO with assigner info for permission check
+    const body = await request.json();
+    const userId = typeof body.userId === 'string' ? body.userId : '';
+    const role = typeof body.role === 'string' && body.role ? body.role : 'assistant';
+
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'userId is required' }, { status: 400 });
+    }
+    if (!VALID_TEAM_ROLES.includes(role)) {
+      return NextResponse.json({ success: false, error: `Invalid team role: ${role}` }, { status: 400 });
+    }
+
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
         id: true,
         assignedBy: true,
+        assignedTo: true,
+        teamLeaderId: true,
         isLocked: true,
+        plantId: true,
       },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
 
-    // ─── PERMISSION CHECK ────────────────────────────────────────────────
-    // Only admins, users with assign permission, or the original assigner can directly add
     const canDirectAdd = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
+      hasAnyPermission(session, ['work_orders.assign_technician', 'work_orders.assign_supervisor']) ||
       wo.assignedBy === session.userId;
 
     if (!canDirectAdd) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'You do not have permission to directly add team members. Please submit a team member request instead.',
-          code: 'USE_REQUEST_FLOW',
-        },
-        { status: 403 }
-      );
+      return NextResponse.json({
+        success: false,
+        error: 'You do not have permission to directly add team members. Please submit a team member request instead.',
+        code: 'USE_REQUEST_FLOW',
+      }, { status: 403 });
     }
-    // ─── END PERMISSION CHECK ────────────────────────────────────────────
 
-    // Verify the user exists
     const user = await db.user.findUnique({
       where: { id: userId },
-      select: { id: true, fullName: true, username: true },
+      select: {
+        id: true,
+        fullName: true,
+        username: true,
+        status: true,
+        plantAccess: { where: { plantId: woPlantId }, select: { id: true } },
+      },
     });
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'User not found' }, { status: 400 });
+    if (!user || user.status !== 'active') {
+      return NextResponse.json({ success: false, error: 'Selected user is not active' }, { status: 400 });
+    }
+    if (user.plantAccess.length === 0) {
+      return NextResponse.json({ success: false, error: 'Selected user does not have access to the work order plant' }, { status: 400 });
     }
 
-    // Prevent duplicates (same user on same WO)
     const existingMember = await db.workOrderTeamMember.findFirst({
       where: { workOrderId: id, userId },
+      select: { id: true },
     });
     if (existingMember) {
-      return NextResponse.json(
-        { success: false, error: 'User is already a team member of this work order' },
-        { status: 409 }
-      );
+      return NextResponse.json({ success: false, error: 'User is already a team member of this work order' }, { status: 409 });
     }
 
-    const member = await db.workOrderTeamMember.create({
-      data: {
-        workOrderId: id,
-        userId,
-        role: role || 'assistant',
-        addedById: session.userId,
-        addedVia: 'direct',
-      },
-      include: {
-        user: { select: { id: true, fullName: true, username: true, department: true } },
-      },
-    });
+    if (role === 'team_leader' && wo.teamLeaderId && wo.teamLeaderId !== userId) {
+      return NextResponse.json({
+        success: false,
+        error: 'This work order already has a team leader. Use the assignment workflow to change team leadership.',
+      }, { status: 409 });
+    }
 
-    // Audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'wo_team_member',
-        entityId: member.id,
-        newValues: JSON.stringify({
+    const member = await db.$transaction(async (tx) => {
+      let effectiveLeaderId = wo.teamLeaderId;
+
+      // When a second technician is added to a previously single-tech WO, the
+      // original assignee becomes the explicit team leader automatically.
+      if (!effectiveLeaderId && role !== 'team_leader' && wo.assignedTo) {
+        effectiveLeaderId = wo.assignedTo;
+        await tx.workOrder.update({ where: { id }, data: { teamLeaderId: effectiveLeaderId } });
+        await tx.workOrderTeamMember.upsert({
+          where: { workOrderId_userId: { workOrderId: id, userId: effectiveLeaderId } },
+          update: { role: 'team_leader', accessLevel: 'full' },
+          create: {
+            workOrderId: id,
+            userId: effectiveLeaderId,
+            role: 'team_leader',
+            accessLevel: 'full',
+            addedById: session.userId,
+            addedVia: 'direct',
+          },
+        });
+      }
+
+      if (role === 'team_leader' && !effectiveLeaderId) {
+        effectiveLeaderId = userId;
+        await tx.workOrder.update({ where: { id }, data: { teamLeaderId: userId } });
+      }
+
+      const created = await tx.workOrderTeamMember.create({
+        data: {
           workOrderId: id,
-          userId: user.fullName,
-          role: role || 'assistant',
+          userId,
+          role,
+          accessLevel: role === 'team_leader' ? 'full' : 'execution',
+          addedById: session.userId,
           addedVia: 'direct',
-        }),
-      },
+        },
+        include: {
+          user: { select: { id: true, fullName: true, username: true, department: true } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'wo_team_member',
+          entityId: created.id,
+          newValues: JSON.stringify({
+            workOrderId: id,
+            userId,
+            userName: user.fullName,
+            role,
+            accessLevel: role === 'team_leader' ? 'full' : 'execution',
+            teamLeaderId: effectiveLeaderId,
+            addedVia: 'direct',
+            plantId: woPlantId,
+          }),
+        },
+      });
+
+      return created;
     });
 
     return NextResponse.json({ success: true, data: member }, { status: 201 });

@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
-// Urgency priority for sorting (higher number = more urgent)
 const URGENCY_ORDER: Record<string, number> = { critical: 4, high: 3, normal: 2, low: 1 };
-
-// Valid urgency values
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
-
-// 24-hour threshold for overdue detection
 const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-
-// GET /api/repairs/material-requests — list with filters, stats, urgency sorting, overdue detection
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -22,8 +15,8 @@ export async function GET(request: NextRequest) {
     if (!hasAnyPermission(session, ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own']) && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
-    const { searchParams } = new URL(request.url);
 
+    const { searchParams } = new URL(request.url);
     const workOrderId = searchParams.get('workOrderId');
     const status = searchParams.get('status');
     const requestedById = searchParams.get('requestedById');
@@ -33,79 +26,41 @@ export async function GET(request: NextRequest) {
     const stats = searchParams.get('stats') === 'true';
 
     const where: Record<string, unknown> = {};
-
-    // Apply plant scope filter (fail-closed)
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-    if (plantScope.isScoped) {
-      applyPlantScope(where, plantScope);
-    }
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    // Always apply plant scope. With no explicit header this limits the query to
+    // all and only the user's accessible plants.
+    applyPlantScope(where, plantScope);
 
     if (workOrderId) where.workOrderId = workOrderId;
     if (status) where.status = status;
     if (requestedById) where.requestedById = requestedById;
     if (urgency && VALID_URGENCIES.includes(urgency)) where.urgency = urgency;
 
-    // Users with only view_own are scoped to their own requests
     const canViewAll = hasAnyPermission(session, ['repair_material_requests.view', 'repair_material_requests.view_all']) || isAdmin(session);
-    if (!canViewAll) {
-      where.requestedById = session.userId;
-    }
+    if (!canViewAll) where.requestedById = session.userId;
 
-    // Stats endpoint — aggregated counts instead of list
     if (stats) {
       try {
-        const [
-          total,
-          pending,
-          supervisorApproved,
-          storekeeperApproved,
-          issued,
-          returned,
-          rejected,
-          overdueCount,
-          urgencyBreakdown,
-        ] = await Promise.all([
-          db.repairMaterialRequest.count({ where: Object.keys(where).length > 0 ? where : undefined }),
+        const [total, pending, supervisorApproved, storekeeperApproved, issued, returned, rejected, overdueCount, urgencyBreakdown] = await Promise.all([
+          db.repairMaterialRequest.count({ where }),
           db.repairMaterialRequest.count({ where: { ...where, status: 'pending' } }),
           db.repairMaterialRequest.count({ where: { ...where, status: 'supervisor_approved' } }),
           db.repairMaterialRequest.count({ where: { ...where, status: 'storekeeper_approved' } }),
           db.repairMaterialRequest.count({ where: { ...where, status: 'issued' } }),
-          db.repairMaterialRequest.count({ where: { ...where, status: { in: ['partially_returned', 'fully_returned'] } } }),
+          db.repairMaterialRequest.count({ where: { ...where, status: { in: ['partially_returned', 'fully_returned', 'closed'] } } }),
           db.repairMaterialRequest.count({ where: { ...where, status: 'rejected' } }),
-          db.repairMaterialRequest.count({
-            where: {
-              ...where,
-              status: 'pending',
-              createdAt: { lt: new Date(Date.now() - OVERDUE_THRESHOLD_MS) },
-            },
-          }),
-          db.repairMaterialRequest.groupBy({
-            by: ['urgency'],
-            where: Object.keys(where).length > 0 ? where : undefined,
-            _count: { urgency: true },
-          }),
+          db.repairMaterialRequest.count({ where: { ...where, status: 'pending', createdAt: { lt: new Date(Date.now() - OVERDUE_THRESHOLD_MS) } } }),
+          db.repairMaterialRequest.groupBy({ by: ['urgency'], where, _count: { urgency: true } }),
         ]);
 
         return NextResponse.json({
           success: true,
           data: {
             total,
-            byStatus: {
-              pending,
-              supervisorApproved,
-              storekeeperApproved,
-              issued,
-              returned,
-              rejected,
-            },
+            byStatus: { pending, supervisorApproved, storekeeperApproved, issued, returned, rejected },
             overdueCount,
-            urgency: urgencyBreakdown.map((g) => ({
-              level: g.urgency,
-              count: g._count.urgency,
-            })),
+            urgency: urgencyBreakdown.map((g) => ({ level: g.urgency, count: g._count.urgency })),
           },
         });
       } catch (error: unknown) {
@@ -117,7 +72,7 @@ export async function GET(request: NextRequest) {
     try {
       const [requests, total] = await Promise.all([
         db.repairMaterialRequest.findMany({
-          where: Object.keys(where).length > 0 ? where : undefined,
+          where,
           include: {
             requestedBy: { select: { id: true, fullName: true, username: true } },
             supervisorApprovedBy: { select: { id: true, fullName: true } },
@@ -132,31 +87,21 @@ export async function GET(request: NextRequest) {
           skip: (page - 1) * limit,
           take: limit,
         }),
-        db.repairMaterialRequest.count({
-          where: Object.keys(where).length > 0 ? where : undefined,
-        }),
+        db.repairMaterialRequest.count({ where }),
       ]);
 
-      // Apply urgency-based sorting in memory (critical → high → normal → low), then createdAt desc
       const now = Date.now();
       const enriched = requests.map((req) => ({
         ...req,
-        isOverdue:
-          req.status === 'pending' &&
-          now - new Date(req.createdAt).getTime() > OVERDUE_THRESHOLD_MS,
+        isOverdue: req.status === 'pending' && now - new Date(req.createdAt).getTime() > OVERDUE_THRESHOLD_MS,
       }));
-
       enriched.sort((a, b) => {
         const urgencyDiff = (URGENCY_ORDER[b.urgency] || 0) - (URGENCY_ORDER[a.urgency] || 0);
         if (urgencyDiff !== 0) return urgencyDiff;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
 
-      return NextResponse.json({
-        success: true,
-        data: enriched,
-        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-      });
+      return NextResponse.json({ success: true, data: enriched, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to load material requests';
       return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -167,7 +112,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/repairs/material-requests — create with urgency and inventory validation
 export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -177,73 +121,90 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { workOrderId, itemId, itemName, quantityRequested, unit, unitCost, reason, notes, urgency, componentRegistryId } = body;
-
-    if (!workOrderId || !itemName || !quantityRequested || !reason) {
-      return NextResponse.json({ success: false, error: 'workOrderId, itemName, quantityRequested, and reason are required' }, { status: 400 });
+    const { workOrderId, itemId, itemName, quantityRequested, unit, reason, notes, urgency, componentRegistryId } = body;
+    if (!workOrderId || (!itemId && !itemName) || !reason) {
+      return NextResponse.json({ success: false, error: 'workOrderId, itemId or itemName, and reason are required' }, { status: 400 });
+    }
+    const requestedQuantity = Number(quantityRequested);
+    if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
+      return NextResponse.json({ success: false, error: 'quantityRequested must be a positive number' }, { status: 400 });
     }
 
-    // Validate urgency value
     const resolvedUrgency = VALID_URGENCIES.includes(urgency) ? urgency : 'normal';
-
-    // Verify WO exists
     const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
 
-    // Validate requester is on the WO's execution team
-    const woTeam = await db.workOrderTeamMember.findFirst({
-      where: { workOrderId, userId: session.userId },
-    });
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!wo.plantId) return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
+
+    const woTeam = await db.workOrderTeamMember.findFirst({ where: { workOrderId, userId: session.userId } });
     const isAssignee = wo.assignedTo === session.userId;
     if (!woTeam && !isAssignee && !isAdmin(session)) {
-      return NextResponse.json(
-        { success: false, error: 'You are not a member of this work order\'s execution team' },
-        { status: 403 },
-      );
+      return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
     }
 
-    // Check inventory availability and validate stock levels
+    if (componentRegistryId) {
+      const linkedComponent = await db.workOrderComponent.findUnique({
+        where: {
+          workOrderId_componentRegistryId: {
+            workOrderId,
+            componentRegistryId,
+          },
+        },
+        select: { id: true },
+      });
+      if (!linkedComponent) {
+        return NextResponse.json({ success: false, error: 'Selected component is not linked to this work order' }, { status: 400 });
+      }
+    }
+
     let currentStock: number | null = null;
-    let resolvedUnitCost = unitCost || null;
+    let resolvedUnitCost: number | null = null;
     let stockWarning: string | null = null;
+    let resolvedItemName = typeof itemName === 'string' && itemName.trim() ? itemName.trim() : '';
+    let resolvedUnit = typeof unit === 'string' && unit.trim() ? unit.trim() : 'each';
 
     if (itemId) {
       const invItem = await db.inventoryItem.findUnique({ where: { id: itemId } });
-      if (invItem) {
-        currentStock = invItem.currentStock;
-        if (!resolvedUnitCost) resolvedUnitCost = invItem.unitCost;
+      if (!invItem) return NextResponse.json({ success: false, error: `Inventory item ${itemId} not found` }, { status: 400 });
+      if (invItem.plantId !== wo.plantId) return NextResponse.json({ success: false, error: 'Selected inventory item belongs to a different plant' }, { status: 400 });
 
-        // Better inventory validation: check if currentStock >= quantityRequested
-        if (invItem.currentStock < quantityRequested) {
-          stockWarning = `Insufficient stock for ${invItem.name}. Available: ${invItem.currentStock}, Requested: ${quantityRequested}. Shortfall: ${quantityRequested - invItem.currentStock}`;
-        } else if (invItem.currentStock < quantityRequested * 2) {
-          // Low stock warning when less than 2x the requested quantity remains after issuance
-          const remainingAfterIssue = invItem.currentStock - quantityRequested;
-          if (remainingAfterIssue < invItem.currentStock * 0.1) {
-            stockWarning = `Low stock warning: issuing ${quantityRequested} would leave only ${remainingAfterIssue} units of ${invItem.name} in inventory.`;
-          }
+      currentStock = invItem.currentStock;
+      resolvedItemName = invItem.name;
+      resolvedUnit = invItem.unitOfMeasure || resolvedUnit;
+      resolvedUnitCost = invItem.unitCost ?? 0;
+
+      if (invItem.currentStock < requestedQuantity) {
+        stockWarning = `Insufficient stock for ${invItem.name}. Available: ${invItem.currentStock}, Requested: ${requestedQuantity}. Shortfall: ${requestedQuantity - invItem.currentStock}`;
+      } else if (invItem.currentStock < requestedQuantity * 2) {
+        const remainingAfterIssue = invItem.currentStock - requestedQuantity;
+        if (remainingAfterIssue < invItem.currentStock * 0.1) {
+          stockWarning = `Low stock warning: issuing ${requestedQuantity} would leave only ${remainingAfterIssue} units of ${invItem.name} in inventory.`;
         }
       }
     }
 
-    const estimatedCost = (quantityRequested || 0) * (resolvedUnitCost || 0);
-
+    const estimatedCost = requestedQuantity * (resolvedUnitCost ?? 0);
     const matReq = await db.repairMaterialRequest.create({
       data: {
         workOrderId,
         itemId: itemId || null,
-        itemName,
-        quantityRequested,
+        itemName: resolvedItemName,
+        quantityRequested: requestedQuantity,
         quantityApproved: 0,
         quantityIssued: 0,
         quantityReturned: 0,
-        unit: unit || 'each',
+        unit: resolvedUnit,
         unitCost: resolvedUnitCost,
         estimatedCost,
         urgency: resolvedUrgency,
         reason,
         notes: notes || null,
         status: 'pending',
+        plantId: wo.plantId,
         requestedById: session.userId,
         componentRegistryId: componentRegistryId || null,
       },
@@ -255,36 +216,34 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Notify supervisor for approval
     if (wo.assignedSupervisorId) {
-      await notifyUser(wo.assignedSupervisorId, 'repair_material_request', `${resolvedUrgency === 'critical' ? '🔴 ' : resolvedUrgency === 'high' ? '🟠 ' : ''}Material Request Pending Approval`, `${matReq.requestedBy.fullName} requested ${quantityRequested} ${unit || 'each'} of ${itemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
+      await notifyUser(wo.assignedSupervisorId, 'repair_material_request', `${resolvedUrgency === 'critical' ? '🔴 ' : resolvedUrgency === 'high' ? '🟠 ' : ''}Material Request Pending Approval`, `${matReq.requestedBy.fullName} requested ${requestedQuantity} ${resolvedUnit} of ${resolvedItemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
     }
-
-    // Notify planner if assigned on the work order
     if (wo.plannerId && wo.plannerId !== wo.assignedSupervisorId) {
-      await notifyUser(wo.plannerId, 'repair_material_request', 'New Material Request Submitted', `${matReq.requestedBy.fullName} requested ${quantityRequested} ${unit || 'each'} of ${itemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
+      await notifyUser(wo.plannerId, 'repair_material_request', 'New Material Request Submitted', `${matReq.requestedBy.fullName} requested ${requestedQuantity} ${resolvedUnit} of ${resolvedItemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
     }
 
-    // Audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'create',
         entityType: 'repair_material_request',
         entityId: matReq.id,
-        newValues: JSON.stringify({ workOrderId, itemName, quantityRequested, urgency: resolvedUrgency, reason }),
+        newValues: JSON.stringify({
+          workOrderId,
+          itemId: itemId || null,
+          itemName: resolvedItemName,
+          quantityRequested: requestedQuantity,
+          unitCost: resolvedUnitCost,
+          urgency: resolvedUrgency,
+          reason,
+          plantId: wo.plantId,
+        }),
       },
     });
 
     const responseData = { ...matReq, currentStock };
-    if (stockWarning) {
-      return NextResponse.json({
-        success: true,
-        data: responseData,
-        warning: stockWarning,
-      }, { status: 201 });
-    }
-
+    if (stockWarning) return NextResponse.json({ success: true, data: responseData, warning: stockWarning }, { status: 201 });
     return NextResponse.json({ success: true, data: responseData }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create material request';

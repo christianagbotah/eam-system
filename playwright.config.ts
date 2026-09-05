@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000';
+const useProductionServer = process.env.PLAYWRIGHT_USE_PRODUCTION_SERVER === '1';
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -9,7 +12,7 @@ export default defineConfig({
   reporter: 'html',
   timeout: 30_000,
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 10_000,
@@ -17,10 +20,17 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
+    {
+      name: 'repairs-uat',
+      testMatch: /repairs\/.*\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
   webServer: {
-    command: 'bun run dev',
-    url: 'http://localhost:3000',
+    command: useProductionServer
+      ? 'NODE_ENV=production node .next/standalone/server.js'
+      : 'bun run dev',
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { supervisorVerify, requestRework, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import {
+  requestRepairRework,
+  type ReworkSessionContext,
+  type ReworkAuditContext,
+} from '@/services/workOrderRework.service';
+import {
+  verifyRepairWorkOrder,
+  type VerificationSessionContext,
+  type VerificationAuditContext,
+} from '@/services/workOrderVerification.service';
 import { extractAuditContext } from '@/lib/audit-helpers';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -13,42 +23,56 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const { id } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
     if (!hasPermission(session, 'work_orders.verify') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const { id } = await params;
     const body = await request.json();
     const auditCtx = extractAuditContext(request);
 
     if (body.action === 'rework') {
-      const result = await requestRework(id, session as SessionContext, {
-        reason: body.reason,
-        category: body.category,
-        evidence: body.evidence,
-        auditCtx: auditCtx as AuditContext,
-      });
+      const result = await requestRepairRework(
+        id,
+        session as ReworkSessionContext,
+        {
+          reason: body.reason,
+          category: body.category,
+          evidence: body.evidence,
+          notes: body.notes,
+          auditCtx: auditCtx as ReworkAuditContext,
+        },
+      );
 
       if (!result.success) {
         return NextResponse.json({ success: false, error: result.error }, { status: 400 });
       }
+
       return NextResponse.json({ success: true, data: result.data });
     }
 
-    // Verify path
-    const result = await supervisorVerify(id, session as SessionContext, {
-      notes: body.notes,
-      qualityRating: body.qualityRating,
-      checklistPassed: body.checklistPassed,
-      auditCtx: auditCtx as AuditContext,
-    });
+    const result = await verifyRepairWorkOrder(
+      id,
+      session as VerificationSessionContext,
+      {
+        notes: body.notes,
+        qualityRating: body.qualityRating,
+        checklistPassed: body.checklistPassed,
+        auditCtx: auditCtx as VerificationAuditContext,
+      },
+    );
 
     if (!result.success) {
       const status = result.readiness ? 422 : 400;
       return NextResponse.json({
         success: false,
         error: result.error,
-        ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
+        ...(result.readiness
+          ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings }
+          : {}),
       }, { status });
     }
 

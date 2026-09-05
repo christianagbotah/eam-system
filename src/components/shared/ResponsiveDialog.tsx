@@ -21,10 +21,6 @@ import {
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 
-// ---------------------------------------------------------------------------
-// useIsMobile hook – defaults to false on SSR to avoid hydration mismatches.
-// Uses matchMedia for proper React 18+ behavior.
-// ---------------------------------------------------------------------------
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = React.useState(false);
 
@@ -41,12 +37,8 @@ function useIsMobile(breakpoint = 768) {
   return isMobile;
 }
 
-// Export the hook so other components can use it too
 export { useIsMobile };
 
-// ---------------------------------------------------------------------------
-// ResponsiveDialogProps
-// ---------------------------------------------------------------------------
 export interface ResponsiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,19 +47,14 @@ export interface ResponsiveDialogProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
-  /** Max width for desktop mode. Default: "sm:max-w-lg" */
   desktopMaxWidth?: string;
-  /** For large forms. Uses "sm:max-w-2xl" as default desktop max-width. */
   large?: boolean;
-  /** For extra-large forms like convert-to-WO. Uses "sm:max-w-4xl" as default desktop max-width. */
   extraLarge?: boolean;
-  /** Show close button on mobile bottom sheet header. Default: true */
   showCloseButton?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// ResponsiveDialog – Bottom Sheet on mobile, centered Dialog on desktop
-// ---------------------------------------------------------------------------
+type PointerDownOutsideHandler = NonNullable<React.ComponentProps<typeof DialogContent>["onPointerDownOutside"]>;
+
 export function ResponsiveDialog({
   open,
   onOpenChange,
@@ -86,16 +73,16 @@ export function ResponsiveDialog({
   const resolvedMaxWidth = desktopMaxWidth
     ?? (extraLarge ? "sm:max-w-4xl" : large ? "sm:max-w-2xl" : "sm:max-w-lg");
 
-  // Prevent dialog/sheet from dismissing when clicking inside a Popover (e.g. SearchableSelect)
-  const handlePointerDownOutside = React.useCallback((e: React.PointerEvent) => {
-    const target = e.target as HTMLElement;
-    // Don't dismiss when clicking inside a Radix Popover content
-    if (target.closest('[data-slot="popover-content"]')) {
-      e.preventDefault();
+  // Radix passes a PointerDownOutsideEvent (CustomEvent), not a React
+  // PointerEvent. Inspect the original browser event so popover interaction
+  // inside a responsive dialog does not dismiss the dialog/sheet.
+  const handlePointerDownOutside = React.useCallback<PointerDownOutsideHandler>((event) => {
+    const target = event.detail.originalEvent.target;
+    if (target instanceof HTMLElement && target.closest('[data-slot="popover-content"]')) {
+      event.preventDefault();
     }
   }, []);
 
-  // ---- Mobile: Bottom Sheet ------------------------------------------------
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -110,10 +97,8 @@ export function ResponsiveDialog({
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           onPointerDownOutside={handlePointerDownOutside}
         >
-          {/* Drag handle indicator */}
           <div className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/30" />
 
-          {/* Header with optional close button */}
           <div className={cn("flex items-center gap-3 px-4 pt-2 pb-1", !title && !description && !showCloseButton && "sr-only")}>
             <div className="flex-1 min-w-0">
               <SheetTitle className={cn("text-base leading-tight", !title && "sr-only")}>{title || "Dialog"}</SheetTitle>
@@ -133,12 +118,10 @@ export function ResponsiveDialog({
             )}
           </div>
 
-          {/* Scrollable content area */}
           <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
             {children}
           </div>
 
-          {/* Sticky footer */}
           {footer && (
             <div
               className={cn(
@@ -155,11 +138,10 @@ export function ResponsiveDialog({
     );
   }
 
-  // ---- Desktop: Centered Dialog --------------------------------------------
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn(resolvedMaxWidth, "max-h-[85vh] overflow-y-auto", className)} onPointerDownOutside={handlePointerDownOutside}>
-        <DialogHeader className={!(title || description) && "sr-only"}>
+        <DialogHeader className={!(title || description) ? "sr-only" : undefined}>
           <DialogTitle className={!title ? "sr-only" : undefined}>{title || "Dialog"}</DialogTitle>
           {description ? (
             <DialogDescription>{description}</DialogDescription>
