@@ -152,7 +152,7 @@ jobs:
 
   # Repairs/RWOP UAT is a hard PR gate. It runs against real MariaDB + Redis
   # service containers, verifies the deployed schema and BullMQ round-trip, then
-  # exercises the role-based application flows with Playwright.
+  # exercises the exact standalone production artifact with Playwright.
   repairs-uat:
     name: Repairs UAT (Playwright)
     runs-on: ubuntu-latest
@@ -190,6 +190,7 @@ jobs:
       DATABASE_URL: mysql://repairs_uat:repairs_uat_pass@127.0.0.1:3306/repairs_uat
       REDIS_URL: redis://127.0.0.1:6379
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      PLAYWRIGHT_USE_PRODUCTION_SERVER: 1
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
       NEXTAUTH_SECRET: repairs-uat-ci-nextauth-secret-not-for-production
       JWT_SECRET: repairs-uat-ci-jwt-secret-not-for-production-32-bytes-minimum
@@ -226,6 +227,12 @@ jobs:
 
       - name: Run Repairs RC1 MariaDB/Redis/BullMQ preflight
         run: bun run test:repairs-rc1-preflight
+
+      - name: Download production standalone build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .next/standalone
 
       - name: Install Playwright Chromium browser with system dependencies
         run: bunx playwright install --with-deps chromium
@@ -280,6 +287,8 @@ jobs:
           path: .next/standalone
 
       - name: Run Playwright E2E tests (Chromium only)
+        env:
+          PLAYWRIGHT_USE_PRODUCTION_SERVER: 1
         run: bun run test:e2e --project=chromium
 
       - name: Upload Playwright test results
