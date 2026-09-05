@@ -93,7 +93,7 @@ export async function GET(
       },
     } as const;
 
-    let wo = await db.workOrder.findUnique({
+    const woWithRequests = await db.workOrder.findUnique({
       where: { id },
       include: {
         ...baseInclude,
@@ -108,12 +108,14 @@ export async function GET(
       },
     }).catch(() => null);
 
-    if (!wo) {
-      wo = await db.workOrder.findUnique({
-        where: { id },
-        include: baseInclude,
-      });
-    }
+    const fallbackWo = woWithRequests
+      ? null
+      : await db.workOrder.findUnique({
+          where: { id },
+          include: baseInclude,
+        });
+
+    const wo = woWithRequests ?? (fallbackWo ? { ...fallbackWo, teamMemberRequests: [] } : null);
 
     if (!wo) {
       return NextResponse.json(
@@ -137,9 +139,6 @@ export async function GET(
       }
     }
 
-    if (!wo.teamMemberRequests) {
-      (wo as Record<string, unknown>).teamMemberRequests = [];
-    }
     if (!wo.repairToolRequests) {
       (wo as Record<string, unknown>).repairToolRequests = [];
     }
