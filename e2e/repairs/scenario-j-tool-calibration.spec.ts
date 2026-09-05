@@ -223,4 +223,16 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async () => {
     const item = fetched.data.items.find((i: any) => i.id === itemId);
     expect(item.quantityIssued ?? 0).toBe(0);
   });
+
+  await test.step('J6: Close the live execution timer so later scenarios start cleanly', async () => {
+    const stopped = await apiCall(
+      techToken,
+      'POST',
+      `/api/work-orders/${woId}/time-logs/stop`,
+      {},
+    );
+    expect(stopped.status).toBe(200);
+    expect(stopped.data.success).toBe(true);
+    expect(stopped.data.data.closedTimers).toBeGreaterThanOrEqual(1);
+  });
 });
