@@ -33,6 +33,12 @@ ARG NEXT_PUBLIC_BUILD_TIME=unknown
 ENV NEXT_PUBLIC_BUILD_VERSION=${NEXT_PUBLIC_BUILD_VERSION}
 ENV NEXT_PUBLIC_BUILD_TIME=${NEXT_PUBLIC_BUILD_TIME}
 
+# Prisma 7 loads prisma.config.ts even for client generation. The build must not
+# receive production database credentials, so give the builder a non-routable,
+# non-secret URL that satisfies configuration parsing only. This ENV belongs to
+# the builder stage and is not inherited by the final runtime image.
+ENV DATABASE_URL="mysql://build:build@127.0.0.1:3306/build"
+
 # Copy dependency manifests and node_modules from deps stage
 COPY package.json bun.lock ./
 COPY --from=deps /app/node_modules ./node_modules
@@ -55,7 +61,8 @@ FROM ${BUN_IMAGE} AS runner
 
 WORKDIR /app
 
-# Set production environment
+# Set production environment. DATABASE_URL is intentionally absent here and is
+# supplied at runtime from the production Compose .env configuration.
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
