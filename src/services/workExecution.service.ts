@@ -13,7 +13,11 @@ import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderR
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
 import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
-import type { LaborRate, Prisma } from '@prisma/client';
+import {
+  calculateAuthoritativeWorkOrderCost,
+  type AuthoritativeWorkOrderCostResult,
+} from '@/services/workOrderCost.service';
+import type { Prisma } from '@prisma/client';
 
 export interface SessionContext {
   userId: string;
@@ -120,20 +124,14 @@ export interface CancelOptions {
   idempotencyKey?: string;
 }
 
-export interface AuthoritativeCostResult {
-  plannedCost: number;
-  actualLaborCost: number;
-  actualMaterialCost: number;
-  actualToolCost: number;
-  actualContractorCost: number;
-  totalActualCost: number;
-  laborHours: number;
-  incompleteLaborRate: boolean;
-  toolCostNote?: string;
-  warnings: string[];
-  appliedLaborRate: number | null;
-  appliedLaborCurrency: string | null;
-}
+export type AuthoritativeCostResult = AuthoritativeWorkOrderCostResult;
+
+/**
+ * Backward-compatible export used by Repairs lifecycle/reporting callers.
+ * The implementation now lives in workOrderCost.service so every lifecycle
+ * path consumes exactly the same server-authoritative accounting rules.
+ */
+export const calculateAuthoritativeCosts = calculateAuthoritativeWorkOrderCost;
 
 type EnrichedWO = Awaited<ReturnType<typeof fetchEnrichedWO>>;
 
@@ -171,7 +169,7 @@ function checkTeamAuthority(
   const isAssignee = wo.assignedTo === session.userId;
   const isTeamLeader =
     wo.teamLeaderId === session.userId ||
-    wo.teamMembers?.some((m) => m.userId === session.userId && m.role === 'team_leader') ||
+    wo.teamMembers?.some((member) => member.userId === session.userId && member.role === 'team_leader') ||
     false;
   const isAdminRole = session.roles.includes('admin') ||
     session.roles.includes('maintenance_manager') ||
@@ -180,8 +178,8 @@ function checkTeamAuthority(
   if (isAdminRole) return { allowed: true, isAdminOverride: true };
 
   const teamMemberIds = (wo.teamMembers || [])
-    .map((m) => m.userId)
-    .filter((uid) => uid !== wo.assignedTo);
+    .map((member) => member.userId)
+    .filter((userId) => userId !== wo.assignedTo);
   const distinctTeamCount = new Set(teamMemberIds).size;
   const isMultiTech = wo.assignedTo ? distinctTeamCount >= 1 : distinctTeamCount >= 2;
 
@@ -244,8 +242,8 @@ function notifyStakeholders(
   reason?: string,
 ): void {
   const targets = new Set<string>();
-  const addIf = (uid: string | null | undefined) => {
-    if (uid && uid !== session.userId) targets.add(uid);
+  const addIf = (userId: string | null | undefined) => {
+    if (userId && userId !== session.userId) targets.add(userId);
   };
 
   addIf(wo.assignedSupervisorId);
@@ -313,178 +311,6 @@ async function recordIdempotency(
   });
 }
 
-/**
- * Calculate server-authoritative work-order cost values.
- * Labor hours are derived only from start/resume execution sessions. Reusable
- * tools are custody assets and do not create a consumption charge here.
- */
-export async function calculateAuthoritativeCosts(
-  workOrderId: string,
-  tx?: Prisma.TransactionClient,
-): Promise<AuthoritativeCostResult | null> {
-  const client = tx ?? db;
-
-  const wo = await client.workOrder.findUnique({
-    where: { id: workOrderId },
-    select: {
-      id: true,
-      totalCost: true,
-      laborCost: true,
-      partsCost: true,
-      contractorCost: true,
-      estimatedHours: true,
-      tradeActivity: true,
-      assignedTo: true,
-      plantId: true,
-      timeLogs: {
-        select: {
-          id: true,
-          userId: true,
-          action: true,
-          duration: true,
-          timestamp: true,
-          startTime: true,
-          endTime: true,
-          breakMinutes: true,
-        },
-      },
-      repairMaterialRequests: {
-        select: { unitCost: true, consumedQty: true, wastedQty: true },
-      },
-      repairToolRequests: {
-        select: {
-          id: true,
-          status: true,
-          items: { select: { id: true, unitCost: true, quantityIssued: true } },
-        },
-      },
-    },
-  });
-  if (!wo) return null;
-
-  const warnings: string[] = [];
-  const sortedLogs = [...wo.timeLogs].sort(
-    (a, b) => (a.startTime?.getTime() ?? a.timestamp.getTime()) - (b.startTime?.getTime() ?? b.timestamp.getTime()),
-  );
-
-  let durationSum = 0;
-  let calculatedHours = 0;
-  for (const log of sortedLogs) {
-    if (log.action !== 'start' && log.action !== 'resume') continue;
-    if (log.duration != null && log.duration > 0) {
-      durationSum += log.duration;
-    } else if (log.startTime && log.endTime) {
-      const elapsed = (log.endTime.getTime() - log.startTime.getTime()) / 3_600_000;
-      const breakDeduction = (log.breakMinutes ?? 0) / 60;
-      calculatedHours += Math.max(0, elapsed - breakDeduction);
-    }
-  }
-
-  const laborHours = Math.round((durationSum + calculatedHours) * 100) / 100;
-  if (laborHours === 0 && wo.timeLogs.length > 0) {
-    warnings.push('Labor hours resolved to 0 despite time log entries — check for missing duration/start/end data');
-  }
-
-  let laborCost = 0;
-  let incompleteLaborRate = true;
-  let appliedLaborRate: number | null = null;
-  let appliedLaborCurrency: string | null = null;
-
-  const now = new Date();
-  const effectiveWhere = {
-    effectiveFrom: { lte: now },
-    OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }],
-  };
-
-  if (wo.assignedTo && incompleteLaborRate) {
-    let userRate: LaborRate | null = null;
-    if (wo.plantId) {
-      userRate = await client.laborRate.findFirst({
-        where: { userId: wo.assignedTo, plantId: wo.plantId, ...effectiveWhere },
-        orderBy: { effectiveFrom: 'desc' },
-      });
-    }
-    if (!userRate) {
-      userRate = await client.laborRate.findFirst({
-        where: { userId: wo.assignedTo, plantId: null, ...effectiveWhere },
-        orderBy: { effectiveFrom: 'desc' },
-      });
-    }
-
-    if (userRate) {
-      laborCost = Math.round(laborHours * userRate.normalHourlyRate * 100) / 100;
-      incompleteLaborRate = false;
-      appliedLaborRate = userRate.normalHourlyRate;
-      appliedLaborCurrency = userRate.currency;
-    }
-  }
-
-  if (wo.tradeActivity && incompleteLaborRate) {
-    const trade = await client.trade.findFirst({
-      where: {
-        OR: [{ code: wo.tradeActivity }, { name: wo.tradeActivity }],
-        isActive: true,
-      },
-      select: { id: true },
-    });
-
-    if (trade) {
-      let tradeRate: LaborRate | null = null;
-      if (wo.plantId) {
-        tradeRate = await client.laborRate.findFirst({
-          where: { tradeId: trade.id, plantId: wo.plantId, ...effectiveWhere },
-          orderBy: { effectiveFrom: 'desc' },
-        });
-      }
-      if (!tradeRate) {
-        tradeRate = await client.laborRate.findFirst({
-          where: { tradeId: trade.id, plantId: null, ...effectiveWhere },
-          orderBy: { effectiveFrom: 'desc' },
-        });
-      }
-
-      if (tradeRate) {
-        laborCost = Math.round(laborHours * tradeRate.normalHourlyRate * 100) / 100;
-        incompleteLaborRate = false;
-        appliedLaborRate = tradeRate.normalHourlyRate;
-        appliedLaborCurrency = tradeRate.currency;
-      }
-    }
-  }
-
-  if (incompleteLaborRate) {
-    warnings.push('No configured labor rate found — labor cost set to 0. Configure trade or user-level hourly rates to enable automatic labor cost calculation.');
-  }
-
-  let materialCost = 0;
-  for (const mr of wo.repairMaterialRequests) {
-    const qty = (mr.consumedQty ?? 0) + (mr.wastedQty ?? 0);
-    materialCost += qty * (mr.unitCost ?? 0);
-  }
-  materialCost = Math.round(materialCost * 100) / 100;
-
-  const toolCost = 0;
-  const toolCostNote = 'Reusable tools in custody — no consumption cost';
-  const contractorCost = wo.contractorCost ?? 0;
-  const plannedCost = wo.totalCost ?? 0;
-  const totalActualCost = Math.round((laborCost + materialCost + toolCost + contractorCost) * 100) / 100;
-
-  return {
-    plannedCost,
-    actualLaborCost: laborCost,
-    actualMaterialCost: materialCost,
-    actualToolCost: toolCost,
-    actualContractorCost: contractorCost,
-    totalActualCost,
-    laborHours,
-    incompleteLaborRate,
-    toolCostNote,
-    warnings,
-    appliedLaborRate,
-    appliedLaborCurrency,
-  };
-}
-
 export async function startWork(
   workOrderId: string,
   session: SessionContext,
@@ -536,7 +362,10 @@ export async function startWork(
   });
 
   notifyStakeholders(wo, session, 'wo_started');
-  const result: TransitionResult = { success: true, data: { status: 'in_progress', actualStart: now } };
+  const result: TransitionResult = {
+    success: true,
+    data: { status: 'in_progress', actualStart: now },
+  };
   if (idempotencyKey) {
     await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'start', session.userId, result);
   }
@@ -561,8 +390,6 @@ export async function pauseWork(
 
   const now = new Date();
   await db.$transaction(async (tx) => {
-    // A team-level waiting transition closes all live execution sessions. The
-    // original start/resume action is preserved for labor provenance.
     await tx.workOrderTimeLog.updateMany({
       where: { workOrderId, action: { in: ['start', 'resume'] }, endTime: null },
       data: { endTime: now, pauseReason: options?.reason || 'Work paused' },
@@ -761,7 +588,10 @@ export async function initiateHandover(
   });
 
   notifyStakeholders(wo, session, 'shift_handover_pending', undefined, options?.reason);
-  const result: TransitionResult = { success: true, data: { status: 'pending_handover', handoverId } };
+  const result: TransitionResult = {
+    success: true,
+    data: { status: 'pending_handover', handoverId },
+  };
   if (idempotencyKey) {
     await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'handover', session.userId, result);
   }
@@ -794,8 +624,8 @@ export async function resumeAfterHandover(
       throw new Error('Cannot resume work: no confirmed shift handover record exists for this work order.');
     }
 
-    const isSupervisor = session.roles.some((r) =>
-      ['maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'admin'].includes(r),
+    const isSupervisor = session.roles.some((role) =>
+      ['maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'admin'].includes(role),
     );
     if (session.userId !== confirmedHandover.receivedById && !isSupervisor) {
       throw new Error('Cannot resume work: only the designated receiver of the shift handover can resume work.');
@@ -886,7 +716,9 @@ export async function submitCompletion(
   const now = new Date();
   const txResult = await db.$transaction(async (tx) => {
     const costs = await calculateAuthoritativeCosts(workOrderId, tx);
-    if (!costs) throw new Error('Failed to calculate authoritative costs: work order not found in transaction');
+    if (!costs) {
+      throw new Error('Failed to calculate authoritative costs: work order not found in transaction');
+    }
 
     const transition = await executeTransition('work_order', workOrderId, 'completed', session, {
       extraData: {
@@ -936,6 +768,7 @@ export async function submitCompletion(
           partsCost: costs.actualMaterialCost,
           contractorCost: costs.actualContractorCost,
           totalCost: costs.totalActualCost,
+          costWarnings: costs.warnings,
           ...(auth.isAdminOverride ? { adminOverride: true } : {}),
         },
         completionData.auditCtx,
@@ -1028,7 +861,11 @@ export async function supervisorVerify(
         action: 'update',
         entityType: 'work_order',
         entityId: workOrderId,
-        newValues: JSON.stringify({ status: 'verified', verifiedBy: session.userId, qualityRating: options.qualityRating ?? null }),
+        newValues: JSON.stringify({
+          status: 'verified',
+          verifiedBy: session.userId,
+          qualityRating: options.qualityRating ?? null,
+        }),
         ...(options.auditCtx?.ipAddress ? { ipAddress: options.auditCtx.ipAddress } : {}),
       },
     });
@@ -1086,14 +923,21 @@ export async function requestRework(
         action: 'update',
         entityType: 'work_order',
         entityId: workOrderId,
-        newValues: JSON.stringify({ status: 'in_progress', reworkReason: reworkData.reason, reworkCategory: reworkData.category }),
+        newValues: JSON.stringify({
+          status: 'in_progress',
+          reworkReason: reworkData.reason,
+          reworkCategory: reworkData.category,
+        }),
         ...(reworkData.auditCtx?.ipAddress ? { ipAddress: reworkData.auditCtx.ipAddress } : {}),
       },
     });
   });
 
   notifyStakeholders(wo, session, 'rework_requested', undefined, reworkData.reason);
-  const result: TransitionResult = { success: true, data: { status: 'in_progress', reworkReason: reworkData.reason } };
+  const result: TransitionResult = {
+    success: true,
+    data: { status: 'in_progress', reworkReason: reworkData.reason },
+  };
   if (idempotencyKey) {
     await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'rework', session.userId, result);
   }
@@ -1150,7 +994,12 @@ export async function plannerClose(
 
     await tx.workOrder.update({
       where: { id: workOrderId },
-      data: { isLocked: true, lockedBy: session.userId, lockedAt: now, lockReason: 'Planner closeout' },
+      data: {
+        isLocked: true,
+        lockedBy: session.userId,
+        lockedAt: now,
+        lockReason: 'Planner closeout',
+      },
     });
 
     if (closeData.notes) {
@@ -1166,18 +1015,26 @@ export async function plannerClose(
         entityType: 'work_order',
         entityId: workOrderId,
         oldValues: JSON.stringify({ isLocked: wo.isLocked }),
-        newValues: JSON.stringify({ isLocked: true }),
+        newValues: JSON.stringify({
+          isLocked: true,
+          costWarnings: costs?.warnings ?? [],
+        }),
         ...(closeData.auditCtx?.ipAddress ? { ipAddress: closeData.auditCtx.ipAddress } : {}),
       },
     });
 
     const finalCost = costs?.totalActualCost ?? wo.totalCost;
     const totalDowntimeMinutes = Math.round(
-      wo.workOrderDowntimes.reduce((sum, row) => sum + (row.durationMinutes ?? 0), 0),
+      (wo.workOrderDowntimes ?? []).reduce(
+        (sum, row) => sum + (row.durationMinutes ?? 0),
+        0,
+      ),
     );
-    const componentId = wo.workOrderComponents[0]?.componentRegistryId;
+    const componentId = wo.workOrderComponents?.[0]?.componentRegistryId;
     const failureMode = closeData.failureMode || wo.failureDescription || 'other';
-    const hasFailureContext = Boolean(closeData.failureMode || wo.failureDescription || wo.causeDescription);
+    const hasFailureContext = Boolean(
+      closeData.failureMode || wo.failureDescription || wo.causeDescription,
+    );
 
     if (componentId && hasFailureContext) {
       await tx.failureRecord.upsert({
@@ -1210,8 +1067,6 @@ export async function plannerClose(
         },
       });
     } else if (hasFailureContext && !componentId) {
-      // FailureRecord requires a component by schema. Do not invent one; retain
-      // an auditable warning and let component linking be corrected explicitly.
       await tx.auditLog.create({
         data: {
           userId: session.userId,
@@ -1228,7 +1083,10 @@ export async function plannerClose(
   });
 
   notifyStakeholders(wo, session, 'planner_closed');
-  const result: TransitionResult = { success: true, data: { status: 'closed', isLocked: true } };
+  const result: TransitionResult = {
+    success: true,
+    data: { status: 'closed', isLocked: true },
+  };
   if (idempotencyKey) {
     await recordIdempotency(idempotencyKey, 'work_order', workOrderId, 'close', session.userId, result);
   }
