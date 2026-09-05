@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 
 export interface LaborRateSegment {
   userId: string;
+  workerName: string;
   hours: number;
   hourlyRate: number | null;
   currency: string | null;
@@ -81,16 +82,16 @@ async function findRate(
 }
 
 /**
- * Calculates Repairs labor from the people who actually logged the work.
+ * Calculate Repairs labor from the people who actually logged the work.
  *
- * Important accounting rules:
- * - start/resume execution sessions are the only labor-bearing lifecycle rows;
+ * Accounting rules:
+ * - only start/resume execution sessions bear labor hours;
  * - explicit duration wins, otherwise a closed start/end window is derived;
- * - every technician is priced independently, never at the assignee's rate;
- * - rates are resolved at the time the labor occurred, not at report/completion time;
- * - user+plant > user-global > worker trade+plant > worker trade-global > WO trade fallback;
- * - mixed currencies are never silently added together because there is no FX
- *   conversion source in the Repairs cost model.
+ * - every worker is priced independently, never at the assignee's rate;
+ * - the rate is resolved at the time the labor occurred;
+ * - user+plant > user-global > worker trade+plant > worker trade-global > WO trade;
+ * - multiple currencies are never silently added because Repairs has no
+ *   authoritative FX conversion source.
  */
 export async function calculateWorkOrderLaborCost(
   workOrderId: string,
@@ -112,6 +113,12 @@ export async function calculateWorkOrderLaborCost(
           startTime: true,
           endTime: true,
           breakMinutes: true,
+          user: {
+            select: {
+              fullName: true,
+              primaryTrade: true,
+            },
+          },
         },
       },
     },
@@ -120,12 +127,12 @@ export async function calculateWorkOrderLaborCost(
 
   const warnings: string[] = [];
   const segments: LaborRateSegment[] = [];
-  const workerCache = new Map<string, { fullName: string; primaryTrade: string | null }>();
   const tradeCache = new Map<string, string | null>();
 
   const resolveTradeId = async (tradeCodeOrName: string | null): Promise<string | null> => {
     if (!tradeCodeOrName) return null;
     if (tradeCache.has(tradeCodeOrName)) return tradeCache.get(tradeCodeOrName) ?? null;
+
     const trade = await client.trade.findFirst({
       where: {
         OR: [{ code: tradeCodeOrName }, { name: tradeCodeOrName }],
@@ -143,6 +150,8 @@ export async function calculateWorkOrderLaborCost(
     if (hours <= 0) continue;
 
     const effectiveAt = log.startTime ?? log.timestamp;
+    const workerName = log.user?.fullName ?? log.userId;
+
     let rate = await findRate(client, {
       userId: log.userId,
       plantId: wo.plantId,
@@ -151,20 +160,7 @@ export async function calculateWorkOrderLaborCost(
     let source: LaborRateSegment['source'] = 'user';
 
     if (!rate) {
-      let worker = workerCache.get(log.userId);
-      if (!worker) {
-        const user = await client.user.findUnique({
-          where: { id: log.userId },
-          select: { fullName: true, primaryTrade: true },
-        });
-        worker = {
-          fullName: user?.fullName ?? log.userId,
-          primaryTrade: user?.primaryTrade ?? null,
-        };
-        workerCache.set(log.userId, worker);
-      }
-
-      const tradeId = await resolveTradeId(worker.primaryTrade ?? wo.tradeActivity);
+      const tradeId = await resolveTradeId(log.user?.primaryTrade ?? wo.tradeActivity);
       if (tradeId) {
         rate = await findRate(client, {
           tradeId,
@@ -176,10 +172,12 @@ export async function calculateWorkOrderLaborCost(
     }
 
     if (!rate) {
-      const workerName = workerCache.get(log.userId)?.fullName ?? log.userId;
-      warnings.push(`No configured labor rate found for ${workerName}; ${hours.toFixed(2)} labor hour(s) are uncosted.`);
+      warnings.push(
+        `No configured labor rate found for ${workerName}; ${hours.toFixed(2)} labor hour(s) are uncosted.`,
+      );
       segments.push({
         userId: log.userId,
+        workerName,
         hours,
         hourlyRate: null,
         currency: null,
@@ -192,6 +190,7 @@ export async function calculateWorkOrderLaborCost(
 
     segments.push({
       userId: log.userId,
+      workerName,
       hours,
       hourlyRate: rate.normalHourlyRate,
       currency: rate.currency,
@@ -211,15 +210,18 @@ export async function calculateWorkOrderLaborCost(
   const mixedCurrencies = currencies.size > 1;
 
   if (laborHours === 0 && wo.timeLogs.length > 0) {
-    warnings.push('Labor hours resolved to 0 despite time log entries; check for missing duration/start/end data.');
+    warnings.push(
+      'Labor hours resolved to 0 despite time log entries; check for missing duration/start/end data.',
+    );
   }
+
   if (mixedCurrencies) {
     warnings.push(
       `Labor entries use multiple currencies (${[...currencies].sort().join(', ')}); labor cost was not aggregated because Repairs has no authoritative FX conversion source.`,
     );
   }
 
-  const incompleteLaborRate = missingRate || mixedCurrencies || (laborHours > 0 && segments.length === 0);
+  const incompleteLaborRate = missingRate || mixedCurrencies;
   const actualLaborCost = mixedCurrencies
     ? 0
     : round2(segments.reduce((sum, segment) => sum + segment.cost, 0));
