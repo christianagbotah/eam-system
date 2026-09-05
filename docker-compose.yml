@@ -8,6 +8,9 @@ services:
   # Application — Next.js 16 + Bun runtime
   # ---------------------------------------------------------------------------
   app:
+    # Production deployment injects an immutable GHCR image via APP_IMAGE.
+    # The local default keeps compose usable for developer workflows.
+    image: ${APP_IMAGE:-iassetspro-eam:latest}
     build:
       context: .
       dockerfile: Dockerfile
