@@ -4,20 +4,6 @@
 # Automatic production deployment is triggered only after the main CI workflow
 # completes successfully. The workflow builds an immutable GHCR image for the
 # exact CI-tested SHA, deploys it via Compose, then runs a production smoke test.
-#
-# REQUIRED GITHUB SECRETS:
-#   DEPLOY_HOST             — VPS IP or domain
-#   DEPLOY_USER             — SSH username
-#   DEPLOY_SSH_KEY          — Full SSH private key
-#   DEPLOY_PORT             — SSH port (default: 22)
-#   DEPLOY_PATH             — App path on VPS (default: /opt/iassetspro)
-#   PRODUCTION_URL          — Production URL for smoke tests
-#
-# GHCR authentication uses the workflow-scoped GITHUB_TOKEN. No long-lived
-# registry username/PAT secrets are required.
-#
-# OPTIONAL SECRETS:
-#   SLACK_WEBHOOK_URL       — Slack webhook for deploy notifications
 # =============================================================================
 
 name: Deploy
@@ -30,13 +16,14 @@ on:
   workflow_dispatch:
     inputs:
       skip_tests:
-        description: "Skip waiting for the CI E2E check for this main commit"
+        description: "Explicitly bypass CI verification for this manual main-branch deploy"
         type: boolean
         default: false
 
-# Least privileges required to read repository contents and publish/pull the
+# Least privileges required to verify checks, read source, and publish/pull the
 # deployment image from this repository's GHCR namespace.
 permissions:
+  checks: read
   contents: read
   packages: write
 
@@ -56,15 +43,12 @@ env:
   RELEASE_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Job: Deploy to Production
-  # ---------------------------------------------------------------------------
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # A failed/cancelled automatic CI run must never create a deployment job.
-    # Manual dispatch remains an explicit operator action, restricted to main.
+    # Failed/cancelled automatic CI can never create a production deployment job.
+    # Manual dispatch is an explicit operator action and is restricted to main.
     if: >-
       ${{
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
@@ -73,16 +57,55 @@ jobs:
 
     steps:
       # Automatic workflow_run deploys arrive only after CI is already green.
-      # A manual deploy keeps the previous default behavior: wait for the final
-      # E2E check unless the operator explicitly chooses skip_tests.
-      - name: Wait for full CI to succeed for manual deploy
+      # Manual deployment defaults to fail-closed verification of the exact
+      # commit's final E2E check. The explicit skip_tests switch is the only
+      # bypass; timeouts, cancellations, skipped checks and failures all stop.
+      - name: Verify successful E2E check for manual deploy
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.skip_tests }}
-        uses: fountainhead/action-wait-for-check@v1.0.0
-        with:
-          token: ${{ github.token }}
-          checkName: E2E Tests (Playwright)
-          ref: ${{ env.RELEASE_SHA }}
-          timeoutSeconds: 2100
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          CHECK_NAME='E2E Tests (Playwright)'
+          DEADLINE=$((SECONDS + 2400))
+          API_URL="${{ github.api_url }}/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?per_page=100&filter=latest"
+
+          echo "Verifying '$CHECK_NAME' for ${RELEASE_SHA}..."
+
+          while (( SECONDS < DEADLINE )); do
+            PAYLOAD="$(curl --fail-with-body --silent --show-error \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$API_URL")"
+
+            CHECK="$(jq -c \
+              '[.check_runs[] | select(.name == "E2E Tests (Playwright)")] | sort_by(.started_at // .created_at // "") | last // {}' \
+              <<< "$PAYLOAD")"
+            STATUS="$(jq -r '.status // ""' <<< "$CHECK")"
+            CONCLUSION="$(jq -r '.conclusion // ""' <<< "$CHECK")"
+
+            if [[ "$STATUS" == "completed" ]]; then
+              if [[ "$CONCLUSION" == "success" ]]; then
+                echo "E2E verification passed for ${RELEASE_SHA}."
+                exit 0
+              fi
+
+              echo "E2E verification failed closed: conclusion='${CONCLUSION:-unknown}'." >&2
+              exit 1
+            fi
+
+            if [[ -z "$STATUS" ]]; then
+              echo "E2E check not created yet; retrying..."
+            else
+              echo "E2E check status='$STATUS'; retrying..."
+            fi
+            sleep 15
+          done
+
+          echo "Timed out waiting for a successful E2E check for ${RELEASE_SHA}; deployment blocked." >&2
+          exit 1
 
       - name: Checkout validated release commit
         uses: actions/checkout@v4
