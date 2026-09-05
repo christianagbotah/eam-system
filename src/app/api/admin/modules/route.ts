@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { isSuperAdmin } from '@/lib/super-admin';
+import { toPublicModuleStates } from '@/lib/module-licensing-response';
 import { getModuleStates } from '@/services/moduleLicensing.service';
 
 export async function GET(request: NextRequest) {
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const modules = await getModuleStates();
     return NextResponse.json({
       success: true,
-      data: modules,
+      data: toPublicModuleStates(modules),
       authority: {
         isSuperAdmin: superAdmin,
         isSystemAdmin: isAdmin(session),
