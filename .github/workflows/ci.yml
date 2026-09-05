@@ -2,7 +2,7 @@
 # iAssetsPro EAM — Main CI Pipeline
 # =============================================================================
 # Triggers on pushes to main/develop and all pull requests.
-# Jobs: lint → Repairs typecheck → unit-tests → build → Repairs UAT (PR) / E2E (push)
+# Jobs: lint/typecheck/unit → app build + container build → Repairs UAT (PR) / E2E (push)
 # Full-repository TypeScript debt is reported separately inside the typecheck job.
 # =============================================================================
 
@@ -151,14 +151,44 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
+  # Build the actual production Dockerfile in CI. A successful Next standalone
+  # build alone is insufficient evidence that the image deployed to the VPS is
+  # buildable or starts from a valid runtime filesystem.
+  container-build:
+    name: Production Container Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [lint, typecheck, unit-tests]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image without pushing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: false
+          tags: iassetspro-eam:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_BUILD_VERSION=${{ github.sha }}
+
   # Repairs/RWOP UAT is a hard PR gate. It runs against real MariaDB + Redis
   # service containers, verifies the deployed schema and BullMQ round-trip, then
-  # exercises the exact standalone production artifact with Playwright.
+  # exercises the exact standalone production artifact with Playwright. It also
+  # waits for the production container build so Docker regressions block the PR.
   repairs-uat:
     name: Repairs UAT (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    needs: [build]
+    needs: [build, container-build]
     if: github.event_name == 'pull_request'
 
     services:
@@ -258,7 +288,7 @@ jobs:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [build]
+    needs: [build, container-build]
     if: github.event_name == 'push'
 
     steps:
