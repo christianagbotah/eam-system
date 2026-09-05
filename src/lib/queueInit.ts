@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { registerDefaultProcessors, getQueueAdapterType, closeQueueAdapter } from '@/lib/queue';
+import { registerNotificationEmailProcessor } from '@/lib/notification-email-queue';
 import { closeRedisClient } from '@/lib/redis';
 import { createLogger } from '@/lib/logger';
 
@@ -16,6 +17,9 @@ export function initQueues() {
 
   try {
     registerDefaultProcessors();
+    void registerNotificationEmailProcessor().catch((error) => {
+      logger.error('Failed to register notification email processor', error);
+    });
 
     const adapterType = getQueueAdapterType();
     const redisUrl = process.env.REDIS_URL;

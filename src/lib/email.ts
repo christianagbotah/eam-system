@@ -1,12 +1,22 @@
 import nodemailer from 'nodemailer';
 
-// Create transporter (reads from env vars, with sensible defaults for dev)
+// Create transporter lazily. SMTP is an optional delivery channel: it is only
+// enabled when SMTP_HOST is explicitly configured. This prevents production,
+// CI, and UAT processes from silently attempting localhost:587.
 let transporter: nodemailer.Transporter | null = null;
 
+export function isSmtpConfigured(): boolean {
+  return Boolean(process.env.SMTP_HOST?.trim());
+}
+
 function getTransporter(): nodemailer.Transporter {
+  if (!isSmtpConfigured()) {
+    throw new Error('SMTP_HOST is not configured');
+  }
+
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'localhost',
+      host: process.env.SMTP_HOST!.trim(),
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_SECURE === 'true',
       auth: process.env.SMTP_USER ? {
@@ -26,6 +36,8 @@ interface EmailOptions {
 }
 
 export async function sendEmail({ to, subject, html, text }: EmailOptions): Promise<boolean> {
+  if (!isSmtpConfigured()) return false;
+
   try {
     const appName = process.env.NEXT_PUBLIC_APP_NAME || 'iAssetsPro EAM';
     const companyEmail = process.env.SMTP_FROM
@@ -46,11 +58,23 @@ export async function sendEmail({ to, subject, html, text }: EmailOptions): Prom
   }
 }
 
-// Send notification email to a user (looks up email from DB)
-export async function sendNotificationEmail(userId: string, subject: string, message: string, actionUrl?: string): Promise<boolean> {
+// Send notification email to a user. The optional target address lets the
+// notification preference layer select an alternate address without sending a
+// duplicate copy to the profile email first.
+export async function sendNotificationEmail(
+  userId: string,
+  subject: string,
+  message: string,
+  actionUrl?: string,
+  targetEmail?: string,
+): Promise<boolean> {
   const { db } = await import('@/lib/db');
-  const user = await db.user.findUnique({ where: { id: userId }, select: { email: true, fullName: true } });
-  if (!user?.email) return false;
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { email: true, fullName: true },
+  });
+  const recipient = targetEmail?.trim() || user?.email;
+  if (!user || !recipient) return false;
 
   const appName = process.env.NEXT_PUBLIC_APP_NAME || 'iAssetsPro EAM';
   const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || '';
@@ -74,11 +98,13 @@ export async function sendNotificationEmail(userId: string, subject: string, mes
     </div>
   `;
 
-  return sendEmail({ to: user.email, subject: `[${appName}] ${subject}`, html });
+  return sendEmail({ to: recipient, subject: `[${appName}] ${subject}`, html });
 }
 
 // Test SMTP connection
 export async function testSmtpConnection(): Promise<boolean> {
+  if (!isSmtpConfigured()) return false;
+
   try {
     const t = getTransporter();
     await t.verify();
