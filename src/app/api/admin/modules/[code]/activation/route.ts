@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { toPublicModuleState } from '@/lib/module-licensing-response';
 import { ModuleLicensingError, setModuleActivation } from '@/services/moduleLicensing.service';
 
 export async function PATCH(
@@ -25,7 +26,7 @@ export async function PATCH(
       reason: typeof body.reason === 'string' ? body.reason : null,
     });
 
-    return NextResponse.json({ success: true, data: state });
+    return NextResponse.json({ success: true, data: toPublicModuleState(state) });
   } catch (error: unknown) {
     if (error instanceof ModuleLicensingError) {
       return NextResponse.json(
