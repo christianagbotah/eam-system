@@ -59,11 +59,13 @@ test('installation module licensing authority and effective-state contract', asy
     expect(rwop.licensed).toBe(false);
     expect(rwop.enabled).toBe(false);
     expect(rwop.effective).toBe(false);
+    expect(rwop.licenseKeyPresent).toBe(false);
+    expect(rwop.licenseKeyHash).toBeUndefined();
   });
 
   await test.step('L2: System Admin cannot grant a license or enable an unlicensed module', async () => {
     const grant = await call(systemToken, 'PUT', '/api/admin/modules/rwop/license', {
-      licenseKey: 'SYSTEM-ADMIN-MUST-NOT-GRANT',
+      licenseKey: 'uat-system-admin-invalid-license-value',
     });
     expect(grant.status).toBe(403);
     expect(grant.data.code).toBe('SUPER_ADMIN_REQUIRED');
@@ -73,11 +75,11 @@ test('installation module licensing authority and effective-state contract', asy
     expect(activation.data.code).toBe('MODULE_NOT_LICENSED');
   });
 
-  await test.step('L3: Super Admin grants a valid license; key is hashed; activation remains off', async () => {
-    const rawKey = 'RWOP-UAT-LICENSE-SECRET';
+  await test.step('L3: Super Admin grants a valid license; persisted digest stays private', async () => {
+    const rawLicenseValue = 'uat-rwop-license-value';
     const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { status, data } = await call(superToken, 'PUT', '/api/admin/modules/rwop/license', {
-      licenseKey: rawKey,
+      licenseKey: rawLicenseValue,
       validUntil,
       reason: 'UAT grant',
       subscription: { plan: 'enterprise', reference: 'UAT-001' },
@@ -88,8 +90,9 @@ test('installation module licensing authority and effective-state contract', asy
     expect(data.data.licensed).toBe(true);
     expect(data.data.enabled).toBe(false);
     expect(data.data.effective).toBe(false);
-    expect(data.data.licenseKeyHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(data.data.licenseKeyHash).not.toBe(rawKey);
+    expect(data.data.licenseKeyPresent).toBe(true);
+    expect(data.data.licenseKeyHash).toBeUndefined();
+    expect(JSON.stringify(data)).not.toContain(rawLicenseValue);
     expect(data.data.licenseMetadata.licensedBySuperAdminId).toBeTruthy();
   });
 
@@ -102,6 +105,8 @@ test('installation module licensing authority and effective-state contract', asy
     expect(data.data.licensed).toBe(true);
     expect(data.data.enabled).toBe(true);
     expect(data.data.effective).toBe(true);
+    expect(data.data.licenseKeyPresent).toBe(true);
+    expect(data.data.licenseKeyHash).toBeUndefined();
     expect(data.data.activation.enabledBy).toBeTruthy();
   });
 
@@ -109,7 +114,7 @@ test('installation module licensing authority and effective-state contract', asy
     const validFrom = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
     const validUntil = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const expired = await call(superToken, 'PUT', '/api/admin/modules/rwop/license', {
-      licenseKey: 'RWOP-UAT-EXPIRED',
+      licenseKey: 'uat-rwop-expired-value',
       validFrom,
       validUntil,
       reason: 'UAT expiry check',
@@ -119,6 +124,7 @@ test('installation module licensing authority and effective-state contract', asy
     expect(expired.data.data.licensed).toBe(false);
     expect(expired.data.data.enabled).toBe(true);
     expect(expired.data.data.effective).toBe(false);
+    expect(expired.data.data.licenseKeyPresent).toBe(true);
 
     const enable = await call(systemToken, 'PATCH', '/api/admin/modules/rwop/activation', { enabled: true });
     expect(enable.status).toBe(409);
@@ -127,7 +133,7 @@ test('installation module licensing authority and effective-state contract', asy
 
   await test.step('L6: Super Admin can re-license; System Admin still cannot revoke', async () => {
     const regrant = await call(superToken, 'PUT', '/api/admin/modules/rwop/license', {
-      licenseKey: 'RWOP-UAT-REGRANT',
+      licenseKey: 'uat-rwop-regrant-value',
       validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       reason: 'UAT regrant',
     });
@@ -154,7 +160,8 @@ test('installation module licensing authority and effective-state contract', asy
     expect(revoke.data.data.licensed).toBe(false);
     expect(revoke.data.data.enabled).toBe(false);
     expect(revoke.data.data.effective).toBe(false);
-    expect(revoke.data.data.licenseKeyHash).toBeNull();
+    expect(revoke.data.data.licenseKeyPresent).toBe(false);
+    expect(revoke.data.data.licenseKeyHash).toBeUndefined();
     expect(revoke.data.data.licenseMetadata.revokedBySuperAdminId).toBeTruthy();
 
     const enableAfterRevoke = await call(systemToken, 'PATCH', '/api/admin/modules/rwop/activation', { enabled: true });
