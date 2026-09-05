@@ -7,13 +7,6 @@
  * `smtp_not_configured` terminal result without failures or stuck work.
  */
 
-type QueueJobRecord = {
-  id: string;
-  status: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed';
-  result?: unknown;
-  error?: string;
-};
-
 const requestedJobs = Number.parseInt(process.env.REPAIRS_NOTIFICATION_LOAD_JOBS || '100', 10);
 const jobCount = Number.isFinite(requestedJobs)
   ? Math.min(500, Math.max(1, requestedJobs))
@@ -42,6 +35,7 @@ async function main(): Promise<void> {
     enqueueNotificationEmail,
     NOTIFICATION_EMAIL_QUEUE,
   } = await import('@/lib/notification-email-queue');
+  type QueueJob = NonNullable<Awaited<ReturnType<typeof jobQueue.getJob>>>;
 
   try {
     const adapter = getQueueAdapterType();
@@ -76,12 +70,13 @@ async function main(): Promise<void> {
     }
 
     const deadline = Date.now() + timeoutMs;
-    let finalJobs: QueueJobRecord[] = [];
+    let finalJobs: QueueJob[] = [];
 
     while (Date.now() < deadline) {
-      finalJobs = (await Promise.all(
+      const observedJobs = await Promise.all(
         jobIds.map((jobId) => jobQueue.getJob(NOTIFICATION_EMAIL_QUEUE, jobId)),
-      )).filter((job): job is QueueJobRecord => Boolean(job));
+      );
+      finalJobs = observedJobs.filter((job): job is QueueJob => job !== null);
 
       const failed = finalJobs.filter((job) => job.status === 'failed');
       if (failed.length > 0) {
