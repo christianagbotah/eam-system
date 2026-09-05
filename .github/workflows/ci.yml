@@ -220,7 +220,7 @@ jobs:
         run: bunx prisma generate
 
       - name: Create isolated UAT schema
-        run: bunx prisma db push --skip-generate
+        run: bunx prisma db push
 
       - name: Seed Repairs UAT data
         run: bunx tsx scripts/seed-repairs-uat.ts
