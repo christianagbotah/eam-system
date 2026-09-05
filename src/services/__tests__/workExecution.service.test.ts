@@ -31,6 +31,7 @@ const {
     },
     workOrderTimeLog: {
       findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
       update: vi.fn(),
       updateMany: vi.fn(),
       create: vi.fn(),
@@ -125,6 +126,8 @@ function makeEnrichedWO(overrides: Record<string, unknown> = {}) {
     repairMaterialRequests: [],
     timeLogs: [],
     shiftHandovers: [],
+    workOrderDowntimes: [],
+    workOrderComponents: [],
     ...overrides,
   };
 }
@@ -172,6 +175,7 @@ function mockTransactionExec() {
     },
     workOrderTimeLog: {
       findMany: mockDb.workOrderTimeLog.findMany,
+      findFirst: mockDb.workOrderTimeLog.findFirst,
       update: mockDb.workOrderTimeLog.update,
       updateMany: mockDb.workOrderTimeLog.updateMany,
       create: mockDb.workOrderTimeLog.create,
@@ -303,10 +307,10 @@ describe('pauseWork', () => {
     expect(result.error).toBe('Work order not found');
   });
 
-  it('should close active time logs before pausing', async () => {
+  it('should close all active team execution sessions before pausing', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({ status: 'in_progress' }));
     mockExecuteTransition.mockResolvedValue({ success: true });
-    mockDb.workOrderTimeLog.updateMany.mockResolvedValue({ count: 1 });
+    mockDb.workOrderTimeLog.updateMany.mockResolvedValue({ count: 2 });
     mockDb.auditLog.create.mockResolvedValue({});
     mockTransactionExec();
 
@@ -314,7 +318,11 @@ describe('pauseWork', () => {
     expect(result.success).toBe(true);
     expect(mockDb.workOrderTimeLog.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { workOrderId: 'wo-1', userId: 'tech-1', action: 'start', endTime: null },
+        where: {
+          workOrderId: 'wo-1',
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+        },
         data: expect.objectContaining({ pauseReason: 'lunch break' }),
       }),
     );
@@ -385,6 +393,11 @@ describe('enterWaitingState', () => {
     expect(result.data?.status).toBe('waiting_tools');
     expect(mockDb.workOrderTimeLog.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: {
+          workOrderId: 'wo-1',
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+        },
         data: expect.objectContaining({ pauseReason: 'Entered waiting_tools' }),
       }),
     );
@@ -430,6 +443,15 @@ describe('initiateHandover', () => {
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('pending_handover');
     expect(result.data?.handoverId).toBe('sh-tx-new');
+    expect(mockDb.workOrderTimeLog.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workOrderId: 'wo-1',
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+        },
+      }),
+    );
   });
 });
 
@@ -449,6 +471,7 @@ describe('resumeAfterHandover', () => {
   it('should throw when no confirmed handover record exists', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({ status: 'pending_handover' }));
     mockDb.shiftHandover.findFirst.mockResolvedValue(null);
+    mockTransactionExec();
 
     await expect(resumeAfterHandover('wo-1', techSession)).rejects.toThrow(
       'no confirmed shift handover record',
@@ -458,6 +481,7 @@ describe('resumeAfterHandover', () => {
   it('should succeed when confirmed handover receivedById matches session user', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({ status: 'pending_handover' }));
     mockDb.shiftHandover.findFirst.mockResolvedValue({ id: 'sh-1', status: 'confirmed', receivedById: 'tech-1' });
+    mockDb.workOrderTimeLog.findFirst.mockResolvedValue(null);
     mockExecuteTransition.mockResolvedValue({ success: true });
     mockDb.workOrderTimeLog.create.mockResolvedValue({});
     mockDb.auditLog.create.mockResolvedValue({});
@@ -466,6 +490,17 @@ describe('resumeAfterHandover', () => {
     const result = await resumeAfterHandover('wo-1', techSession);
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('in_progress');
+  });
+
+  it('should reject resume when technician already has a live session', async () => {
+    mockFetchEnrichedWO(makeEnrichedWO({ status: 'pending_handover' }));
+    mockDb.shiftHandover.findFirst.mockResolvedValue({ id: 'sh-1', status: 'confirmed', receivedById: 'tech-1' });
+    mockDb.workOrderTimeLog.findFirst.mockResolvedValue({ workOrderId: 'wo-other' });
+    mockTransactionExec();
+
+    await expect(resumeAfterHandover('wo-1', techSession)).rejects.toThrow(
+      'already has an active work session',
+    );
   });
 
   it('should throw when receivedById does not match session user', async () => {
@@ -499,10 +534,7 @@ describe('submitCompletion', () => {
         { userId: 'tech-2', role: 'technician', addedVia: 'request' },
       ],
     }));
-    // tech-1 is assignee but NOT team leader in a multi-tech scenario
-    // With 2 team members (tech-1 assignee + tech-2 additional), distinctTeamCount >= 1 → multi-tech
     const result = await submitCompletion('wo-1', techSession, {});
-    // In multi-tech mode, only team leader or admin can complete
     expect(result.success).toBe(false);
     expect(result.error).toContain('team leader');
   });
@@ -538,14 +570,11 @@ describe('submitCompletion', () => {
     const result = await submitCompletion('wo-1', techSession, {});
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('completed');
-    // Wall-clock elapsed time may include holds, permits, materials waits, and shift gaps.
-    // With no closed execution time logs, authoritative labor time is therefore zero.
     expect(result.data?.actualHours).toBe(0);
-    // totalCost is authoritative: labor=0 (no rate), material=0, tool=0, contractor=25
     expect(result.data?.totalCost).toBe(25);
   });
 
-  it('should use authoritative costs (ignoring client-submitted values)', async () => {
+  it('should use authoritative costs instead of client-provided values', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({ laborCost: 100, partsCost: 50, contractorCost: 25 }));
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockExecuteTransition.mockResolvedValue({ success: true });
@@ -553,12 +582,8 @@ describe('submitCompletion', () => {
     mockDb.workOrderTimeLog.create.mockResolvedValue({});
     mockDb.auditLog.create.mockResolvedValue({});
 
-    // Client-submitted costs are now ignored — authoritative calculation is used
-    const result = await submitCompletion('wo-1', techSession, {
-      notes: 'done',
-    });
+    const result = await submitCompletion('wo-1', techSession, { notes: 'done' });
     expect(result.success).toBe(true);
-    // totalCost is authoritative: labor=0 (no rate), material=0, tool=0, contractor=25
     expect(result.data?.totalCost).toBe(25);
   });
 
@@ -585,7 +610,9 @@ describe('submitCompletion', () => {
   it('should advance PM schedule when WO has pmScheduleId', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({
       pmScheduleId: 'pms-1',
-      laborCost: 0, partsCost: 0, contractorCost: 0,
+      laborCost: 0,
+      partsCost: 0,
+      contractorCost: 0,
     }));
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockExecuteTransition.mockResolvedValue({ success: true });
@@ -595,7 +622,7 @@ describe('submitCompletion', () => {
       frequencyType: 'monthly',
       frequencyValue: 1,
       lastCompletedDate: null,
-      nextDueDate: '2025-06-01',
+      nextDueDate: new Date('2025-06-01'),
     });
     mockTransactionExec();
     mockDb.workOrderTimeLog.create.mockResolvedValue({});
@@ -610,14 +637,16 @@ describe('submitCompletion', () => {
   it('should NOT advance PM schedule when frequency is not auto-calculable', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({
       pmScheduleId: 'pms-1',
-      laborCost: 0, partsCost: 0, contractorCost: 0,
+      laborCost: 0,
+      partsCost: 0,
+      contractorCost: 0,
     }));
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockExecuteTransition.mockResolvedValue({ success: true });
     mockDb.pmSchedule.findUnique.mockResolvedValue({
       id: 'pms-1',
       isActive: true,
-      frequencyType: 'custom_hours', // not auto-calculable
+      frequencyType: 'custom_hours',
       frequencyValue: 500,
       lastCompletedDate: null,
       nextDueDate: null,
@@ -671,15 +700,11 @@ describe('supervisorVerify', () => {
     });
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('verified');
-    // Should pass quality rating in extraData
     const transitionCall = mockExecuteTransition.mock.calls[0][4];
     expect(transitionCall.extraData.qualityRating).toBe(4);
-    // Should create verification comment
     expect(mockDb.workOrderComment.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          content: expect.stringContaining('[Verification]'),
-        }),
+        data: expect.objectContaining({ content: expect.stringContaining('[Verification]') }),
       }),
     );
   });
@@ -809,7 +834,8 @@ describe('plannerClose', () => {
       causeDescription: 'wear',
       actionDescription: 'replace bearing',
       totalCost: 500,
-      downtimeMinutes: 120,
+      workOrderDowntimes: [{ durationMinutes: 120 }],
+      workOrderComponents: [{ componentRegistryId: 'component-1' }],
     }));
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockExecuteTransition.mockResolvedValue({ success: true });
@@ -840,12 +866,13 @@ describe('plannerClose', () => {
     );
   });
 
-  it('should create failure record when assetId exists', async () => {
+  it('should create failure record only when a real linked component exists', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({
       status: 'verified',
       assetId: 'asset-1',
       totalCost: 300,
-      downtimeMinutes: 60,
+      workOrderDowntimes: [{ durationMinutes: 60 }],
+      workOrderComponents: [{ componentRegistryId: 'component-1' }],
     }));
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockExecuteTransition.mockResolvedValue({ success: true });
@@ -862,6 +889,7 @@ describe('plannerClose', () => {
       expect.objectContaining({
         where: { id: 'wo-wo-1' },
         create: expect.objectContaining({
+          componentId: 'component-1',
           assetId: 'asset-1',
           workOrderId: 'wo-1',
           failureMode: 'seal_leak',
@@ -871,7 +899,28 @@ describe('plannerClose', () => {
     );
   });
 
-  it('should NOT create failure record when no assetId and no failureMode', async () => {
+  it('should audit and skip failure record when failure context exists but no component is linked', async () => {
+    mockFetchEnrichedWO(makeEnrichedWO({
+      status: 'verified',
+      assetId: 'asset-1',
+      workOrderComponents: [],
+    }));
+    mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
+    mockExecuteTransition.mockResolvedValue({ success: true });
+    mockTransactionExec();
+    mockDb.auditLog.create.mockResolvedValue({});
+
+    await plannerClose('wo-1', plannerSession, { failureMode: 'seal_leak' });
+
+    expect(mockDb.failureRecord.upsert).not.toHaveBeenCalled();
+    expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'reliability_record_skipped' }),
+      }),
+    );
+  });
+
+  it('should NOT create failure record when no failure context exists', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({
       status: 'verified',
       assetId: null,
@@ -960,8 +1009,14 @@ describe('calculateAuthoritativeCosts', () => {
   it('should calculate labor hours from time log durations', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue({
       id: 'wo-1',
+      totalCost: 0,
       laborCost: 150,
+      partsCost: 0,
       contractorCost: 50,
+      estimatedHours: 4,
+      tradeActivity: null,
+      assignedTo: 'tech-1',
+      plantId: 'plant-1',
       timeLogs: [
         { id: 'tl-1', action: 'start', duration: 2.0, startTime: null, endTime: null, breakMinutes: 0, userId: 'tech-1', timestamp: new Date('2025-01-15T08:00:00Z') },
         { id: 'tl-2', action: 'resume', duration: 1.5, startTime: null, endTime: null, breakMinutes: 0, userId: 'tech-1', timestamp: new Date('2025-01-15T10:00:00Z') },
@@ -983,9 +1038,8 @@ describe('calculateAuthoritativeCosts', () => {
 
   it('should calculate material cost from consumed and wasted quantities', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue({
-      id: 'wo-1',
-      laborCost: 0,
-      contractorCost: 0,
+      id: 'wo-1', totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0,
+      estimatedHours: 4, tradeActivity: null, assignedTo: null, plantId: 'plant-1',
       timeLogs: [],
       repairMaterialRequests: [
         { unitCost: 25, consumedQty: 4, wastedQty: 1 },
@@ -1000,11 +1054,10 @@ describe('calculateAuthoritativeCosts', () => {
     expect(result!.totalActualCost).toBe(145);
   });
 
-  it('should return toolCost 0 with note (no consumption model)', async () => {
+  it('should return toolCost 0 with note because reusable tools are custody assets', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue({
-      id: 'wo-1',
-      laborCost: 0,
-      contractorCost: 0,
+      id: 'wo-1', totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0,
+      estimatedHours: 4, tradeActivity: null, assignedTo: null, plantId: 'plant-1',
       timeLogs: [],
       repairMaterialRequests: [],
       repairToolRequests: [
@@ -1026,11 +1079,10 @@ describe('calculateAuthoritativeCosts', () => {
     expect(result!.totalActualCost).toBe(0);
   });
 
-  it('should sum all cost components into totalActualCost', async () => {
+  it('should sum all authoritative cost components into totalActualCost', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue({
-      id: 'wo-1',
-      laborCost: 200,
-      contractorCost: 75,
+      id: 'wo-1', totalCost: 0, laborCost: 200, partsCost: 0, contractorCost: 75,
+      estimatedHours: 4, tradeActivity: null, assignedTo: 'tech-1', plantId: 'plant-1',
       timeLogs: [{ id: 'tl-1', action: 'start', duration: 3.0, startTime: null, endTime: null, breakMinutes: 0, userId: 'tech-1', timestamp: new Date('2025-01-15T08:00:00Z') }],
       repairMaterialRequests: [
         { unitCost: 15, consumedQty: 10, wastedQty: 2 },
@@ -1052,9 +1104,8 @@ describe('calculateAuthoritativeCosts', () => {
 
   it('should handle null/undefined durations and quantities', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue({
-      id: 'wo-1',
-      laborCost: 0,
-      contractorCost: 0,
+      id: 'wo-1', totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0,
+      estimatedHours: 4, tradeActivity: null, assignedTo: 'tech-1', plantId: 'plant-1',
       timeLogs: [
         { id: 'tl-1', action: 'start', duration: null, startTime: null, endTime: null, breakMinutes: 0, userId: 'tech-1', timestamp: new Date('2025-01-15T08:00:00Z') },
         { id: 'tl-2', action: 'resume', duration: undefined, startTime: null, endTime: null, breakMinutes: 0, userId: 'tech-1', timestamp: new Date('2025-01-15T09:00:00Z') },
@@ -1232,7 +1283,8 @@ describe('Work Execution Service — Phase 3A/3D type contracts', () => {
 
   it('calculateAuthoritativeCosts should return typed result', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue({
-      id: 'wo-1', laborCost: 0, contractorCost: 0,
+      id: 'wo-1', totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0,
+      estimatedHours: 0, tradeActivity: null, assignedTo: null, plantId: 'plant-1',
       timeLogs: [], repairMaterialRequests: [], repairToolRequests: [],
     });
     const result = await calculateAuthoritativeCosts('wo-1');
