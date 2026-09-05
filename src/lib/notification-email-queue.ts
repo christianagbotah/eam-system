@@ -61,7 +61,13 @@ export function registerNotificationEmailProcessor(): Promise<void> {
       NOTIFICATION_EMAIL_QUEUE,
       async (job: JobRecord) =>
         processNotificationEmailJob(job.data as NotificationEmailJobData),
-    );
+    ).catch((error) => {
+      // A transient Redis/BullMQ startup failure must not poison this process
+      // forever. Clear the cached rejected registration so the next enqueue can
+      // attempt worker registration again.
+      processorRegistration = null;
+      throw error;
+    });
   }
   return processorRegistration;
 }
