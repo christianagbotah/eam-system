@@ -1,11 +1,15 @@
 /*
- * seed-repairs-uat-costing.ts — Deterministic labor costing fixture for Repairs UAT.
+ * seed-repairs-uat-costing.ts — Deterministic labor costing fixtures for Repairs UAT.
  *
- * Scenario D records real labor against the electrical assistant. The base seed
- * historically configured only the primary mechanical technician's rate, which
- * made otherwise valid team labor uncosted and correctly blocked closure.
- * This fixture supplies the missing authoritative user+plant+trade rate without
- * weakening closure readiness or fabricating labor on another technician.
+ * These fixtures intentionally exercise both layers of the production hierarchy:
+ * - user-specific overrides for technicians with an authoritative personal rate;
+ * - a true trade fallback whose userId is NULL for technicians without an override.
+ *
+ * Scenario D records real labor against the electrical assistant, so that worker
+ * receives a user+plant+trade rate. Scenario B records labor against the mechanical
+ * team leader, who intentionally has no user override and therefore exercises the
+ * generic PLANT-A Mechanical trade rate end to end. This prevents UAT from relying
+ * on another technician's user-specific rate while keeping closure costing strict.
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -41,17 +45,20 @@ const EFFECTIVE_FROM = new Date('2024-01-01T00:00:00.000Z');
 async function main() {
   console.log('💰 Seeding Repairs UAT team labor costing...');
 
-  const [assistant, plant, electricalTrade] = await Promise.all([
+  const [assistant, plant, electricalTrade, mechanicalTrade] = await Promise.all([
     db.user.findUnique({ where: { username: 'uat_tech_assistant' }, select: { id: true } }),
     db.plant.findUnique({ where: { code: 'PLANT-A' }, select: { id: true } }),
     db.trade.findUnique({ where: { name: 'Electrical' }, select: { id: true } }),
+    db.trade.findUnique({ where: { name: 'Mechanical' }, select: { id: true } }),
   ]);
 
-  if (!assistant || !plant || !electricalTrade) {
-    throw new Error('Repairs UAT costing prerequisites are missing (assistant, PLANT-A, or Electrical trade)');
+  if (!assistant || !plant || !electricalTrade || !mechanicalTrade) {
+    throw new Error(
+      'Repairs UAT costing prerequisites are missing (assistant, PLANT-A, Electrical trade, or Mechanical trade)',
+    );
   }
 
-  const existing = await db.laborRate.findFirst({
+  const existingAssistantRate = await db.laborRate.findFirst({
     where: {
       userId: assistant.id,
       plantId: plant.id,
@@ -61,9 +68,9 @@ async function main() {
     select: { id: true },
   });
 
-  if (existing) {
+  if (existingAssistantRate) {
     await db.laborRate.update({
-      where: { id: existing.id },
+      where: { id: existingAssistantRate.id },
       data: {
         normalHourlyRate: 55,
         overtimeHourlyRate: 82.5,
@@ -85,24 +92,90 @@ async function main() {
     });
   }
 
-  const verified = await db.laborRate.findFirst({
+  // This is deliberately a trade-level rate. userId MUST remain null so the
+  // production resolver can distinguish it from technician-specific overrides.
+  const existingMechanicalTradeRate = await db.laborRate.findFirst({
     where: {
-      userId: assistant.id,
+      userId: null,
       plantId: plant.id,
-      effectiveFrom: { lte: new Date() },
-      OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
+      tradeId: mechanicalTrade.id,
+      effectiveFrom: EFFECTIVE_FROM,
     },
-    select: { normalHourlyRate: true, overtimeHourlyRate: true, currency: true },
-    orderBy: { effectiveFrom: 'desc' },
+    select: { id: true },
   });
 
-  if (!verified || verified.normalHourlyRate <= 0) {
+  if (existingMechanicalTradeRate) {
+    await db.laborRate.update({
+      where: { id: existingMechanicalTradeRate.id },
+      data: {
+        normalHourlyRate: 45,
+        overtimeHourlyRate: 67.5,
+        currency: 'GHS',
+        effectiveTo: null,
+      },
+    });
+  } else {
+    await db.laborRate.create({
+      data: {
+        userId: null,
+        plantId: plant.id,
+        tradeId: mechanicalTrade.id,
+        normalHourlyRate: 45,
+        overtimeHourlyRate: 67.5,
+        effectiveFrom: EFFECTIVE_FROM,
+        currency: 'GHS',
+      },
+    });
+  }
+
+  const now = new Date();
+  const [verifiedAssistantRate, verifiedMechanicalTradeRate] = await Promise.all([
+    db.laborRate.findFirst({
+      where: {
+        userId: assistant.id,
+        plantId: plant.id,
+        tradeId: electricalTrade.id,
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }],
+      },
+      select: { userId: true, normalHourlyRate: true, overtimeHourlyRate: true, currency: true },
+      orderBy: { effectiveFrom: 'desc' },
+    }),
+    db.laborRate.findFirst({
+      where: {
+        userId: null,
+        plantId: plant.id,
+        tradeId: mechanicalTrade.id,
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }],
+      },
+      select: { userId: true, normalHourlyRate: true, overtimeHourlyRate: true, currency: true },
+      orderBy: { effectiveFrom: 'desc' },
+    }),
+  ]);
+
+  if (!verifiedAssistantRate || verifiedAssistantRate.normalHourlyRate <= 0) {
     throw new Error('Repairs UAT electrical assistant labor rate could not be verified');
+  }
+  if (verifiedAssistantRate.userId !== assistant.id) {
+    throw new Error('Repairs UAT electrical assistant rate is not bound to the intended technician');
+  }
+
+  if (!verifiedMechanicalTradeRate || verifiedMechanicalTradeRate.normalHourlyRate <= 0) {
+    throw new Error('Repairs UAT generic Mechanical trade labor rate could not be verified');
+  }
+  if (verifiedMechanicalTradeRate.userId !== null) {
+    throw new Error('Repairs UAT Mechanical fallback rate must remain trade-level with userId=null');
   }
 
   console.log(
-    `✅ UAT Tech Assistant labor rate: ${verified.currency} ${verified.normalHourlyRate}/hr ` +
-      `(OT ${verified.overtimeHourlyRate}/hr)`,
+    `✅ UAT Tech Assistant labor rate: ${verifiedAssistantRate.currency} ` +
+      `${verifiedAssistantRate.normalHourlyRate}/hr (OT ${verifiedAssistantRate.overtimeHourlyRate}/hr)`,
+  );
+  console.log(
+    `✅ UAT Mechanical generic trade rate: ${verifiedMechanicalTradeRate.currency} ` +
+      `${verifiedMechanicalTradeRate.normalHourlyRate}/hr ` +
+      `(OT ${verifiedMechanicalTradeRate.overtimeHourlyRate}/hr, userId=null)`,
   );
 }
 
