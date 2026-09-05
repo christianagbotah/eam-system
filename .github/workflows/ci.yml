@@ -148,6 +148,7 @@ jobs:
         with:
           name: build-output
           path: .next/standalone
+          include-hidden-files: true
           retention-days: 7
 
   # Repairs/RWOP UAT is a hard PR gate. It runs against real MariaDB + Redis
