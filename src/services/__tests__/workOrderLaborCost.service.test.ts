@@ -132,6 +132,16 @@ describe('calculateWorkOrderLaborCost', () => {
         OR: [{ code: 'ELECTRICAL' }, { name: 'ELECTRICAL' }],
       }),
     }));
+
+    // A trade fallback must never match another technician's user override.
+    // True trade-level LaborRate rows are identified by userId=null.
+    expect(mockDb.laborRate.findFirst).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      where: expect.objectContaining({
+        tradeId: 'trade-electrical',
+        userId: null,
+        plantId: 'plant-1',
+      }),
+    }));
   });
 
   it('keeps known hours but flags a missing worker rate instead of pricing them as the assignee', async () => {
