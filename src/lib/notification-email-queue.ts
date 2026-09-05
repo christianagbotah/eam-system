@@ -57,9 +57,10 @@ export async function processNotificationEmailJob(
 
 export function registerNotificationEmailProcessor(): Promise<void> {
   if (!processorRegistration) {
-    processorRegistration = jobQueue.process<NotificationEmailJobData>(
+    processorRegistration = jobQueue.process(
       NOTIFICATION_EMAIL_QUEUE,
-      async (job: JobRecord<NotificationEmailJobData>) => processNotificationEmailJob(job.data),
+      async (job: JobRecord) =>
+        processNotificationEmailJob(job.data as NotificationEmailJobData),
     );
   }
   return processorRegistration;
