@@ -89,7 +89,7 @@ jobs:
         with:
           images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=
+            type=raw,value=sha-${{ github.sha }}
             type=ref,event=branch
             type=raw,value=latest,enable={{is_default_branch}}
 
@@ -107,7 +107,27 @@ jobs:
             NEXT_PUBLIC_BUILD_VERSION=${{ github.sha }}
             NEXT_PUBLIC_BUILD_TIME=${{ github.event.head_commit.timestamp }}
 
-      - name: Deploy to VPS via SSH
+      - name: Prepare VPS deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: mkdir -p "${{ secrets.DEPLOY_PATH || '/opt/iassetspro' }}"
+
+      - name: Upload production Compose manifest
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: docker-compose.yml
+          target: ${{ secrets.DEPLOY_PATH || '/opt/iassetspro' }}
+          overwrite: true
+
+      - name: Deploy immutable image to VPS
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -115,52 +135,40 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script: |
-            set -e
+            set -euo pipefail
 
             DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/iassetspro' }}"
-            IMAGE_TAG="${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            IMAGE_TAG="${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
 
             echo "========================================="
             echo "  iAssetsPro EAM — Production Deploy"
             echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')"
             echo "  Commit: ${{ github.sha }}"
+            echo "  Image: $IMAGE_TAG"
             echo "========================================="
 
-            # Ensure deploy directory exists
-            mkdir -p "$DEPLOY_PATH"
             cd "$DEPLOY_PATH"
+            test -f docker-compose.yml
+            test -f .env
 
-            # Copy docker-compose from repo if it doesn't exist
-            if [ ! -f docker-compose.yml ]; then
-              echo "[WARN] docker-compose.yml not found — expecting pre-staged on VPS"
-            fi
-
-            # Use the short-lived workflow token to pull the image. This avoids
-            # storing a long-lived GHCR PAT on the repository or the VPS.
+            # Use the short-lived workflow token to pull the exact immutable
+            # image built for this commit, then remove registry credentials.
             echo "${{ github.token }}" | docker login ${{ env.DOCKER_REGISTRY }} \
               -u "${{ github.actor }}" --password-stdin
 
-            # Pull the latest image
             echo ""
-            echo "[1/3] Pulling latest Docker image..."
-            docker compose pull app 2>&1 || docker pull "$IMAGE_TAG" 2>&1
+            echo "[1/3] Pulling immutable release image..."
+            APP_IMAGE="$IMAGE_TAG" docker compose pull app
             docker logout ${{ env.DOCKER_REGISTRY }} >/dev/null 2>&1 || true
             echo "  Image pulled successfully"
 
-            # Restart services
             echo ""
-            echo "[2/3] Restarting services..."
-            docker compose up -d --force-recreate app 2>&1 || \
-              docker run -d --name iassetspro-app \
-                --restart unless-stopped \
-                -p 3000:3000 \
-                --env-file .env \
-                "$IMAGE_TAG"
-            echo "  Services restarted"
+            echo "[2/3] Recreating application from validated image..."
+            APP_IMAGE="$IMAGE_TAG" docker compose up -d --no-build --force-recreate app
+            echo "  Application service recreated"
 
-            # Clean up old images
             echo ""
-            echo "[3/3] Cleaning up old images..."
+            echo "[3/3] Cleaning up unused images..."
             docker image prune -f
 
             echo ""
@@ -209,7 +217,7 @@ jobs:
           echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Image tag** | \`latest\` + \`sha-${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image tag** | \`sha-${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
 
       # --- Failure notification ---
