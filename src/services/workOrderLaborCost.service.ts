@@ -62,15 +62,20 @@ async function findRate(
   // intentionally retained for historical test fixtures and legacy adapters
   // that expose only the delegates required by their older contract.
   if (!client.laborRate?.findFirst) return null;
+  if (!params.userId && !params.tradeId) return null;
 
   const effective = {
     effectiveFrom: { lte: params.effectiveAt },
     OR: [{ effectiveTo: null }, { effectiveTo: { gte: params.effectiveAt } }],
   };
 
+  // User overrides may legitimately carry tradeId metadata, so user lookups
+  // constrain only userId. Trade fallback must explicitly require userId=null;
+  // otherwise another technician's user-specific override for the same trade
+  // could be selected and silently misprice this worker's labor.
   const identity = params.userId
     ? { userId: params.userId }
-    : { tradeId: params.tradeId };
+    : { tradeId: params.tradeId, userId: null };
 
   if (params.plantId) {
     const plantRate = await client.laborRate.findFirst({
