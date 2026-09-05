@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { toPublicModuleState } from '@/lib/module-licensing-response';
 import { SuperAdminRequiredError } from '@/lib/super-admin';
 import {
   grantModuleLicense,
@@ -59,7 +60,7 @@ export async function PUT(
       subscription: subscription as Record<string, unknown> | null | undefined,
     });
 
-    return NextResponse.json({ success: true, data: state });
+    return NextResponse.json({ success: true, data: toPublicModuleState(state) });
   } catch (error: unknown) {
     return errorResponse(error);
   }
@@ -81,7 +82,7 @@ export async function DELETE(
     const reason = typeof body.reason === 'string' ? body.reason : '';
 
     const state = await revokeModuleLicense({ session, code, reason });
-    return NextResponse.json({ success: true, data: state });
+    return NextResponse.json({ success: true, data: toPublicModuleState(state) });
   } catch (error: unknown) {
     return errorResponse(error);
   }
